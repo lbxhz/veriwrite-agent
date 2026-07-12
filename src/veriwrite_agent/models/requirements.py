@@ -5,7 +5,7 @@ from __future__ import annotations
 from math import ceil
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -56,7 +56,6 @@ class ReferenceRequirement(StrictModel):
     bibliography_style: str = "pending_confirmation"
     all_bibliography_items_must_be_cited_and_discussed: bool = False
 
-    @computed_field
     @property
     def minimum_foreign_count(self) -> int | None:
         if self.minimum_total is None or self.minimum_foreign_ratio is None:
@@ -95,4 +94,3 @@ class RequirementSpec(StrictModel):
     workflow_conditions: list[str] = Field(default_factory=list)
     ambiguities: list[str] = Field(default_factory=list)
     source_evidence: list[SourceEvidence] = Field(default_factory=list)
-
