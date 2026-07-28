@@ -7,7 +7,7 @@ VeriWrite 是一个“可验证、可追溯、分阶段协作”的课程研究�
 ## 当前数据流
 
 ```text
-课程要求文本或 DOCX
+课程要求文件（TXT / Markdown / DOCX / DOC / PDF）
     -> RuleBasedRequirementParser ─┐
                                   ├-> RequirementReconciler
     -> LLMRequirementParser ──────┘
@@ -27,9 +27,21 @@ VeriWrite 是一个“可验证、可追溯、分阶段协作”的课程研究�
 cd C:\Users\17811\Documents\Codex\2026-07-12\new-chat\outputs\veriwrite-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,ui]"
 pytest
 ```
+
+启动本地验证工作台：
+
+```powershell
+streamlit run streamlit_app.py
+```
+
+工作台内置 5 份不同侧重点的文本样例，也可以上传自己的 TXT、
+Markdown、DOCX、旧版 DOC 或 PDF。旧版 DOC 会调用本机 Microsoft Word
+进行只读转换；PDF 必须包含可提取文本，扫描件会明确提示先做 OCR。
+界面会显示规则与 DeepSeek 的字段级对照、实质冲突、完整性问题和原文证据，
+并允许用户逐项裁决后下载最终数据合同。
 
 旧版规则解析命令仍然可用：
 
@@ -70,6 +82,7 @@ veriwrite-agent/
 │   ├── services/               # 解析、合并、完整性检查和确认
 │   ├── llm/                    # 统一 LLM 接口和供应商适配
 │   ├── config/                 # API Key 等运行配置
+│   ├── ui/                     # 本地验证工作台的应用层与界面
 │   └── cli.py                  # 命令行入口
 ├── tests/
 │   ├── fixtures/               # 固定测试输入
@@ -89,7 +102,8 @@ veriwrite-agent/
 - 发现“15000 字以上”与“1.5 万字左右”的表述差异；
 - 不把模板示例题目误判为用户真实题目；
 - 记录原文证据，便于人工复核。
-- 支持 TXT、Markdown 和 DOCX 要求文件；
+- 支持 TXT、Markdown、DOCX、旧版 DOC 和可提取文本的 PDF；
+- 提供 5 份内置样例和本地上传验证工作台；
 - 支持规则/LLM 双路解析和显式冲突记录；
 - 阻止未确认主题或未解决冲突进入下一阶段；
 - 保存确认人、确认时间、用户修改和仍然存在的警告。

@@ -12,6 +12,7 @@ from veriwrite_agent.services.requirement_confirmation import (
     RequirementConfirmationService,
 )
 from veriwrite_agent.services.requirement_input import (
+    RequirementTextExtractionError,
     UnsupportedRequirementFileError,
     load_requirement_text,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "RequirementReconciler",
     "RequirementReviewRenderer",
     "RequirementReviewPipeline",
+    "RequirementTextExtractionError",
     "RuleBasedRequirementParser",
     "UnsupportedRequirementFileError",
     "load_requirement_text",

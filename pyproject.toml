@@ -19,6 +19,11 @@ dev = [
     "pytest>=8.0,<9",
     "ruff>=0.8",
 ]
+ui = [
+    "pypdf>=6.14,<7",
+    "streamlit>=1.59,<2",
+    "pywin32==312; sys_platform == 'win32'",
+]
 
 [project.scripts]
 veriwrite = "veriwrite_agent.cli:main"
