@@ -13,7 +13,7 @@ from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.models.requirement_workflow import RequirementReviewPackage
 from veriwrite_agent.services.llm_requirement_parser import LLMRequirementParser
-from veriwrite_agent.services.requirement_input import load_requirement_text
+from veriwrite_agent.services.requirement_input import extract_requirement_text
 from veriwrite_agent.services.requirement_parser import RuleBasedRequirementParser
 from veriwrite_agent.services.requirement_pipeline import RequirementReviewPipeline
 
@@ -31,6 +31,9 @@ class WorkbenchResult:
     source_name: str
     source_format: str
     extracted_text: str
+    extraction_method: str
+    extraction_warnings: tuple[str, ...]
+    ocr_average_confidence: float | None
     elapsed_seconds: float
 
 
@@ -75,13 +78,16 @@ def prepare_review_from_path(
     mode: Literal["rule", "dual"],
 ) -> WorkbenchResult:
     started = perf_counter()
-    text = load_requirement_text(path)
-    review = _build_pipeline(mode).prepare(text)
+    extraction = extract_requirement_text(path)
+    review = _build_pipeline(mode).prepare(extraction.text)
     return WorkbenchResult(
         review=review,
         source_name=path.name,
         source_format=path.suffix.lower() or "text",
-        extracted_text=text,
+        extracted_text=extraction.text,
+        extraction_method=extraction.method,
+        extraction_warnings=extraction.warnings,
+        ocr_average_confidence=extraction.ocr_average_confidence,
         elapsed_seconds=perf_counter() - started,
     )
 
@@ -102,6 +108,9 @@ def prepare_review_from_upload(
         source_name=filename,
         source_format=suffix or "text",
         extracted_text=result.extracted_text,
+        extraction_method=result.extraction_method,
+        extraction_warnings=result.extraction_warnings,
+        ocr_average_confidence=result.ocr_average_confidence,
         elapsed_seconds=result.elapsed_seconds,
     )
 
@@ -161,7 +170,13 @@ def diagnostic_messages(
     elif review.parser_mode == "rule_only":
         advantages.append("规则模式无需 API，结果稳定且可重复。")
     else:
-        problems.append("LLM 路径失败，本次结果仅由规则解析器兜底。")
+        error = _explain_llm_error(
+            review.llm_run.error if review.llm_run is not None else None
+        )
+        problems.append(
+            "LLM 路径失败，本次结果仅由规则解析器兜底。"
+            f"原因：{error}"
+        )
 
     normalized = sum(row["判断"] == "规范化后一致" for row in rows)
     if normalized:
@@ -174,8 +189,12 @@ def diagnostic_messages(
     conflict_count = len(review.reconciliation.conflicts)
     if conflict_count:
         problems.append(f"仍有 {conflict_count} 个实质冲突需要用户判断。")
+    elif review.llm_run is not None and review.llm_run.status == "succeeded":
+        advantages.append("双路比较没有发现遗留字段冲突。")
+    elif review.parser_mode == "rule_only":
+        advantages.append("规则结果内部没有待裁决字段冲突。")
     else:
-        advantages.append("没有遗留字段冲突。")
+        problems.append("LLM 未成功返回，本次无法判断双路之间是否存在冲突。")
 
     blocking = review.completeness.blocking_count
     warnings = review.completeness.warning_count
@@ -223,3 +242,20 @@ def _build_pipeline(
 
 def _is_empty(value: Any) -> bool:
     return value is None or value == "" or value == [] or value == {}
+
+
+def _explain_llm_error(error: str | None) -> str:
+    if not error:
+        return "未返回错误详情"
+    normalized = " ".join(error.split())[:500]
+    error_kinds = (
+        ("AuthenticationError", "API Key 或鉴权失败"),
+        ("RateLimitError", "API 限流或账户额度不足"),
+        ("APITimeoutError", "API 请求超时"),
+        ("APIConnectionError", "无法连接 LLM 接口"),
+        ("LLMOutputValidationError", "LLM 返回内容未通过 RequirementSpec 校验"),
+    )
+    for marker, explanation in error_kinds:
+        if marker in normalized:
+            return f"{explanation}（{normalized}）"
+    return normalized

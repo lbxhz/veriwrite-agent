@@ -2,12 +2,16 @@ import sys
 from zipfile import ZipFile
 
 import pytest
+from PIL import Image
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+from veriwrite_agent.services import requirement_input
+from veriwrite_agent.services.ocr import OCRNoTextError, OCRTextResult
 from veriwrite_agent.services.requirement_input import (
     RequirementTextExtractionError,
     UnsupportedRequirementFileError,
+    extract_requirement_text,
     load_requirement_text,
 )
 
@@ -86,12 +90,80 @@ def test_loads_text_from_pdf_with_page_evidence(tmp_path) -> None:
     assert "Minimum 15000 chars" in text
 
 
-def test_scanned_pdf_reports_that_ocr_is_required(tmp_path) -> None:
+def test_scanned_pdf_uses_local_ocr(tmp_path, monkeypatch) -> None:
     path = tmp_path / "scanned.pdf"
     writer = PdfWriter()
     writer.add_blank_page(width=612, height=792)
     with path.open("wb") as output:
         writer.write(output)
+    monkeypatch.setattr(
+        requirement_input,
+        "_ocr_pdf_page",
+        lambda path, index: OCRTextResult(
+            text="课程综述15000字以上",
+            average_confidence=0.94,
+            line_count=1,
+        ),
+    )
+
+    result = extract_requirement_text(path)
+
+    assert result.method == "ocr"
+    assert result.ocr_average_confidence == pytest.approx(0.94)
+    assert "[OCR_PDF_PAGE_1]" in result.text
+
+
+def test_blank_pdf_still_reports_no_usable_text(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "blank.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    with path.open("wb") as output:
+        writer.write(output)
+    monkeypatch.setattr(
+        requirement_input,
+        "_ocr_pdf_page",
+        lambda path, index: None,
+    )
+
+    with pytest.raises(RequirementTextExtractionError, match="没有识别到"):
+        extract_requirement_text(path)
+
+
+def test_image_input_reports_ocr_method_and_low_confidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "phone-photo.png"
+    Image.new("RGB", (200, 100), "white").save(path)
+    monkeypatch.setattr(
+        requirement_input,
+        "extract_image_text",
+        lambda image: OCRTextResult(
+            text="参考文献不少于60篇",
+            average_confidence=0.72,
+            line_count=1,
+        ),
+    )
+
+    result = extract_requirement_text(path)
+
+    assert result.method == "ocr"
+    assert result.text.endswith("参考文献不少于60篇")
+    assert result.warnings
+    assert "72.0%" in result.warnings[0]
+
+
+def test_image_without_recognizable_text_has_clear_error(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "blank.jpg"
+    Image.new("RGB", (100, 100), "white").save(path)
+
+    def no_text(image):
+        raise OCRNoTextError("OCR 没有识别到可用文本。")
+
+    monkeypatch.setattr(requirement_input, "extract_image_text", no_text)
 
     with pytest.raises(RequirementTextExtractionError, match="OCR"):
         load_requirement_text(path)

@@ -3,6 +3,10 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from veriwrite_agent.llm.fake_client import FakeLLMClient
+from veriwrite_agent.services.llm_requirement_parser import LLMRequirementParser
+from veriwrite_agent.services.requirement_parser import RuleBasedRequirementParser
+from veriwrite_agent.services.requirement_pipeline import RequirementReviewPipeline
 from veriwrite_agent.ui.workbench import (
     built_in_samples,
     comparison_rows,
@@ -59,7 +63,26 @@ def test_comparison_and_diagnostics_explain_rule_only_baseline() -> None:
     assert rows
     assert {row["判断"] for row in rows} == {"仅规则模式"}
     assert any("无需 API" in item for item in advantages)
+    assert any("规则结果内部" in item for item in advantages)
     assert any("阻塞项" in item for item in problems)
+
+
+def test_diagnostics_explain_llm_contract_failure() -> None:
+    text = "课程综述8000字以上。"
+    llm_parser = LLMRequirementParser(
+        FakeLLMClient('{"document_type": 123}')
+    )
+    review = RequirementReviewPipeline(
+        RuleBasedRequirementParser(),
+        llm_parser=llm_parser,
+    ).prepare(text)
+
+    advantages, problems = diagnostic_messages(review)
+
+    assert any("RequirementSpec 校验" in item for item in problems)
+    assert any("LLMOutputValidationError" in item for item in problems)
+    assert any("无法判断双路" in item for item in problems)
+    assert not any("双路比较没有发现" in item for item in advantages)
 
 
 def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
@@ -74,10 +97,11 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
     assert not app.exception
     assert [metric.label for metric in app.metric] == [
         "输入格式",
+        "提取方式",
         "提取字符",
+        "LLM 路径",
         "冲突",
         "阻塞项",
-        "耗时",
     ]
 
     app.text_input[1].input("遥感数据智能处理")

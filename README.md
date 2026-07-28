@@ -27,7 +27,7 @@ VeriWrite 是一个“可验证、可追溯、分阶段协作”的课程研究�
 cd C:\Users\17811\Documents\Codex\2026-07-12\new-chat\outputs\veriwrite-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,ui]"
+python -m pip install -e ".[dev,ui,ocr]"
 pytest
 ```
 
@@ -38,8 +38,10 @@ streamlit run streamlit_app.py
 ```
 
 工作台内置 5 份不同侧重点的文本样例，也可以上传自己的 TXT、
-Markdown、DOCX、旧版 DOC 或 PDF。旧版 DOC 会调用本机 Microsoft Word
-进行只读转换；PDF 必须包含可提取文本，扫描件会明确提示先做 OCR。
+Markdown、DOCX、旧版 DOC、PDF 或图片。旧版 DOC 会调用本机 Microsoft Word
+进行只读转换；PNG、JPG、TIFF 等图片以及 PDF 中的扫描页会通过
+RapidOCR + ONNX Runtime 在本地识别。图片不会直接发送给 DeepSeek，
+只有 OCR 后的文本会进入双路解析。
 界面会显示规则与 DeepSeek 的字段级对照、实质冲突、完整性问题和原文证据，
 并允许用户逐项裁决后下载最终数据合同。
 
@@ -102,7 +104,8 @@ veriwrite-agent/
 - 发现“15000 字以上”与“1.5 万字左右”的表述差异；
 - 不把模板示例题目误判为用户真实题目；
 - 记录原文证据，便于人工复核。
-- 支持 TXT、Markdown、DOCX、旧版 DOC 和可提取文本的 PDF；
+- 支持 TXT、Markdown、DOCX、旧版 DOC、PDF 和常见图片；
+- 对图片与 PDF 扫描页执行本地中英文 OCR，并显示平均置信度；
 - 提供 5 份内置样例和本地上传验证工作台；
 - 支持规则/LLM 双路解析和显式冲突记录；
 - 阻止未确认主题或未解决冲突进入下一阶段；

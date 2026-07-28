@@ -24,6 +24,11 @@ ui = [
     "streamlit>=1.59,<2",
     "pywin32==312; sys_platform == 'win32'",
 ]
+ocr = [
+    "onnxruntime>=1.27,<2",
+    "pypdfium2>=5.12,<6",
+    "rapidocr>=3.9,<4",
+]
 
 [project.scripts]
 veriwrite = "veriwrite_agent.cli:main"

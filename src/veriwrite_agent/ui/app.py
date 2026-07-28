@@ -90,11 +90,33 @@ def _render_input_panel() -> tuple[str, Any, Any, str]:
         else:
             uploaded_file = st.file_uploader(
                 "上传课程要求",
-                type=["txt", "md", "docx", "doc", "pdf"],
+                type=[
+                    "txt",
+                    "md",
+                    "docx",
+                    "doc",
+                    "pdf",
+                    "png",
+                    "jpg",
+                    "jpeg",
+                    "tif",
+                    "tiff",
+                    "bmp",
+                    "webp",
+                ],
                 help=(
-                    "扫描 PDF 需要先 OCR；旧 DOC 自动调用本机 Word 转换。"
+                    "图片和扫描 PDF 使用本地 OCR；"
+                    "旧 DOC 自动调用本机 Word 转换。"
                 ),
             )
+            if uploaded_file is not None and uploaded_file.name.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp")
+            ):
+                st.image(
+                    uploaded_file,
+                    caption="待 OCR 的要求图片预览",
+                    width=500,
+                )
     with right:
         mode_label = st.radio(
             "解析模式",
@@ -119,12 +141,31 @@ def _render_result(result: WorkbenchResult) -> None:
     review = result.review
     st.divider()
     st.subheader("2. 本次运行概览")
-    metrics = st.columns(5)
+    metrics = st.columns(6)
     metrics[0].metric("输入格式", result.source_format.upper().lstrip("."))
-    metrics[1].metric("提取字符", len(result.extracted_text))
-    metrics[2].metric("冲突", len(review.reconciliation.conflicts))
-    metrics[3].metric("阻塞项", review.completeness.blocking_count)
-    metrics[4].metric("耗时", f"{result.elapsed_seconds:.1f}s")
+    extraction_label = {
+        "native": "原生文本",
+        "ocr": "本地 OCR",
+        "mixed": "文本 + OCR",
+    }.get(result.extraction_method, result.extraction_method)
+    metrics[1].metric("提取方式", extraction_label)
+    metrics[2].metric("提取字符", len(result.extracted_text))
+    llm_label = "未启用"
+    if review.llm_run is not None:
+        llm_label = "成功" if review.llm_run.status == "succeeded" else "失败"
+    metrics[3].metric("LLM 路径", llm_label)
+    metrics[4].metric("冲突", len(review.reconciliation.conflicts))
+    metrics[5].metric("阻塞项", review.completeness.blocking_count)
+    st.caption(f"总耗时：{result.elapsed_seconds:.1f} 秒")
+
+    if result.ocr_average_confidence is not None:
+        st.info(
+            f"OCR 平均置信度：{result.ocr_average_confidence:.1%}。"
+            "置信度是模型自评，不等于文字一定正确；"
+            "DeepSeek 只接收 OCR 后的文本，不接收原始图片。"
+        )
+    for warning in result.extraction_warnings:
+        st.warning(warning)
 
     if review.status == "needs_resolution":
         st.warning("当前结果需要用户处理后才能交给 V0.2。")
@@ -218,6 +259,12 @@ def _render_comparison(review: RequirementReviewPackage) -> None:
 
 
 def _render_issues(review: RequirementReviewPackage) -> None:
+    if review.llm_run is not None and review.llm_run.status == "failed":
+        st.error("LLM 路径执行失败，本次合并结果仅使用规则解析器。")
+        with st.expander("查看 LLM 失败详情", expanded=True):
+            st.code(review.llm_run.error or "未返回错误详情")
+            st.caption("修正配置或等待接口恢复后，点击“开始分析”即可重试。")
+
     if review.reconciliation.conflicts:
         st.markdown("#### 实质冲突")
         for conflict in review.reconciliation.conflicts:
@@ -433,6 +480,11 @@ def _store_result(result: WorkbenchResult) -> None:
     st.session_state["source_name"] = result.source_name
     st.session_state["source_format"] = result.source_format
     st.session_state["extracted_text"] = result.extracted_text
+    st.session_state["extraction_method"] = result.extraction_method
+    st.session_state["extraction_warnings"] = result.extraction_warnings
+    st.session_state["ocr_average_confidence"] = (
+        result.ocr_average_confidence
+    )
     st.session_state["elapsed_seconds"] = result.elapsed_seconds
 
 
@@ -444,6 +496,16 @@ def _restore_result() -> WorkbenchResult:
         source_name=st.session_state["source_name"],
         source_format=st.session_state["source_format"],
         extracted_text=st.session_state["extracted_text"],
+        extraction_method=st.session_state.get(
+            "extraction_method",
+            "native",
+        ),
+        extraction_warnings=tuple(
+            st.session_state.get("extraction_warnings", ())
+        ),
+        ocr_average_confidence=st.session_state.get(
+            "ocr_average_confidence"
+        ),
         elapsed_seconds=st.session_state["elapsed_seconds"],
     )
 
