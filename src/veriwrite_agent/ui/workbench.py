@@ -7,13 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.models.requirement_workflow import RequirementReviewPackage
 from veriwrite_agent.services.llm_requirement_parser import LLMRequirementParser
-from veriwrite_agent.services.requirement_input import extract_requirement_text
+from veriwrite_agent.services.requirement_input import (
+    extract_requirement_text,
+    extract_requirement_texts,
+)
 from veriwrite_agent.services.requirement_parser import RuleBasedRequirementParser
 from veriwrite_agent.services.requirement_pipeline import RequirementReviewPipeline
 
@@ -35,6 +38,7 @@ class WorkbenchResult:
     extraction_warnings: tuple[str, ...]
     ocr_average_confidence: float | None
     elapsed_seconds: float
+    source_count: int = 1
 
 
 def project_root() -> Path:
@@ -69,6 +73,11 @@ def built_in_samples() -> list[SampleCase]:
             fixture_dir / "ambiguous_length_review.txt",
             "“左右”与“以上”的冲突及模板题目隔离",
         ),
+        SampleCase(
+            "真实复杂多选要求",
+            fixture_dir / "complex_multi_profile_review.txt",
+            "4 个教师方向、统一要求、提交、处罚和 AI 声明",
+        ),
     ]
 
 
@@ -89,6 +98,30 @@ def prepare_review_from_path(
         extraction_warnings=extraction.warnings,
         ocr_average_confidence=extraction.ocr_average_confidence,
         elapsed_seconds=perf_counter() - started,
+        source_count=extraction.source_count,
+    )
+
+
+def prepare_review_from_paths(
+    paths: Sequence[Path],
+    *,
+    mode: Literal["rule", "dual"],
+) -> WorkbenchResult:
+    started = perf_counter()
+    extraction = extract_requirement_texts(paths)
+    names = [path.name for path in paths]
+    suffixes = {path.suffix.lower() or "text" for path in paths}
+    source_format = next(iter(suffixes)) if len(suffixes) == 1 else "mixed files"
+    return WorkbenchResult(
+        review=_build_pipeline(mode).prepare(extraction.text),
+        source_name="、".join(names),
+        source_format=source_format,
+        extracted_text=extraction.text,
+        extraction_method=extraction.method,
+        extraction_warnings=extraction.warnings,
+        ocr_average_confidence=extraction.ocr_average_confidence,
+        elapsed_seconds=perf_counter() - started,
+        source_count=len(paths),
     )
 
 
@@ -98,37 +131,73 @@ def prepare_review_from_upload(
     *,
     mode: Literal["rule", "dual"],
 ) -> WorkbenchResult:
-    suffix = Path(filename).suffix.lower()
+    return prepare_review_from_uploads(
+        [(filename, payload)],
+        mode=mode,
+    )
+
+
+def prepare_review_from_uploads(
+    uploads: Sequence[tuple[str, bytes]],
+    *,
+    mode: Literal["rule", "dual"],
+) -> WorkbenchResult:
+    if not uploads:
+        raise ValueError("至少需要一个上传文件。")
     with TemporaryDirectory(prefix="veriwrite-upload-") as temp_dir:
-        path = Path(temp_dir) / f"uploaded{suffix}"
-        path.write_bytes(payload)
-        result = prepare_review_from_path(path, mode=mode)
+        paths: list[Path] = []
+        for index, (filename, payload) in enumerate(uploads, 1):
+            suffix = Path(filename).suffix.lower()
+            path = Path(temp_dir) / f"uploaded-{index}{suffix}"
+            path.write_bytes(payload)
+            paths.append(path)
+        result = prepare_review_from_paths(paths, mode=mode)
+    names = [filename for filename, _ in uploads]
+    return result.__class__(
+        **{
+            **result.__dict__,
+            "source_name": "、".join(names),
+        }
+    )
+
+
+def prepare_review_from_text(
+    text: str,
+    *,
+    mode: Literal["rule", "dual"],
+    source_name: str = "校对后的提取文本",
+    source_format: str = "text",
+    extraction_method: str = "native",
+    extraction_warnings: tuple[str, ...] = (),
+    ocr_average_confidence: float | None = None,
+    source_count: int = 1,
+) -> WorkbenchResult:
+    if not text.strip():
+        raise ValueError("校对后的文本不能为空。")
+    started = perf_counter()
     return WorkbenchResult(
-        review=result.review,
-        source_name=filename,
-        source_format=suffix or "text",
-        extracted_text=result.extracted_text,
-        extraction_method=result.extraction_method,
-        extraction_warnings=result.extraction_warnings,
-        ocr_average_confidence=result.ocr_average_confidence,
-        elapsed_seconds=result.elapsed_seconds,
+        review=_build_pipeline(mode).prepare(text),
+        source_name=source_name,
+        source_format=source_format,
+        extracted_text=text,
+        extraction_method=extraction_method,
+        extraction_warnings=extraction_warnings,
+        ocr_average_confidence=ocr_average_confidence,
+        elapsed_seconds=perf_counter() - started,
+        source_count=source_count,
     )
 
 
 def comparison_rows(review: RequirementReviewPackage) -> list[dict[str, str]]:
     rule_values = flatten_spec(
-        review.rule_run.spec.model_dump(mode="json")
-        if review.rule_run.spec is not None
-        else {}
+        review.rule_run.spec.model_dump(mode="json") if review.rule_run.spec is not None else {}
     )
     llm_values = flatten_spec(
         review.llm_run.spec.model_dump(mode="json")
         if review.llm_run is not None and review.llm_run.spec is not None
         else {}
     )
-    conflict_fields = {
-        conflict.field for conflict in review.reconciliation.conflicts
-    }
+    conflict_fields = {conflict.field for conflict in review.reconciliation.conflicts}
     rows: list[dict[str, str]] = []
     for field in sorted(set(rule_values) | set(llm_values)):
         if field == "source_evidence":
@@ -170,13 +239,8 @@ def diagnostic_messages(
     elif review.parser_mode == "rule_only":
         advantages.append("规则模式无需 API，结果稳定且可重复。")
     else:
-        error = _explain_llm_error(
-            review.llm_run.error if review.llm_run is not None else None
-        )
-        problems.append(
-            "LLM 路径失败，本次结果仅由规则解析器兜底。"
-            f"原因：{error}"
-        )
+        error = _explain_llm_error(review.llm_run.error if review.llm_run is not None else None)
+        problems.append(f"LLM 路径失败，本次结果仅由规则解析器兜底。原因：{error}")
 
     normalized = sum(row["判断"] == "规范化后一致" for row in rows)
     if normalized:
@@ -195,6 +259,13 @@ def diagnostic_messages(
         advantages.append("规则结果内部没有待裁决字段冲突。")
     else:
         problems.append("LLM 未成功返回，本次无法判断双路之间是否存在冲突。")
+
+    profile_count = len(review.reconciliation.merged_spec.profiles)
+    if profile_count:
+        advantages.append(
+            f"已把 {profile_count} 个教师/方向拆成独立要求档案，"
+            "统一要求不会再与教师专属规则混在一起。"
+        )
 
     blocking = review.completeness.blocking_count
     warnings = review.completeness.warning_count
@@ -216,6 +287,15 @@ def flatten_spec(
         path = (*prefix, key)
         if isinstance(child, dict):
             result.update(flatten_spec(child, path))
+        elif key == "profiles" and isinstance(child, list):
+            for index, profile in enumerate(child):
+                if isinstance(profile, dict):
+                    result.update(
+                        flatten_spec(
+                            profile,
+                            (*path, str(index)),
+                        )
+                    )
         else:
             result[".".join(path)] = child
     return result

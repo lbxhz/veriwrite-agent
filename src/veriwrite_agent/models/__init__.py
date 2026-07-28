@@ -11,27 +11,37 @@ from veriwrite_agent.models.requirement_workflow import (
     RequirementReviewPackage,
 )
 from veriwrite_agent.models.requirements import (
+    AIUsagePolicy,
     FormattingRequirement,
     LengthRequirement,
+    PolicyRule,
     ReferenceRequirement,
+    RequirementProfile,
     RequirementSpec,
+    SelectionPolicy,
     SourceEvidence,
     StructureRequirement,
+    SubmissionRequirement,
 )
 
 __all__ = [
+    "AIUsagePolicy",
     "CompletenessIssue",
     "CompletenessReport",
     "ConfirmedRequirementSpec",
     "FormattingRequirement",
     "LengthRequirement",
+    "PolicyRule",
     "ParserRun",
     "ReconciliationResult",
     "ReferenceRequirement",
+    "RequirementProfile",
     "RequirementConfirmation",
     "RequirementConflict",
     "RequirementReviewPackage",
     "RequirementSpec",
+    "SelectionPolicy",
     "SourceEvidence",
     "StructureRequirement",
+    "SubmissionRequirement",
 ]

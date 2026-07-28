@@ -16,6 +16,7 @@ from veriwrite_agent.services.requirement_input import (
     RequirementTextExtractionError,
     UnsupportedRequirementFileError,
     extract_requirement_text,
+    extract_requirement_texts,
     load_requirement_text,
 )
 from veriwrite_agent.services.requirement_parser import RuleBasedRequirementParser
@@ -39,5 +40,6 @@ __all__ = [
     "RuleBasedRequirementParser",
     "UnsupportedRequirementFileError",
     "extract_requirement_text",
+    "extract_requirement_texts",
     "load_requirement_text",
 ]

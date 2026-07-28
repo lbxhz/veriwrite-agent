@@ -28,8 +28,15 @@ class RequirementReviewRenderer:
             self._row("institution", spec.institution),
             self._row("school_or_department", spec.school_or_department),
             self._row("topic", spec.topic),
+            self._row("selected_profile_id", spec.selected_profile_id),
             self._row("length.minimum_chars", spec.length.minimum_chars),
             self._row("length.target_chars", spec.length.target_chars),
+            self._row("length.minimum_words", spec.length.minimum_words),
+            self._row("length.maximum_words", spec.length.maximum_words),
+            self._row(
+                "length.excluded_components",
+                spec.length.excluded_components,
+            ),
             self._row(
                 "length.counting_policy",
                 spec.length.counting_policy,
@@ -37,6 +44,10 @@ class RequirementReviewRenderer:
             self._row(
                 "references.minimum_total",
                 spec.references.minimum_total,
+            ),
+            self._row(
+                "references.target_total",
+                spec.references.target_total,
             ),
             self._row(
                 "references.minimum_foreign_ratio",
@@ -68,11 +79,34 @@ class RequirementReviewRenderer:
         else:
             lines.append("| llm | 未运行 | 本次使用 rule-only 模式 |")
 
+        lines.extend(["", "## 可选教师 / 方向", ""])
+        if spec.profiles:
+            lines.extend(
+                [
+                    "| 选项 | 教师 | 方向 | 题目范围 | 专属规则数 |",
+                    "| --- | --- | --- | --- | --- |",
+                ]
+            )
+            for profile in spec.profiles:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            self._escape(profile.profile_id),
+                            self._escape(profile.teacher),
+                            self._format(profile.track),
+                            self._format(profile.topic),
+                            str(len(profile.policy_rules)),
+                        ]
+                    )
+                    + " |"
+                )
+        else:
+            lines.append("文件没有多个可选教师或方向。")
+
         lines.extend(["", "## 候选结果对照", ""])
         rule_values = self._flatten(
-            review.rule_run.spec.model_dump(mode="json")
-            if review.rule_run.spec is not None
-            else {}
+            review.rule_run.spec.model_dump(mode="json") if review.rule_run.spec is not None else {}
         )
         llm_values = self._flatten(
             review.llm_run.spec.model_dump(mode="json")
@@ -80,9 +114,7 @@ class RequirementReviewRenderer:
             else {}
         )
         fields = sorted(
-            field
-            for field in set(rule_values) | set(llm_values)
-            if field != "source_evidence"
+            field for field in set(rule_values) | set(llm_values) if field != "source_evidence"
         )
         if llm_values:
             lines.extend(
@@ -100,10 +132,7 @@ class RequirementReviewRenderer:
         else:
             lines.extend(["| 字段 | 规则候选 |", "| --- | --- |"])
             for field in fields:
-                lines.append(
-                    f"| {self._escape(field)} | "
-                    f"{self._format(rule_values.get(field))} |"
-                )
+                lines.append(f"| {self._escape(field)} | {self._format(rule_values.get(field))} |")
 
         lines.extend(["", "## 解析冲突", ""])
         if review.reconciliation.conflicts:
@@ -134,8 +163,7 @@ class RequirementReviewRenderer:
             for issue in review.completeness.issues:
                 checkbox = "[ ]" if issue.requires_user_confirmation else "[-]"
                 lines.append(
-                    f"- {checkbox} `{issue.issue_id}` "
-                    f"（{issue.severity}）：{issue.message}"
+                    f"- {checkbox} `{issue.issue_id}` （{issue.severity}）：{issue.message}"
                 )
         else:
             lines.append("没有待处理事项，可以进行最终确认。")
@@ -165,10 +193,7 @@ class RequirementReviewRenderer:
         status: str,
         error: str | None,
     ) -> str:
-        return (
-            f"| {cls._escape(parser_name)} | {cls._escape(status)} | "
-            f"{cls._format(error)} |"
-        )
+        return f"| {cls._escape(parser_name)} | {cls._escape(status)} | {cls._format(error)} |"
 
     @classmethod
     def _format(cls, value: Any) -> str:
@@ -192,6 +217,15 @@ class RequirementReviewRenderer:
             path = (*prefix, key)
             if isinstance(child, dict):
                 result.update(cls._flatten(child, path))
+            elif key == "profiles" and isinstance(child, list):
+                for index, profile in enumerate(child):
+                    if isinstance(profile, dict):
+                        result.update(
+                            cls._flatten(
+                                profile,
+                                (*path, str(index)),
+                            )
+                        )
             else:
                 result[".".join(path)] = child
         return result

@@ -25,7 +25,17 @@ class RequirementCompletenessChecker:
     ) -> CompletenessReport:
         issues: list[CompletenessIssue] = []
 
-        if not spec.topic:
+        if spec.profiles and not spec.selected_profile_id:
+            issues.append(
+                CompletenessIssue(
+                    issue_id="missing_selected_profile",
+                    field="selected_profile_id",
+                    severity="blocking",
+                    message="文件包含多个教师/方向选项，请先选择本次采用的要求。",
+                    requires_user_confirmation=True,
+                )
+            )
+        elif not spec.topic:
             issues.append(
                 CompletenessIssue(
                     issue_id="missing_topic",
@@ -47,24 +57,36 @@ class RequirementCompletenessChecker:
                 )
             )
 
-        if spec.length.minimum_chars is None:
+        if (
+            spec.length.minimum_chars is None
+            and spec.length.minimum_words is None
+            and spec.length.target_words is None
+        ):
             issues.append(
                 CompletenessIssue(
                     issue_id="missing_minimum_chars",
                     field="length.minimum_chars",
                     severity="warning",
-                    message="课程文件没有给出明确的最低字数。",
+                    message="课程文件没有给出明确的最低字数或单词数。",
                     requires_user_confirmation=True,
                 )
             )
 
-        if spec.references.minimum_total is None:
+        if (
+            spec.references.minimum_total is None
+            and spec.references.target_total is None
+            and not any(
+                profile.references.minimum_total is not None
+                or profile.references.target_total is not None
+                for profile in spec.profiles
+            )
+        ):
             issues.append(
                 CompletenessIssue(
                     issue_id="missing_minimum_references",
                     field="references.minimum_total",
                     severity="warning",
-                    message="课程文件没有给出明确的最低参考文献数量。",
+                    message="课程文件没有给出明确的最低或目标参考文献数量。",
                     requires_user_confirmation=True,
                 )
             )
@@ -91,6 +113,17 @@ class RequirementCompletenessChecker:
                 )
             )
 
+        if spec.submission.deadline_month is not None and spec.submission.deadline_year is None:
+            issues.append(
+                CompletenessIssue(
+                    issue_id="missing_deadline_year",
+                    field="submission.deadline_year",
+                    severity="warning",
+                    message="提交截止日期缺少年份，交付前需要结合课程学期确认。",
+                    requires_user_confirmation=True,
+                )
+            )
+
         for index, ambiguity in enumerate(spec.ambiguities):
             issues.append(
                 CompletenessIssue(
@@ -108,16 +141,12 @@ class RequirementCompletenessChecker:
                     CompletenessIssue(
                         issue_id=f"parser_failed:{run.parser_name}",
                         severity="warning",
-                        message=(
-                            f"{run.parser_name} 解析失败；系统保留了另一条可用结果。"
-                        ),
+                        message=(f"{run.parser_name} 解析失败；系统保留了另一条可用结果。"),
                         requires_user_confirmation=False,
                     )
                 )
 
-        if parser_runs and not any(
-            run.parser_name == "llm" for run in parser_runs
-        ):
+        if parser_runs and not any(run.parser_name == "llm" for run in parser_runs):
             issues.append(
                 CompletenessIssue(
                     issue_id="single_parser_mode",

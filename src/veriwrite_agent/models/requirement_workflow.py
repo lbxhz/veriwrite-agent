@@ -75,10 +75,8 @@ class CompletenessReport(StrictModel):
 class RequirementReviewPackage(StrictModel):
     """Everything a user needs to review before confirming requirements."""
 
-    workflow_schema_version: str = "0.1.1"
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    workflow_schema_version: str = "0.1.2"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     parser_mode: Literal["rule_only", "dual"]
     rule_run: ParserRun
     llm_run: ParserRun | None = None
@@ -89,9 +87,7 @@ class RequirementReviewPackage(StrictModel):
     @model_validator(mode="after")
     def status_must_match_blocking_issues(self) -> RequirementReviewPackage:
         expected = (
-            "needs_resolution"
-            if self.completeness.blocking_count
-            else "ready_for_confirmation"
+            "needs_resolution" if self.completeness.blocking_count else "ready_for_confirmation"
         )
         if self.status != expected:
             raise ValueError("review status does not match completeness report")
@@ -110,11 +106,9 @@ class RequirementConfirmation(StrictModel):
 class ConfirmedRequirementSpec(StrictModel):
     """Stable hand-off contract consumed by V0.2 and later versions."""
 
-    workflow_schema_version: str = "0.1.1"
+    workflow_schema_version: str = "0.1.2"
     status: Literal["confirmed"] = "confirmed"
-    confirmed_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    confirmed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confirmed_by: str = Field(min_length=1)
     requirement: RequirementSpec
     acknowledged_issue_ids: list[str] = Field(default_factory=list)

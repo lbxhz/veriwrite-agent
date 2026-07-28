@@ -31,9 +31,7 @@ class RequirementConfirmationService:
         self,
         completeness_checker: RequirementCompletenessChecker | None = None,
     ) -> None:
-        self._completeness_checker = (
-            completeness_checker or RequirementCompletenessChecker()
-        )
+        self._completeness_checker = completeness_checker or RequirementCompletenessChecker()
 
     def confirm(
         self,
@@ -44,7 +42,11 @@ class RequirementConfirmationService:
 
         for field, value in confirmation.field_updates.items():
             self._apply_field_update(spec_data, field, value)
-        if "topic" in confirmation.field_updates:
+        confirmed_topic = spec_data["topic"] if "topic" in confirmation.field_updates else None
+        if spec_data.get("selected_profile_id"):
+            self._materialize_selected_profile(spec_data)
+        if confirmed_topic is not None:
+            spec_data["topic"] = confirmed_topic
             spec_data["topic_source"] = "explicit"
 
         evidence = list(spec_data["source_evidence"])
@@ -53,10 +55,7 @@ class RequirementConfirmationService:
                 SourceEvidence(
                     field=field,
                     source_text=f"用户确认：{confirmation.confirmed_by}",
-                    note=(
-                        confirmation.note
-                        or f"确认值：{value!r}"
-                    ),
+                    note=(confirmation.note or f"确认值：{value!r}"),
                 ).model_dump(mode="json")
             )
         spec_data["source_evidence"] = evidence
@@ -76,48 +75,36 @@ class RequirementConfirmationService:
         report = self._completeness_checker.check(
             confirmed_spec,
             conflicts=unresolved_conflicts,
-            parser_runs=[
-                run
-                for run in (review.rule_run, review.llm_run)
-                if run is not None
-            ],
+            parser_runs=[run for run in (review.rule_run, review.llm_run) if run is not None],
         )
         blocking = [issue.issue_id for issue in report.issues if issue.severity == "blocking"]
         if blocking:
-            raise RequirementConfirmationError(
-                "仍有阻塞项未解决：" + ", ".join(blocking)
-            )
+            raise RequirementConfirmationError("仍有阻塞项未解决：" + ", ".join(blocking))
 
         acknowledged = set(confirmation.acknowledged_issue_ids)
         known_issue_ids = {
-            issue.issue_id
-            for issue in [*review.completeness.issues, *report.issues]
+            issue.issue_id for issue in [*review.completeness.issues, *report.issues]
         }
         unknown_acknowledgements = sorted(acknowledged - known_issue_ids)
         if unknown_acknowledgements:
             raise RequirementConfirmationError(
-                "确认答案包含未知问题编号："
-                + ", ".join(unknown_acknowledgements)
+                "确认答案包含未知问题编号：" + ", ".join(unknown_acknowledgements)
             )
         pending_acknowledgements = [
             issue.issue_id
             for issue in report.issues
-            if issue.requires_user_confirmation
-            and issue.issue_id not in acknowledged
+            if issue.requires_user_confirmation and issue.issue_id not in acknowledged
         ]
         if pending_acknowledgements:
             raise RequirementConfirmationError(
-                "以下非阻塞问题需要修改字段或明确确认："
-                + ", ".join(pending_acknowledgements)
+                "以下非阻塞问题需要修改字段或明确确认：" + ", ".join(pending_acknowledgements)
             )
 
         return ConfirmedRequirementSpec(
             confirmed_by=confirmation.confirmed_by,
             requirement=confirmed_spec,
             acknowledged_issue_ids=sorted(acknowledged),
-            remaining_warnings=[
-                issue for issue in report.issues if issue.severity == "warning"
-            ],
+            remaining_warnings=[issue for issue in report.issues if issue.severity == "warning"],
         )
 
     def _apply_field_update(
@@ -135,18 +122,138 @@ class RequirementConfirmationService:
         candidate = deepcopy(spec_data)
         current: Any = candidate
         for part in path[:-1]:
-            if not isinstance(current, dict) or part not in current:
+            if isinstance(current, list):
+                try:
+                    current = current[int(part)]
+                except (ValueError, IndexError) as exc:
+                    raise RequirementConfirmationError(f"未知字段：{field}") from exc
+            elif isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
                 raise RequirementConfirmationError(f"未知字段：{field}")
-            current = current[part]
-        if not isinstance(current, dict) or path[-1] not in current:
+        if isinstance(current, list):
+            try:
+                current[int(path[-1])] = value
+            except (ValueError, IndexError) as exc:
+                raise RequirementConfirmationError(f"未知字段：{field}") from exc
+        elif isinstance(current, dict) and path[-1] in current:
+            current[path[-1]] = value
+        else:
             raise RequirementConfirmationError(f"未知字段：{field}")
-        current[path[-1]] = value
 
         try:
             RequirementSpec.model_validate(candidate)
         except ValidationError as exc:
-            raise RequirementConfirmationError(
-                f"字段 {field} 的确认值不合法。"
-            ) from exc
+            raise RequirementConfirmationError(f"字段 {field} 的确认值不合法。") from exc
         spec_data.clear()
         spec_data.update(candidate)
+
+    @staticmethod
+    def _materialize_selected_profile(spec_data: dict[str, Any]) -> None:
+        """Copy the selected option into the effective top-level hand-off."""
+
+        selected_id = spec_data["selected_profile_id"]
+        selected = next(
+            (
+                profile
+                for profile in spec_data.get("profiles", [])
+                if profile.get("profile_id") == selected_id
+            ),
+            None,
+        )
+        if selected is None:
+            return
+
+        if selected.get("topic"):
+            spec_data["topic"] = selected["topic"]
+            spec_data["topic_source"] = "explicit"
+        if selected.get("output_language") != "pending_confirmation":
+            spec_data["output_language"] = selected["output_language"]
+
+        for field in (
+            "required_theme_elements",
+            "deliverables",
+            "workflow_conditions",
+            "policy_rules",
+        ):
+            spec_data[field] = RequirementConfirmationService._stable_union(
+                spec_data.get(field, []),
+                selected.get(field, []),
+            )
+
+        global_length = spec_data["length"]
+        profile_length = selected["length"]
+        for field in (
+            "minimum_chars",
+            "target_chars",
+            "minimum_words",
+            "maximum_words",
+            "target_words",
+        ):
+            if global_length.get(field) is None and profile_length.get(field) is not None:
+                global_length[field] = profile_length[field]
+        global_length["figures_excluded"] = (
+            global_length["figures_excluded"] or profile_length["figures_excluded"]
+        )
+        global_length["excluded_components"] = RequirementConfirmationService._stable_union(
+            global_length["excluded_components"],
+            profile_length["excluded_components"],
+        )
+        if (
+            global_length["counting_policy"] == "pending_confirmation"
+            and profile_length["counting_policy"] != "pending_confirmation"
+        ):
+            global_length["counting_policy"] = profile_length["counting_policy"]
+
+        global_structure = spec_data["structure"]
+        profile_structure = selected["structure"]
+        global_structure["required_or_recommended_sections"] = (
+            RequirementConfirmationService._stable_union(
+                global_structure["required_or_recommended_sections"],
+                profile_structure["required_or_recommended_sections"],
+            )
+        )
+        for field in (
+            "must_include_original_analysis",
+            "must_not_list_titles_or_abstracts_only",
+        ):
+            global_structure[field] = global_structure[field] or profile_structure[field]
+
+        global_refs = spec_data["references"]
+        profile_refs = selected["references"]
+        for field in (
+            "minimum_total",
+            "target_total",
+            "minimum_foreign_ratio",
+            "recent_year_window",
+            "max_references_per_citation_cluster",
+        ):
+            if global_refs.get(field) is None and profile_refs.get(field) is not None:
+                global_refs[field] = profile_refs[field]
+        global_refs["target_is_approximate"] = (
+            global_refs["target_is_approximate"] or profile_refs["target_is_approximate"]
+        )
+        for field in (
+            "preferred_source_types",
+            "discouraged_source_types",
+            "style_examples",
+            "required_management_tools",
+            "restriction_rules",
+        ):
+            global_refs[field] = RequirementConfirmationService._stable_union(
+                global_refs[field],
+                profile_refs[field],
+            )
+        if (
+            global_refs["bibliography_style"] == "pending_confirmation"
+            and profile_refs["bibliography_style"] != "pending_confirmation"
+        ):
+            global_refs["bibliography_style"] = profile_refs["bibliography_style"]
+
+    @staticmethod
+    def _stable_union(left: list[Any], right: list[Any]) -> list[Any]:
+        result: list[Any] = []
+        for item in [*left, *right]:
+            if item not in result:
+                result.append(item)
+        return result
