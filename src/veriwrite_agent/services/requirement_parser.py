@@ -117,13 +117,17 @@ class RuleBasedRequirementParser:
             workflow_conditions.append("学院审核未通过后再次提交时必须提供修改说明")
 
         deliverable_candidates = (
-            "研究方向文献综述说明",
             "课程论文封面",
             "考试成绩登记表",
             "文献综述正文",
             "参考文献",
         )
         deliverables = [item for item in deliverable_candidates if item in normalized]
+        if (
+            "研究方向文献综述说明" in normalized
+            or "《研究方向文献综述》说明" in normalized
+        ):
+            deliverables.insert(0, "研究方向文献综述说明")
 
         theme_candidates = ("人工智能", "新一代信息技术", "专业领域", "多学科交叉")
         themes = [item for item in theme_candidates if item in normalized]
@@ -152,7 +156,10 @@ class RuleBasedRequirementParser:
 
         return RequirementSpec(
             document_type="research_direction_literature_review",
-            institution="中国地质大学未来技术学院" if "未来技术学院" in normalized else None,
+            institution="中国地质大学" if "中国地质大学" in normalized else None,
+            school_or_department=(
+                "未来技术学院" if "未来技术学院" in normalized else None
+            ),
             course_name=(
                 "研究方向文献综述与论文写作（硕士）"
                 if "研究方向文献综述与论文写作" in normalized
@@ -233,4 +240,3 @@ class RuleBasedRequirementParser:
             return None
         evidence.append(SourceEvidence(field=field, source_text=match.group(0)))
         return int(match.group(1))
-

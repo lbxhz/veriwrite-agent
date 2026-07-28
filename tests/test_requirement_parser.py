@@ -45,3 +45,60 @@ def test_keeps_source_evidence_for_audit(parsed_spec) -> None:
     assert "references.minimum_total" in evidence_fields
     assert "references.minimum_foreign_ratio" in evidence_fields
 
+
+def test_separates_institution_from_school() -> None:
+    result = RuleBasedRequirementParser().parse(
+        "中国地质大学未来技术学院要求提交研究方向文献综述。"
+    )
+
+    assert result.institution == "中国地质大学"
+    assert result.school_or_department == "未来技术学院"
+
+
+def test_detects_bracketed_review_instructions_as_a_deliverable() -> None:
+    result = RuleBasedRequirementParser().parse(
+        "基本格式：《研究方向文献综述》说明+课程论文封面。"
+    )
+
+    assert "研究方向文献综述说明" in result.deliverables
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "minimum_chars", "minimum_references", "topic"),
+    [
+        (
+            "foreign_ratio_review.txt",
+            8000,
+            30,
+            "人工智能辅助地质灾害识别综述",
+        ),
+        (
+            "specified_sections_review.txt",
+            12000,
+            40,
+            "多源遥感数据融合方法比较",
+        ),
+        (
+            "figures_and_format_review.txt",
+            10000,
+            35,
+            "遥感图像变化检测技术",
+        ),
+        ("ambiguous_length_review.txt", 12000, 25, None),
+    ],
+)
+def test_parses_additional_gold_fixtures(
+    fixture_name: str,
+    minimum_chars: int,
+    minimum_references: int,
+    topic: str | None,
+) -> None:
+    fixture = Path(__file__).parent / "fixtures" / fixture_name
+
+    result = RuleBasedRequirementParser().parse(
+        fixture.read_text(encoding="utf-8")
+    )
+
+    assert result.length.minimum_chars == minimum_chars
+    assert result.references.minimum_total == minimum_references
+    assert result.topic == topic

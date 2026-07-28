@@ -1,0 +1,12 @@
+{
+  "confirmed_by": "student",
+  "field_updates": {
+    "topic": "人工智能驱动的遥感变化检测研究综述",
+    "references.bibliography_style": "GB/T 7714-2015",
+    "length.counting_policy": "chinese_chars_and_english_words"
+  },
+  "acknowledged_issue_ids": [
+    "source_ambiguity:0"
+  ],
+  "note": "根据课程文件和教师补充说明确认"
+}
