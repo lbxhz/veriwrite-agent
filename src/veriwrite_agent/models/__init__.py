@@ -1,5 +1,13 @@
 """Pydantic data contracts used across VeriWrite."""
 
+from veriwrite_agent.models.literature_discovery import (
+    CandidateDecision,
+    JournalRankingLookup,
+    JournalRankingRecord,
+    LiteratureCandidate,
+    LiteratureDiscoveryResult,
+    LiteratureSearchPlan,
+)
 from veriwrite_agent.models.requirement_workflow import (
     CompletenessIssue,
     CompletenessReport,
@@ -26,11 +34,17 @@ from veriwrite_agent.models.requirements import (
 
 __all__ = [
     "AIUsagePolicy",
+    "CandidateDecision",
     "CompletenessIssue",
     "CompletenessReport",
     "ConfirmedRequirementSpec",
     "FormattingRequirement",
+    "JournalRankingLookup",
+    "JournalRankingRecord",
     "LengthRequirement",
+    "LiteratureCandidate",
+    "LiteratureDiscoveryResult",
+    "LiteratureSearchPlan",
     "PolicyRule",
     "ParserRun",
     "ReconciliationResult",

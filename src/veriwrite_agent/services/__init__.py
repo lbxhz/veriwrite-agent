@@ -4,6 +4,13 @@ from veriwrite_agent.services.llm_requirement_parser import (
     LLMOutputValidationError,
     LLMRequirementParser,
 )
+from veriwrite_agent.services.literature_discovery import (
+    LiteratureDiscoveryService,
+)
+from veriwrite_agent.services.literature_keyword_planner import (
+    KeywordPlanningError,
+    LiteratureKeywordPlanner,
+)
 from veriwrite_agent.services.requirement_completeness import (
     RequirementCompletenessChecker,
 )
@@ -29,6 +36,9 @@ from veriwrite_agent.services.requirement_review_renderer import (
 __all__ = [
     "LLMOutputValidationError",
     "LLMRequirementParser",
+    "KeywordPlanningError",
+    "LiteratureDiscoveryService",
+    "LiteratureKeywordPlanner",
     "RequirementCompletenessChecker",
     "RequirementConfirmationError",
     "RequirementConfirmationService",
