@@ -1,0 +1,393 @@
+{
+  "search_diagnostics": {
+    "scanned_count": 246,
+    "duplicate_count": 7,
+    "prefilter_eligible_count": 50,
+    "prefilter_excluded_count": 196
+  },
+  "papers": [
+    {
+      "doi": "10.1016/j.atmosres.2021.105969",
+      "title": "Diffuse light around cities: New perspectives in satellite remote sensing of nighttime aerosols",
+      "authors": [
+        "Kocifaj, Miroslav",
+        "Bará, Salvador"
+      ],
+      "year": 2022,
+      "journal": "Atmospheric Research",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0169809521005251",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2023.119584",
+      "title": "Mineral dust aerosols over the Himalayas from polarization-resolved satellite lidar observations",
+      "authors": [
+        "Lakshmi, N.B.",
+        "Babu, S. Suresh",
+        "Nair, Vijayakumar S."
+      ],
+      "year": 2023,
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231023000109",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1029/2024jd042416",
+      "title": "Validation of Aerosol Optical Depth Retrieved From CALIPSO Lidar Ocean Surface Backscatter",
+      "authors": [
+        "Thorsen, Tyler J.",
+        "Ryan, Robert A.",
+        "Vaughan, Mark A."
+      ],
+      "year": 2025,
+      "journal": "Journal of Geophysical Research: Atmospheres",
+      "publisher": "American Geophysical Union (AGU)",
+      "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2024JD042416",
+      "landing_warning": [
+        "landing_page_unavailable"
+      ],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T1",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.5194/amt-19-421-2026",
+      "title": "Retrieval of aerosol composition from spectral aerosol optical depth and optical properties using a machine learning approach",
+      "authors": [
+        "Ji, Denghui",
+        "Sun, Xiaoyu",
+        "Ritter, Christoph",
+        "Notholt, Justus"
+      ],
+      "year": 2026,
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/19/421/2026/",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2025.121760",
+      "title": "Aerosol optical depth in East Asia from VIIRS, MODIS, and MISR: Evaluation, variability, and meteorological associations",
+      "authors": [
+        "Gong, Jianming",
+        "Xu, Xiaofeng",
+        "Xiong, Zixu",
+        "Zhang, Huiling"
+      ],
+      "year": 2026,
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231025007356",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": false
+    },
+    {
+      "doi": "10.3390/atmos15040396",
+      "title": "Variability of Aerosol Optical Depth and Altitude for Key Aerosol Types over Southern West Africa via CALIPSO/CALIOP Observations",
+      "authors": [
+        "Niamien, Adou F.",
+        "Léon, Jean-François",
+        "Adon, Marcellin",
+        "Rajot, Jean-Louis",
+        "Feron, Anaïs",
+        "Yoboué, Véronique"
+      ],
+      "year": 2024,
+      "journal": "Atmosphere",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2073-4433/15/4/396",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T3",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.3390/atmos13010101",
+      "title": "Deep Neural Networks for Aerosol Optical Depth Retrieval",
+      "authors": [
+        "Zbizika, Renee",
+        "Pakszys, Paulina",
+        "Zielinski, Tymon"
+      ],
+      "year": 2022,
+      "journal": "Atmosphere",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2073-4433/13/1/101",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T3",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.3390/atmos13060939",
+      "title": "Spatiotemporal Analysis of MODIS Aerosol Optical Depth Data in the Philippines from 2010 to 2020",
+      "authors": [
+        "Caido, Nadine Grace",
+        "Ong, Prane Mariel",
+        "Rempillo, Ofelia",
+        "Galvez, Maria Cecilia",
+        "Vallar, Edgar"
+      ],
+      "year": 2022,
+      "journal": "Atmosphere",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2073-4433/13/6/939",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T3",
+      "title_topic_signal": false
+    },
+    {
+      "doi": "10.3390/atmos15121476",
+      "title": "The Aerosol Optical Depth Retrieval from Wide-Swath Imaging of DaQi-1 over Beijing",
+      "authors": [
+        "Wang, Zhongting",
+        "Zhang, Ruijie",
+        "Chen, Ruizhi",
+        "Chen, Hui"
+      ],
+      "year": 2024,
+      "journal": "Atmosphere",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2073-4433/15/12/1476",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T3",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2025.121730",
+      "title": "Retrieval of aerosol optical depth from INSAT-3DR for accurate geostationary monitoring of regional and temporal aerosol dynamics",
+      "authors": [
+        "Tandule, Chakradhar Rao",
+        "Gogoi, Mukunda M.",
+        "Gouda, Shiba Shankar",
+        "Suresh Babu, S."
+      ],
+      "year": 2026,
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231025007058",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1029/2025jd044082",
+      "title": "TEMPO Aerosol Optical Depth and Aerosol Layer Height Retrieval Algorithm",
+      "authors": [
+        "Zhang, Hai",
+        "Kondragunta, Shobha",
+        "Ciren, Pubu"
+      ],
+      "year": 2025,
+      "journal": "Journal of Geophysical Research: Atmospheres",
+      "publisher": "American Geophysical Union (AGU)",
+      "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2025JD044082",
+      "landing_warning": [
+        "landing_page_unavailable"
+      ],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T1",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2022.118970",
+      "title": "Evaluation of the MODIS Collection 6.1 3 km aerosol optical depth product over China",
+      "authors": [
+        "Zhang, Ming",
+        "Zhang, Lei",
+        "He, Qingqing",
+        "Yuan, Yanbin"
+      ],
+      "year": 2022,
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231022000358",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": false
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2023.120130",
+      "title": "Evaluation and comparison of MODIS aerosol optical depth retrieval algorithms over Brazil",
+      "authors": [
+        "Rudke, Anderson Paulo",
+        "Martins, Jorge Alberto",
+        "Martins, Leila Droprinchinski",
+        "Vieira, Carolina Letícia Zilli",
+        "Li, Longxiang",
+        "Assunção da Silva, Carlos Fabricio",
+        "dos Santos, Alex Mota",
+        "Koutrakis, Petros",
+        "de Almeida Albuquerque, Taciana Toledo"
+      ],
+      "year": 2023,
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231023005563",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.3390/atmos14091400",
+      "title": "Aerosol Optical Depth Retrieval for Sentinel-2 Based on Convolutional Neural Network Method",
+      "authors": [
+        "Jiang, Jie",
+        "Liu, Jiaxin",
+        "Jiao, Donglai"
+      ],
+      "year": 2023,
+      "journal": "Atmosphere",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2073-4433/14/9/1400",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T3",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.3390/atmos15010006",
+      "title": "Retrieval of Aerosol Optical Depth and FMF over East Asia from Directional Intensity and Polarization Measurements of PARASOL",
+      "authors": [
+        "Wang, Shupeng",
+        "Fang, Li",
+        "Gong, Weishu",
+        "Wang, Weihe",
+        "Tang, Shihao"
+      ],
+      "year": 2023,
+      "journal": "Atmosphere",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2073-4433/15/1/6",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T3",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.5194/amt-18-7651-2025",
+      "title": "Retrieval of aerosol properties from aerosol optical depth measurements with high temporal resolution and spectral range",
+      "authors": [
+        "Karanikolas, Angelos",
+        "Torres, Benjamin",
+        "Momoi, Masahiro",
+        "Herreras Giralda, Marcos",
+        "Kouremeti, Natalia",
+        "Gröbner, Julian",
+        "Doppler, Lionel",
+        "Kazadzis, Stelios"
+      ],
+      "year": 2025,
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/18/7651/2025/",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.5194/amt-19-4669-2026",
+      "title": "Vertical profiles of aerosol chemical species concentration retrieved through synergy of spaceborne lidar and polarimeter observations",
+      "authors": [
+        "Merdji, Abou Bakr",
+        "Cuesta, Juan",
+        "Qayyum, Fazzal",
+        "Lopatin, Anton",
+        "Dubovik, Oleg",
+        "Piyush, Durgesh Nandan",
+        "El Amraoui, Laaziz",
+        "Di Girolamo, Paolo",
+        "Trepte, Charles R."
+      ],
+      "year": 2026,
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/19/4669/2026/",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1029/2024jd040871",
+      "title": "Assessments of Arctic Cloud Vertical Structure From AIRS Using Radar‐Lidar Observations",
+      "authors": [
+        "Wang, Xi",
+        "Liu, Jian"
+      ],
+      "year": 2024,
+      "journal": "Journal of Geophysical Research: Atmospheres",
+      "publisher": "American Geophysical Union (AGU)",
+      "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2024JD040871",
+      "landing_warning": [
+        "landing_page_unavailable"
+      ],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T1",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.1016/j.atmosres.2024.107488",
+      "title": "A case study of aircraft observations of ice cloud microphysical properties over the North China Plain: Vertical distribution, vertical airflow and aerosol–cloud effects",
+      "authors": [
+        "Ke, Yue",
+        "Wang, Honglei",
+        "Yang, Yang",
+        "Cui, Yi",
+        "Shen, Lijuan",
+        "Wu, Zihao",
+        "Liu, Sihan",
+        "Zhao, Tianliang"
+      ],
+      "year": 2024,
+      "journal": "Atmospheric Research",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0169809524002709",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    },
+    {
+      "doi": "10.5194/amt-18-5841-2025",
+      "title": "A new technique to retrieve aerosol vertical profiles using micropulse lidar and ground-based aerosol measurements",
+      "authors": [
+        "Chen, Bo",
+        "Thompson, Seth A.",
+        "Matthews, Brianna H.",
+        "Sharma, Milind",
+        "Li, Ron",
+        "Nowotarski, Christopher J.",
+        "Rapp, Anita D.",
+        "Brooks, Sarah D."
+      ],
+      "year": 2025,
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/18/5841/2025/",
+      "landing_warning": [],
+      "cug_discipline": "大气科学",
+      "cug_tier": "T2",
+      "title_topic_signal": true
+    }
+  ]
+}

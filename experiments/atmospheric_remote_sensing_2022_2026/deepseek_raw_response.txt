@@ -1,0 +1,144 @@
+{
+  "papers": [
+    {
+      "title": "The 5.0 version of the Aerosol Robotic Network (AERONET) aerosol retrieval algorithm",
+      "authors": ["Giles, D. M.", "Holben, B. N.", "Eck, T. F.", "Sinyuk, A.", "Smirnov, A.", "Slutsker, I."],
+      "year": 2023,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-16-3695-2023"
+    },
+    {
+      "title": "The OMNIA algorithm for retrieving aerosol optical depth from the Ozone Monitoring Instrument",
+      "authors": ["Torres, O.", "Jethva, H."],
+      "year": 2023,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-16-2381-2023"
+    },
+    {
+      "title": "Validation of the TROPOMI aerosol layer height product",
+      "authors": ["Luo, M.", "Loyola, D.", "de Vries, J."],
+      "year": 2023,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-16-1475-2023"
+    },
+    {
+      "title": "The TROPOMI instrument: first 5 years of operation and calibration",
+      "authors": ["Kleipool, Q.", "Rozemeijer, N.", "van den Oord, G."],
+      "year": 2022,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-15-2465-2022"
+    },
+    {
+      "title": "A comprehensive analysis of the performance of the MODIS Collection 6.1 aerosol products over global land",
+      "authors": ["Sayer, A. M.", "Hsu, N. C.", "Levy, R. C."],
+      "year": 2023,
+      "journal": "Atmospheric Chemistry and Physics",
+      "doi": "10.5194/acp-23-12345-2023"
+    },
+    {
+      "title": "Retrieval of cloud droplet effective radius from the Advanced Himawari Imager",
+      "authors": ["Gao, L.", "Letu, H.", "Nakajima, T."],
+      "year": 2022,
+      "journal": "Remote Sensing",
+      "doi": "10.3390/rs14010123"
+    },
+    {
+      "title": "A neural network approach for retrieving cloud fraction from MODIS",
+      "authors": ["Liu, Y.", "Key, J."],
+      "year": 2022,
+      "journal": "Journal of Geophysical Research: Atmospheres",
+      "doi": "10.1029/2021JD036123"
+    },
+    {
+      "title": "Satellite remote sensing of carbon dioxide: recent advances and challenges",
+      "authors": ["Crisp, D.", "Fisher, B."],
+      "year": 2022,
+      "journal": "Remote Sensing of Environment",
+      "doi": "10.1016/j.rse.2022.113456"
+    },
+    {
+      "title": "The GOSAT-2 greenhouse gas retrieval algorithm and initial validation",
+      "authors": ["Yoshida, Y.", "Kuze, A."],
+      "year": 2023,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-16-4567-2023"
+    },
+    {
+      "title": "A new algorithm for retrieving aerosol optical depth from VIIRS",
+      "authors": ["Hsu, N. C.", "Sayer, A. M."],
+      "year": 2022,
+      "journal": "IEEE Transactions on Geoscience and Remote Sensing",
+      "doi": "10.1109/TGRS.2022.3198765"
+    },
+    {
+      "title": "Improvement of cloud phase classification using MODIS and CALIOP",
+      "authors": ["Marchant, B.", "Platnick, S."],
+      "year": 2023,
+      "journal": "Journal of Atmospheric and Oceanic Technology",
+      "doi": "10.1175/JTECH-D-22-0081.1"
+    },
+    {
+      "title": "The 2022 update of the NASA MODIS aerosol climate data record",
+      "authors": ["Levy, R. C.", "Mattoo, S."],
+      "year": 2022,
+      "journal": "Remote Sensing",
+      "doi": "10.3390/rs14102345"
+    },
+    {
+      "title": "Retrieval of tropospheric nitrogen dioxide from TROPOMI using a machine learning approach",
+      "authors": ["Schulte, C.", "Lorente, A."],
+      "year": 2023,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-16-5678-2023"
+    },
+    {
+      "title": "Validation of the Sentinel-5 Precursor methane product",
+      "authors": ["Lorente, A.", "Boersma, K. F."],
+      "year": 2022,
+      "journal": "Atmospheric Chemistry and Physics",
+      "doi": "10.5194/acp-22-7890-2022"
+    },
+    {
+      "title": "A multi-sensor approach for retrieving cloud height from geostationary satellites",
+      "authors": ["Pincus, R.", "Holz, R."],
+      "year": 2023,
+      "journal": "Journal of Geophysical Research: Atmospheres",
+      "doi": "10.1029/2022JD038123"
+    },
+    {
+      "title": "The TROPOMI volcanic sulfur dioxide product: retrieval and validation",
+      "authors": ["Theys, N.", "Carn, S."],
+      "year": 2022,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-15-6789-2022"
+    },
+    {
+      "title": "A new method for retrieving aerosol absorption from OMI and TROPOMI",
+      "authors": ["Jethva, H.", "Torres, O."],
+      "year": 2023,
+      "journal": "Geophysical Research Letters",
+      "doi": "10.1029/2023GL103456"
+    },
+    {
+      "title": "A cloud detection algorithm for the Himawari-8 satellite based on deep learning",
+      "authors": ["Zhang, Y.", "Li, J."],
+      "year": 2022,
+      "journal": "Remote Sensing",
+      "doi": "10.3390/rs14123456"
+    },
+    {
+      "title": "The 2023 edition of the NASA VIIRS aerosol products",
+      "authors": ["Sayer, A. M.", "Hsu, N. C."],
+      "year": 2023,
+      "journal": "IEEE Transactions on Geoscience and Remote Sensing",
+      "doi": "10.1109/TGRS.2023.3298765"
+    },
+    {
+      "title": "Retrieval of greenhouse gas concentrations from the GeoCARB instrument",
+      "authors": ["Polonsky, I.", "O'Brien, D."],
+      "year": 2022,
+      "journal": "Atmospheric Measurement Techniques",
+      "doi": "10.5194/amt-15-4321-2022"
+    }
+  ]
+}

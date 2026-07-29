@@ -1,0 +1,31 @@
+{
+  "run_at": "2026-07-29T13:15:37.463974+00:00",
+  "model": "deepseek-v4-flash",
+  "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量",
+  "year_range": [
+    2022,
+    2026
+  ],
+  "target_count": 20,
+  "agent_system": {
+    "discipline": "大气科学",
+    "scanned_count": 246,
+    "verified_output_count": 20,
+    "doi_verified_count": 20,
+    "title_topic_signal_count": 17,
+    "landing_warning_count": 3
+  },
+  "direct_deepseek": {
+    "claimed_count": 20,
+    "unique_syntactic_doi_count": 20,
+    "format_repair_used": false,
+    "outcome_counts": {
+      "doi_not_verified": 13,
+      "identity_hallucination": 7
+    },
+    "doi_verified_count": 7,
+    "fully_correct_count": 0,
+    "within_year_range_count": 6,
+    "title_topic_signal_count": 1
+  }
+}

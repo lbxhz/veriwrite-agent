@@ -1,0 +1,653 @@
+{
+  "repair_used": false,
+  "papers": [
+    {
+      "claim": {
+        "title": "The 5.0 version of the Aerosol Robotic Network (AERONET) aerosol retrieval algorithm",
+        "authors": [
+          "Giles, D. M.",
+          "Holben, B. N.",
+          "Eck, T. F.",
+          "Sinyuk, A.",
+          "Smirnov, A.",
+          "Slutsker, I."
+        ],
+        "year": 2023,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-16-3695-2023"
+      },
+      "canonical_doi": "10.5194/amt-16-3695-2023",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "The OMNIA algorithm for retrieving aerosol optical depth from the Ozone Monitoring Instrument",
+        "authors": [
+          "Torres, O.",
+          "Jethva, H."
+        ],
+        "year": 2023,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-16-2381-2023"
+      },
+      "canonical_doi": "10.5194/amt-16-2381-2023",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.5194/amt-16-2381-2023",
+        "title": "Calibrating radar wind profiler reflectivity factor using surface disdrometer observations",
+        "authors": [
+          "Williams, Christopher R.",
+          "Barrio, Joshua",
+          "Johnston, Paul E.",
+          "Muradyan, Paytsar",
+          "Giangrande, Scott E."
+        ],
+        "year": 2023,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "url": "http://dx.doi.org/10.5194/amt-16-2381-2023",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": true,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": true,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Validation of the TROPOMI aerosol layer height product",
+        "authors": [
+          "Luo, M.",
+          "Loyola, D.",
+          "de Vries, J."
+        ],
+        "year": 2023,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-16-1475-2023"
+      },
+      "canonical_doi": "10.5194/amt-16-1475-2023",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "The TROPOMI instrument: first 5 years of operation and calibration",
+        "authors": [
+          "Kleipool, Q.",
+          "Rozemeijer, N.",
+          "van den Oord, G."
+        ],
+        "year": 2022,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-15-2465-2022"
+      },
+      "canonical_doi": "10.5194/amt-15-2465-2022",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.5194/amt-15-2465-2022",
+        "title": "Retrieval of UVB aerosol extinction profiles from the ground-based Langley Mobile Ozone Lidar (LMOL) system",
+        "authors": [
+          "Lei, Liqiao",
+          "Berkoff, Timothy A.",
+          "Gronoff, Guillaume",
+          "Su, Jia",
+          "Nehrir, Amin R.",
+          "Wu, Yonghua",
+          "Moshary, Fred",
+          "Kuang, Shi"
+        ],
+        "year": 2022,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "url": "http://dx.doi.org/10.5194/amt-15-2465-2022",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": true,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": true,
+      "title_topic_signal": true
+    },
+    {
+      "claim": {
+        "title": "A comprehensive analysis of the performance of the MODIS Collection 6.1 aerosol products over global land",
+        "authors": [
+          "Sayer, A. M.",
+          "Hsu, N. C.",
+          "Levy, R. C."
+        ],
+        "year": 2023,
+        "journal": "Atmospheric Chemistry and Physics",
+        "doi": "10.5194/acp-23-12345-2023"
+      },
+      "canonical_doi": "10.5194/acp-23-12345-2023",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Retrieval of cloud droplet effective radius from the Advanced Himawari Imager",
+        "authors": [
+          "Gao, L.",
+          "Letu, H.",
+          "Nakajima, T."
+        ],
+        "year": 2022,
+        "journal": "Remote Sensing",
+        "doi": "10.3390/rs14010123"
+      },
+      "canonical_doi": "10.3390/rs14010123",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.3390/rs14010123",
+        "title": "GMT-WGAN: An Adversarial Sample Expansion Method for Ground Moving Targets Classification",
+        "authors": [
+          "Yao, Xin",
+          "Shi, Xiaoran",
+          "Li, Yaxin",
+          "Wang, Li",
+          "Wang, Han",
+          "Ren, Shijie",
+          "Zhou, Feng"
+        ],
+        "year": 2021,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "url": "http://dx.doi.org/10.3390/rs14010123",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": false,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "A neural network approach for retrieving cloud fraction from MODIS",
+        "authors": [
+          "Liu, Y.",
+          "Key, J."
+        ],
+        "year": 2022,
+        "journal": "Journal of Geophysical Research: Atmospheres",
+        "doi": "10.1029/2021JD036123"
+      },
+      "canonical_doi": "10.1029/2021jd036123",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Satellite remote sensing of carbon dioxide: recent advances and challenges",
+        "authors": [
+          "Crisp, D.",
+          "Fisher, B."
+        ],
+        "year": 2022,
+        "journal": "Remote Sensing of Environment",
+        "doi": "10.1016/j.rse.2022.113456"
+      },
+      "canonical_doi": "10.1016/j.rse.2022.113456",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "The GOSAT-2 greenhouse gas retrieval algorithm and initial validation",
+        "authors": [
+          "Yoshida, Y.",
+          "Kuze, A."
+        ],
+        "year": 2023,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-16-4567-2023"
+      },
+      "canonical_doi": "10.5194/amt-16-4567-2023",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "A new algorithm for retrieving aerosol optical depth from VIIRS",
+        "authors": [
+          "Hsu, N. C.",
+          "Sayer, A. M."
+        ],
+        "year": 2022,
+        "journal": "IEEE Transactions on Geoscience and Remote Sensing",
+        "doi": "10.1109/TGRS.2022.3198765"
+      },
+      "canonical_doi": "10.1109/tgrs.2022.3198765",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Improvement of cloud phase classification using MODIS and CALIOP",
+        "authors": [
+          "Marchant, B.",
+          "Platnick, S."
+        ],
+        "year": 2023,
+        "journal": "Journal of Atmospheric and Oceanic Technology",
+        "doi": "10.1175/JTECH-D-22-0081.1"
+      },
+      "canonical_doi": "10.1175/jtech-d-22-0081.1",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.1175/jtech-d-22-0081.1",
+        "title": "Understanding Differences in Sea Surface Temperature Intercomparisons",
+        "authors": [
+          "Huang, Boyin",
+          "Yin, Xungang",
+          "Carton, James A.",
+          "Chen, Ligang",
+          "Graham, Garrett",
+          "Liu, Chunying",
+          "Smith, Thomas",
+          "Zhang, Huai-Min"
+        ],
+        "year": 2023,
+        "journal_title": "Journal of Atmospheric and Oceanic Technology",
+        "publisher": "American Meteorological Society",
+        "url": "http://dx.doi.org/10.1175/jtech-d-22-0081.1",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": true,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": true,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "The 2022 update of the NASA MODIS aerosol climate data record",
+        "authors": [
+          "Levy, R. C.",
+          "Mattoo, S."
+        ],
+        "year": 2022,
+        "journal": "Remote Sensing",
+        "doi": "10.3390/rs14102345"
+      },
+      "canonical_doi": "10.3390/rs14102345",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.3390/rs14102345",
+        "title": "Monitoring Sand Spit Variability Using Sentinel-2 and Google Earth Engine in a Mediterranean Estuary",
+        "authors": [
+          "Roca, Mar",
+          "Navarro, Gabriel",
+          "García-Sanabria, Javier",
+          "Caballero, Isabel"
+        ],
+        "year": 2022,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "url": "http://dx.doi.org/10.3390/rs14102345",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": true,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": true,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Retrieval of tropospheric nitrogen dioxide from TROPOMI using a machine learning approach",
+        "authors": [
+          "Schulte, C.",
+          "Lorente, A."
+        ],
+        "year": 2023,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-16-5678-2023"
+      },
+      "canonical_doi": "10.5194/amt-16-5678-2023",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Validation of the Sentinel-5 Precursor methane product",
+        "authors": [
+          "Lorente, A.",
+          "Boersma, K. F."
+        ],
+        "year": 2022,
+        "journal": "Atmospheric Chemistry and Physics",
+        "doi": "10.5194/acp-22-7890-2022"
+      },
+      "canonical_doi": "10.5194/acp-22-7890-2022",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "A multi-sensor approach for retrieving cloud height from geostationary satellites",
+        "authors": [
+          "Pincus, R.",
+          "Holz, R."
+        ],
+        "year": 2023,
+        "journal": "Journal of Geophysical Research: Atmospheres",
+        "doi": "10.1029/2022JD038123"
+      },
+      "canonical_doi": "10.1029/2022jd038123",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "The TROPOMI volcanic sulfur dioxide product: retrieval and validation",
+        "authors": [
+          "Theys, N.",
+          "Carn, S."
+        ],
+        "year": 2022,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-15-6789-2022"
+      },
+      "canonical_doi": "10.5194/amt-15-6789-2022",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.5194/amt-15-6789-2022",
+        "title": "The DataHawk2 uncrewed aircraft system for atmospheric research",
+        "authors": [
+          "Hamilton, Jonathan",
+          "de Boer, Gijs",
+          "Doddi, Abhiram",
+          "Lawrence, Dale A."
+        ],
+        "year": 2022,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "url": "http://dx.doi.org/10.5194/amt-15-6789-2022",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": true,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": true,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "A new method for retrieving aerosol absorption from OMI and TROPOMI",
+        "authors": [
+          "Jethva, H.",
+          "Torres, O."
+        ],
+        "year": 2023,
+        "journal": "Geophysical Research Letters",
+        "doi": "10.1029/2023GL103456"
+      },
+      "canonical_doi": "10.1029/2023gl103456",
+      "doi_verified": true,
+      "verification_status": "verified",
+      "verification_reasons": [],
+      "authority": {
+        "doi": "10.1029/2023gl103456",
+        "title": "Poynting Fluxes, Field‐Aligned Current Densities, and the Efficiency of the Io‐Jupiter Electrodynamic Interaction",
+        "authors": [
+          "Sulaiman, A. H.",
+          "Szalay, J. R.",
+          "Clark, G.",
+          "Allegrini, F.",
+          "Bagenal, F.",
+          "Brennan, M. J.",
+          "Connerney, J. E. P.",
+          "Hue, V.",
+          "Kurth, W. S.",
+          "Lysak, R. L.",
+          "Nichols, J. D.",
+          "Saur, J.",
+          "Bolton, S. J."
+        ],
+        "year": 2023,
+        "journal_title": "Geophysical Research Letters",
+        "publisher": "American Geophysical Union (AGU)",
+        "url": "http://dx.doi.org/10.1029/2023gl103456",
+        "ris_type": "JOUR"
+      },
+      "field_matches": {
+        "title": false,
+        "authors": false,
+        "year": true,
+        "journal": true
+      },
+      "identity_hallucination": true,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": true,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "A cloud detection algorithm for the Himawari-8 satellite based on deep learning",
+        "authors": [
+          "Zhang, Y.",
+          "Li, J."
+        ],
+        "year": 2022,
+        "journal": "Remote Sensing",
+        "doi": "10.3390/rs14123456"
+      },
+      "canonical_doi": "10.3390/rs14123456",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "The 2023 edition of the NASA VIIRS aerosol products",
+        "authors": [
+          "Sayer, A. M.",
+          "Hsu, N. C."
+        ],
+        "year": 2023,
+        "journal": "IEEE Transactions on Geoscience and Remote Sensing",
+        "doi": "10.1109/TGRS.2023.3298765"
+      },
+      "canonical_doi": "10.1109/tgrs.2023.3298765",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    },
+    {
+      "claim": {
+        "title": "Retrieval of greenhouse gas concentrations from the GeoCARB instrument",
+        "authors": [
+          "Polonsky, I.",
+          "O'Brien, D."
+        ],
+        "year": 2022,
+        "journal": "Atmospheric Measurement Techniques",
+        "doi": "10.5194/amt-15-4321-2022"
+      },
+      "canonical_doi": "10.5194/amt-15-4321-2022",
+      "doi_verified": false,
+      "verification_status": "excluded",
+      "verification_reasons": [
+        "authority_metadata_not_found"
+      ],
+      "authority": null,
+      "field_matches": null,
+      "identity_hallucination": false,
+      "metadata_error": false,
+      "fully_correct": false,
+      "within_year_range": false,
+      "title_topic_signal": false
+    }
+  ]
+}

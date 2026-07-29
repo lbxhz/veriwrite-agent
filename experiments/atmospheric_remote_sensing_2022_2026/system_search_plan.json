@@ -1,0 +1,52 @@
+{
+  "schema_version": "0.2.0",
+  "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量",
+  "discipline": "大气科学",
+  "primary_keywords": [
+    "atmospheric remote sensing",
+    "aerosol",
+    "cloud",
+    "greenhouse gases",
+    "air quality"
+  ],
+  "related_keywords": [
+    "satellite remote sensing",
+    "lidar",
+    "spectral remote sensing",
+    "MODIS",
+    "CALIPSO",
+    "OMI",
+    "TROPOMI",
+    "GOSAT",
+    "OCO-2",
+    "carbon dioxide",
+    "methane",
+    "particulate matter",
+    "PM2.5",
+    "optical depth",
+    "cloud properties"
+  ],
+  "search_queries": [
+    "atmospheric remote sensing of aerosols and clouds using satellite and lidar",
+    "satellite spectral remote sensing for greenhouse gases and air quality",
+    "aerosol optical depth retrieval from MODIS and CALIPSO",
+    "lidar observations of cloud and aerosol vertical profiles",
+    "remote sensing of carbon dioxide and methane from space",
+    "air quality monitoring using satellite remote sensing and ground validation",
+    "cloud property retrievals from passive and active satellite sensors",
+    "spectral remote sensing of atmospheric trace gases and particulate matter"
+  ],
+  "accepted_tiers": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+  ],
+  "year_from": 2022,
+  "year_to": 2026,
+  "work_type": "journal-article",
+  "target_eligible_count": 50,
+  "max_candidates": 300
+}
