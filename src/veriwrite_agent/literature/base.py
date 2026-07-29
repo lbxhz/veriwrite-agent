@@ -10,6 +10,10 @@ from veriwrite_agent.models.literature_discovery import (
     LiteratureCandidate,
     LiteratureSearchPlan,
 )
+from veriwrite_agent.models.literature_verification import (
+    AuthoritativeMetadataEvidence,
+    DoiResolutionEvidence,
+)
 
 
 class LiteratureSearchError(RuntimeError):
@@ -32,3 +36,17 @@ class JournalRankingProvider(Protocol):
 
     def lookup(self, journal_title: str, discipline: str) -> JournalRankingLookup:
         """Return source-backed match, absence, or an internal catalog conflict."""
+
+
+class DoiResolver(Protocol):
+    """Resolve one canonical DOI without exposing an HTTP client."""
+
+    def resolve(self, doi: str) -> DoiResolutionEvidence:
+        """Return the DOI landing-page resolution evidence."""
+
+
+class AuthoritativeMetadataProvider(Protocol):
+    """Fetch registration-authority metadata for one canonical DOI."""
+
+    def fetch(self, doi: str) -> AuthoritativeMetadataEvidence:
+        """Return raw and parsed authority metadata, or an explicit failure."""

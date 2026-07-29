@@ -11,6 +11,9 @@ from veriwrite_agent.services.literature_keyword_planner import (
     KeywordPlanningError,
     LiteratureKeywordPlanner,
 )
+from veriwrite_agent.services.literature_identity_verification import (
+    LiteratureIdentityVerificationService,
+)
 from veriwrite_agent.services.requirement_completeness import (
     RequirementCompletenessChecker,
 )
@@ -38,6 +41,7 @@ __all__ = [
     "LLMRequirementParser",
     "KeywordPlanningError",
     "LiteratureDiscoveryService",
+    "LiteratureIdentityVerificationService",
     "LiteratureKeywordPlanner",
     "RequirementCompletenessChecker",
     "RequirementConfirmationError",

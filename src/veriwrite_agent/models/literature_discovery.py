@@ -14,6 +14,21 @@ RankingLookupStatus = Literal["matched", "not_found", "ambiguous"]
 CandidateDecisionStatus = Literal["eligible", "excluded"]
 
 
+def canonicalize_doi(value: str) -> str:
+    """Return the canonical DOI name used as the project-wide identity key."""
+
+    normalized = value.strip()
+    normalized = re.sub(
+        r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    ).lower()
+    if not re.fullmatch(r"10\.\d{4,9}/\S+", normalized):
+        raise ValueError("doi must be a canonical DOI name")
+    return normalized
+
+
 class LiteratureSearchPlan(StrictModel):
     """LLM-produced, contract-validated instructions for deterministic search."""
 
@@ -101,16 +116,7 @@ class LiteratureCandidate(StrictModel):
     @field_validator("doi")
     @classmethod
     def normalize_doi(cls, value: str) -> str:
-        normalized = value.strip()
-        normalized = re.sub(
-            r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)",
-            "",
-            normalized,
-            flags=re.IGNORECASE,
-        ).lower()
-        if not re.fullmatch(r"10\.\d{4,9}/\S+", normalized):
-            raise ValueError("doi must be a canonical DOI name")
-        return normalized
+        return canonicalize_doi(value)
 
     @field_validator(
         "title",
