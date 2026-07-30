@@ -10,6 +10,7 @@ import streamlit as st
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.models.requirement_workflow import (
     RequirementConfirmation,
+    RequirementConflict,
     RequirementReviewPackage,
 )
 from veriwrite_agent.services.requirement_confirmation import (
@@ -437,14 +438,33 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
         conflict_choices: dict[str, tuple[str, str]] = {}
         for index, conflict in enumerate(review.reconciliation.conflicts):
             st.markdown(f"**冲突：`{conflict.field}`**")
+            rule_column, llm_column = st.columns(2)
+            rule_column.caption("规则结果")
+            rule_column.code(
+                json.dumps(
+                    conflict.rule_value,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                language="json",
+            )
+            llm_column.caption("LLM 结果")
+            llm_column.code(
+                json.dumps(
+                    conflict.llm_value,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                language="json",
+            )
             choice = st.selectbox(
                 "处理方式",
-                ["采用规则值", "采用 LLM 值", "采用两边并集", "自定义 JSON"],
-                key=f"choice_{index}_{conflict.field}",
+                conflict_resolution_options(conflict),
+                key=f"choice_v2_{index}_{conflict.field}",
             )
             custom = st.text_area(
                 "自定义 JSON（仅选择“自定义 JSON”时使用）",
-                key=f"custom_{index}_{conflict.field}",
+                key=f"custom_v2_{index}_{conflict.field}",
                 height=80,
             )
             conflict_choices[conflict.field] = (choice, custom)
@@ -542,6 +562,21 @@ def _build_updates(
                 raise ValueError(f"{field} 需要填写自定义 JSON。")
             updates[field] = json.loads(custom)
     return updates
+
+
+def conflict_resolution_options(
+    conflict: RequirementConflict,
+) -> list[str]:
+    """Expose union only when both conflict values are genuine lists."""
+
+    options = ["采用规则值", "采用 LLM 值"]
+    if isinstance(conflict.rule_value, list) and isinstance(
+        conflict.llm_value,
+        list,
+    ):
+        options.append("采用两边并集")
+    options.append("自定义 JSON")
+    return options
 
 
 def _render_downloads(review: RequirementReviewPackage) -> None:

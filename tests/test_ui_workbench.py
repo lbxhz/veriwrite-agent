@@ -4,6 +4,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from veriwrite_agent.llm.fake_client import FakeLLMClient
+from veriwrite_agent.models.requirement_workflow import RequirementConflict
 from veriwrite_agent.services.llm_requirement_parser import LLMRequirementParser
 from veriwrite_agent.services.requirement_parser import RuleBasedRequirementParser
 from veriwrite_agent.services.requirement_pipeline import RequirementReviewPipeline
@@ -14,6 +15,7 @@ from veriwrite_agent.ui.workbench import (
     prepare_review_from_path,
     prepare_review_from_upload,
 )
+from veriwrite_agent.ui.app import conflict_resolution_options
 
 
 @pytest.mark.parametrize(
@@ -83,6 +85,38 @@ def test_diagnostics_explain_llm_contract_failure() -> None:
     assert any("LLMOutputValidationError" in item for item in problems)
     assert any("无法判断双路" in item for item in problems)
     assert not any("双路比较没有发现" in item for item in advantages)
+
+
+def test_scalar_conflict_does_not_offer_invalid_union_operation() -> None:
+    conflict = RequirementConflict(
+        field="course_name",
+        rule_value="研究方向文献综述",
+        llm_value="研究方向文献综述课程",
+        provisional_value="研究方向文献综述",
+        reason="different scalar values",
+    )
+
+    options = conflict_resolution_options(conflict)
+
+    assert options == [
+        "采用规则值",
+        "采用 LLM 值",
+        "自定义 JSON",
+    ]
+
+
+def test_list_conflict_can_offer_stable_union_operation() -> None:
+    conflict = RequirementConflict(
+        field="required_theme_elements",
+        rule_value=["气溶胶"],
+        llm_value=["云"],
+        provisional_value=["气溶胶"],
+        reason="different list values",
+    )
+
+    options = conflict_resolution_options(conflict)
+
+    assert "采用两边并集" in options
 
 
 def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
