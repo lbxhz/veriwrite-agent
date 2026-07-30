@@ -9,6 +9,7 @@ from veriwrite_agent.models.literature_discovery import (
     JournalRankingLookup,
     LiteratureCandidate,
     LiteratureSearchPlan,
+    NorwegianJournalRankingLookup,
 )
 from veriwrite_agent.models.literature_verification import (
     AuthoritativeMetadataEvidence,
@@ -36,6 +37,17 @@ class JournalRankingProvider(Protocol):
 
     def lookup(self, journal_title: str, discipline: str) -> JournalRankingLookup:
         """Return source-backed match, absence, or an internal catalog conflict."""
+
+
+class InternationalJournalRankingProvider(Protocol):
+    """Look up a fixed international classification without a local discipline."""
+
+    def lookup(
+        self,
+        journal_title: str,
+        issns: list[str] | tuple[str, ...] = (),
+    ) -> NorwegianJournalRankingLookup:
+        """Return an ISSN-first international ranking lookup."""
 
 
 class DoiResolver(Protocol):

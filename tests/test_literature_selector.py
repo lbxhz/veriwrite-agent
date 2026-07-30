@@ -2,6 +2,8 @@ from veriwrite_agent.models.literature_discovery import (
     JournalRankingLookup,
     JournalRankingRecord,
     LiteratureCandidate,
+    NorwegianJournalRankingLookup,
+    NorwegianJournalRankingRecord,
 )
 from veriwrite_agent.models.literature_selection import (
     LiteratureRelevanceAssessment,
@@ -56,6 +58,7 @@ def selection_candidate(
     title: str,
     year: int,
     tier: str | None,
+    norwegian_level: int | None = None,
     aerosol_score: float,
     methane_score: float,
 ) -> LiteratureSelectionCandidate:
@@ -118,6 +121,28 @@ def selection_candidate(
         records=ranking_records,
         reason="matched" if tier is not None else "not found",
     )
+    norwegian_records = (
+        [
+            NorwegianJournalRankingRecord(
+                journal_id=f"n-{doi}",
+                original_title="Example Journal",
+                normalized_titles=["EXAMPLE JOURNAL"],
+                print_issn="1234-5679",
+                level=norwegian_level,
+                source_row=2,
+            )
+        ]
+        if norwegian_level is not None
+        else []
+    )
+    norwegian_ranking = NorwegianJournalRankingLookup(
+        status="matched" if norwegian_level is not None else "not_found",
+        query_title="Example Journal",
+        query_issns=[],
+        match_basis="title" if norwegian_level is not None else "none",
+        records=norwegian_records,
+        reason="matched" if norwegian_level is not None else "not found",
+    )
     relevance = LiteratureRelevanceAssessment(
         doi=doi,
         theme_scores=[
@@ -139,6 +164,7 @@ def selection_candidate(
     return LiteratureSelectionCandidate(
         verification=verification,
         ranking=ranking,
+        norwegian_ranking=norwegian_ranking,
         relevance=relevance,
     )
 
@@ -258,6 +284,45 @@ def test_unranked_paper_can_be_selected_but_loses_an_equal_relevance_tie() -> No
     assert aerosol.doi == "10.1000/t6"
     assert methane.cug_tier is None
     assert methane.ranking_status == "not_found"
+
+
+def test_norwegian_level_breaks_ties_between_cug_unranked_papers() -> None:
+    candidates = [
+        selection_candidate(
+            doi="10.1000/norway-1",
+            title="Norwegian level one",
+            year=2026,
+            tier=None,
+            norwegian_level=1,
+            aerosol_score=0.9,
+            methane_score=0.1,
+        ),
+        selection_candidate(
+            doi="10.1000/norway-2",
+            title="Norwegian level two",
+            year=2024,
+            tier=None,
+            norwegian_level=2,
+            aerosol_score=0.9,
+            methane_score=0.1,
+        ),
+        selection_candidate(
+            doi="10.1000/methane",
+            title="Methane",
+            year=2025,
+            tier=None,
+            norwegian_level=1,
+            aerosol_score=0.1,
+            methane_score=0.9,
+        ),
+    ]
+
+    result = BalancedLiteratureSelector().select(blueprint(), candidates)
+
+    aerosol = next(item for item in result.selected if item.theme_id == "aerosol")
+    assert aerosol.doi == "10.1000/norway-2"
+    assert aerosol.norwegian_level == 2
+    assert aerosol.norwegian_match_basis == "title"
 
 
 def test_theme_quotas_prevent_one_topic_from_filling_the_final_pool() -> None:

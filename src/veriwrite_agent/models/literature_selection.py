@@ -12,6 +12,8 @@ from veriwrite_agent.models.literature_discovery import (
     CugTier,
     JournalRankingLookup,
     LiteratureSearchPlan,
+    NorwegianJournalRankingLookup,
+    NorwegianLevel,
     RankingLookupStatus,
     canonicalize_doi,
 )
@@ -172,6 +174,7 @@ class LiteratureSelectionCandidate(StrictModel):
 
     verification: LiteratureVerificationResult
     ranking: JournalRankingLookup
+    norwegian_ranking: NorwegianJournalRankingLookup | None = None
     relevance: LiteratureRelevanceAssessment
 
     @model_validator(mode="after")
@@ -195,6 +198,9 @@ class SelectedLiteratureRecord(StrictModel):
     relevance_score: float = Field(ge=0, le=1)
     cug_tier: CugTier | None = None
     ranking_status: RankingLookupStatus
+    norwegian_level: NorwegianLevel | None = None
+    norwegian_ranking_status: RankingLookupStatus | None = None
+    norwegian_match_basis: Literal["issn", "title", "none"] | None = None
     year: int = Field(ge=1000, le=2100)
     selection_reasons: list[str] = Field(min_length=1)
 
@@ -207,7 +213,7 @@ class SelectedLiteratureRecord(StrictModel):
 class BalancedLiteratureSelection(StrictModel):
     """Balanced final pool plus section-level shortages for the UI."""
 
-    schema_version: Literal["0.2.2"] = "0.2.2"
+    schema_version: Literal["0.2.3"] = "0.2.3"
     blueprint: LiteratureSearchBlueprint
     selected: list[SelectedLiteratureRecord] = Field(default_factory=list)
     shortages: dict[str, int] = Field(default_factory=dict)

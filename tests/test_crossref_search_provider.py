@@ -54,6 +54,7 @@ def payload() -> dict[str, object]:
                     "author": [{"given": "San", "family": "Zhang"}],
                     "published": {"date-parts": [[2025, 3, 1]]},
                     "container-title": ["Remote Sensing of Environment"],
+                    "ISSN": ["0034-4257", "1879-0704"],
                     "publisher": "Example Publisher",
                     "type": "journal-article",
                     "URL": "https://doi.org/10.1000/GeoAI.1",
@@ -84,6 +85,7 @@ def test_maps_crossref_response_and_sends_responsible_request() -> None:
     assert candidates[0].doi == "10.1000/geoai.1"
     assert candidates[0].authors == ["San Zhang"]
     assert candidates[0].year == 2025
+    assert candidates[0].issns == ["0034-4257", "1879-0704"]
     assert candidates[0].abstract == "GeoAI abstract."
     request, timeout = calls[0]
     assert "query.bibliographic=GeoAI+GIS" in request.full_url

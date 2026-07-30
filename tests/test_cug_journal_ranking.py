@@ -62,6 +62,12 @@ def test_title_normalization_ignores_repeated_and_non_breaking_spaces() -> None:
     ) == canonical
 
 
+def test_title_normalization_decodes_html_entities() -> None:
+    assert normalize_journal_title("Air Quality, Atmosphere &amp; Health") == (
+        normalize_journal_title("Air Quality, Atmosphere & Health")
+    )
+
+
 def test_invalid_catalog_columns_fail_early(tmp_path: Path) -> None:
     catalog = tmp_path / "invalid.csv"
     catalog.write_text("journal,level\nExample,T1\n", encoding="utf-8")

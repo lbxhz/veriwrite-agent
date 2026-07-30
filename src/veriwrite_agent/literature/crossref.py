@@ -246,6 +246,12 @@ class CrossrefSearchProvider:
                 if name:
                     authors.append(name)
 
+        issns = [
+            value
+            for value in item.get("ISSN", [])
+            if isinstance(value, str)
+        ] if isinstance(item.get("ISSN"), list) else []
+
         abstract = item.get("abstract")
         if isinstance(abstract, str):
             abstract = re.sub(r"<[^>]+>", " ", abstract)
@@ -260,6 +266,7 @@ class CrossrefSearchProvider:
                 authors=authors,
                 year=CrossrefSearchProvider._publication_year(item),
                 journal_title=journal,
+                issns=issns,
                 publisher=(
                     item.get("publisher")
                     if isinstance(item.get("publisher"), str)

@@ -320,11 +320,28 @@ def _render_literature_result() -> None:
         )
         st.json(selection.shortages)
 
-    unranked = sum(item.cug_tier is None for item in selection.selected)
-    if unranked:
+    cug_unranked = sum(item.cug_tier is None for item in selection.selected)
+    norwegian_fallback = sum(
+        item.cug_tier is None and item.norwegian_level is not None
+        for item in selection.selected
+    )
+    dual_unranked = sum(
+        item.cug_tier is None and item.norwegian_level is None
+        for item in selection.selected
+    )
+    if cug_unranked:
         st.info(
-            f"有 {unranked} 篇真实论文在所选地大学科目录中未取得唯一等级；"
-            "它们没有被误判为虚假，并在同等相关性下置于已分级论文之后。"
+            f"有 {cug_unranked} 篇在所选地大学科目录中未取得唯一等级；"
+            f"其中 {norwegian_fallback} 篇由挪威国家目录2025提供补充分级，"
+            f"仍有 {dual_unranked} 篇在两个目录中均未取得唯一等级。"
+        )
+    norwegian_level_zero = sum(
+        item.norwegian_level == 0 for item in selection.selected
+    )
+    if norwegian_level_zero:
+        st.warning(
+            f"有 {norwegian_level_zero} 篇对应挪威目录 Level 0（2025年未获认可）。"
+            "这不推翻 DOI 真实性，但属于较低的期刊质量偏好。"
         )
     score_counts: dict[float, int] = {}
     for item in selection.selected:
@@ -343,6 +360,12 @@ def _render_literature_result() -> None:
                 "主题": item.theme_id,
                 "年份": item.year,
                 "地大等级": item.cug_tier or "未分级",
+                "挪威2025等级": (
+                    f"Level {item.norwegian_level}"
+                    if item.norwegian_level is not None
+                    else "未分级"
+                ),
+                "挪威匹配依据": item.norwegian_match_basis or "未启用",
                 "相关性": item.relevance_score,
                 "题名": item.title,
                 "DOI": item.doi,
@@ -352,6 +375,11 @@ def _render_literature_result() -> None:
         ],
         width="stretch",
         hide_index=True,
+    )
+    st.caption(
+        "分级解释：地大2023是本地课程偏好；挪威目录2025是独立补充证据，"
+        "Level 2 为较高层级、Level 1 为获认可的基础层级、Level 0 为未获认可。"
+        "两套等级不做伪精确换算。"
     )
 
     with st.expander("查看分主题检索诊断"):

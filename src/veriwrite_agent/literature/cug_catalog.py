@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import re
 import unicodedata
 from collections import defaultdict
@@ -30,6 +31,7 @@ class JournalCatalogError(ValueError):
 def normalize_journal_title(value: str) -> str:
     """Create a conservative title key without guessing journal aliases."""
 
+    value = html.unescape(value)
     normalized = unicodedata.normalize("NFKC", value)
     normalized = normalized.replace("\u00a0", " ")
     normalized = re.sub(r"[‐‑‒–—―]", "-", normalized)

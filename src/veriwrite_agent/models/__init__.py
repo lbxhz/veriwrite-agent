@@ -7,6 +7,8 @@ from veriwrite_agent.models.literature_discovery import (
     LiteratureCandidate,
     LiteratureDiscoveryResult,
     LiteratureSearchPlan,
+    NorwegianJournalRankingLookup,
+    NorwegianJournalRankingRecord,
 )
 from veriwrite_agent.models.literature_selection import (
     BalancedLiteratureSelection,
@@ -75,6 +77,8 @@ __all__ = [
     "LiteratureThemePlan",
     "LiteratureVerificationBatch",
     "LiteratureVerificationResult",
+    "NorwegianJournalRankingLookup",
+    "NorwegianJournalRankingRecord",
     "PolicyRule",
     "ParserRun",
     "ReconciliationResult",

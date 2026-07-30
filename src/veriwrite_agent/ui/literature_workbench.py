@@ -13,6 +13,9 @@ from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.literature.crossref import CrossrefSearchProvider
 from veriwrite_agent.literature.cug_catalog import CugJournalRankingProvider
 from veriwrite_agent.literature.doi import DoiOrgResolver, DoiRisMetadataProvider
+from veriwrite_agent.literature.norwegian_register import (
+    NorwegianRegisterRankingProvider,
+)
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.models.literature_discovery import CandidateDecision
 from veriwrite_agent.models.literature_selection import (
@@ -76,7 +79,7 @@ class LiteratureWorkbenchResult:
 
     def result_payload(self) -> dict[str, object]:
         return {
-            "schema_version": "0.2.2-console",
+            "schema_version": "0.2.3-console",
             "run_id": self.run_id,
             "run_directory": str(self.run_dir),
             "prefiltered_count": self.prefiltered_count,
@@ -123,6 +126,7 @@ class LiteratureWorkbench:
         settings = LLMSettings()
         llm = DeepSeekClient(settings)
         ranking = CugJournalRankingProvider.from_default_catalog()
+        norwegian_ranking = NorwegianRegisterRankingProvider.from_default_catalog()
         return cls(
             planner=LiteratureBlueprintPlanner(
                 llm,
@@ -134,6 +138,7 @@ class LiteratureWorkbench:
             discovery_service=LiteratureDiscoveryService(
                 CrossrefSearchProvider(),
                 ranking,
+                norwegian_ranking,
             ),
             verification_service=LiteratureIdentityVerificationService(
                 DoiOrgResolver(max_attempts=doi_max_attempts),
@@ -188,6 +193,9 @@ class LiteratureWorkbench:
             LiteratureSelectionCandidate(
                 verification=verification,
                 ranking=decisions_by_doi[verification.candidate.doi].ranking,
+                norwegian_ranking=(
+                    decisions_by_doi[verification.candidate.doi].norwegian_ranking
+                ),
                 relevance=relevance_by_doi[verification.candidate.doi],
             )
             for verification in verifications.verified_records
@@ -401,7 +409,10 @@ def blueprint_run_id(
     """Stable cache identity for the exact blueprint, excluding audit timestamps."""
 
     canonical = json.dumps(
-        confirmed.blueprint.model_dump(mode="json"),
+        {
+            "pipeline_version": "0.2.3-norwegian-register-2025",
+            "blueprint": confirmed.blueprint.model_dump(mode="json"),
+        },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

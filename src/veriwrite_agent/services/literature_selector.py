@@ -18,6 +18,7 @@ TIER_RANK: dict[CugTier, int] = {
     "T5": 5,
     "T6": 6,
 }
+NORWEGIAN_LEVEL_RANK = {2: 1, 1: 2, 0: 3}
 
 
 class BalancedLiteratureSelector:
@@ -101,9 +102,14 @@ class BalancedLiteratureSelector:
         self,
         candidate: LiteratureSelectionCandidate,
         theme_id: str,
-    ) -> tuple[float, int, int, str]:
+    ) -> tuple[float, int, int, int, str]:
         score = self._score(candidate, theme_id)
         tier = candidate.ranking.resolved_tier
+        norwegian_level = (
+            candidate.norwegian_ranking.resolved_level
+            if candidate.norwegian_ranking is not None
+            else None
+        )
         metadata = candidate.verification.authority
         if metadata is None or metadata.metadata is None:
             raise ValueError("selection candidate evidence is incomplete")
@@ -113,6 +119,11 @@ class BalancedLiteratureSelector:
         return (
             -score,
             TIER_RANK[tier] if tier is not None else 7,
+            (
+                NORWEGIAN_LEVEL_RANK[norwegian_level]
+                if norwegian_level is not None
+                else 4
+            ),
             -year,
             candidate.verification.candidate.doi,
         )
@@ -124,6 +135,12 @@ class BalancedLiteratureSelector:
     ) -> SelectedLiteratureRecord:
         score = self._score(candidate, theme_id)
         tier = candidate.ranking.resolved_tier
+        norwegian_ranking = candidate.norwegian_ranking
+        norwegian_level = (
+            norwegian_ranking.resolved_level
+            if norwegian_ranking is not None
+            else None
+        )
         authority = candidate.verification.authority
         if authority is None or authority.metadata is None:
             raise ValueError("selection candidate evidence is incomplete")
@@ -142,6 +159,11 @@ class BalancedLiteratureSelector:
                 "未据此判假，作为同等相关性下的末位偏好"
             )
         )
+        norwegian_reason = (
+            f"挪威国家学术出版渠道目录2025等级：Level {norwegian_level}"
+            if norwegian_level is not None
+            else "挪威国家学术出版渠道目录2025未取得唯一等级"
+        )
         return SelectedLiteratureRecord(
             doi=metadata.doi,
             title=metadata.title,
@@ -149,11 +171,23 @@ class BalancedLiteratureSelector:
             relevance_score=score,
             cug_tier=tier,
             ranking_status=candidate.ranking.status,
+            norwegian_level=norwegian_level,
+            norwegian_ranking_status=(
+                norwegian_ranking.status
+                if norwegian_ranking is not None
+                else None
+            ),
+            norwegian_match_basis=(
+                norwegian_ranking.match_basis
+                if norwegian_ranking is not None
+                else None
+            ),
             year=metadata.year,
             selection_reasons=[
                 "通过Crossref RIS与DOI真实性验证",
                 f"与章节主题相关性得分{score:.2f}",
                 ranking_reason,
+                norwegian_reason,
                 f"发表年份{metadata.year}",
             ],
         )

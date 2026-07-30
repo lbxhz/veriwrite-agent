@@ -2,10 +2,10 @@
 
 VeriWrite 是一个“可验证、可追溯、分阶段协作”的课程研究与写作 Agent 项目。
 
-当前开发版本为 **V0.2.2：大纲引导的多主题文献选择**。V0.1.2 负责把自然语言课程要求
-转换成经过 Pydantic 校验、双路比对和用户确认的 JSON；V0.2.2 根据确认需求生成临时检索
-蓝图，通过 Crossref RIS 与 DOI.org 验证文献身份，再按主题相关性、地大期刊等级和年份
-进行可解释选择。
+当前开发版本为 **V0.2.3：双期刊分级证据**。V0.1.2 负责把自然语言课程要求
+转换成经过 Pydantic 校验、双路比对和用户确认的 JSON；V0.2 根据确认需求生成临时检索
+蓝图，通过 Crossref RIS 与 DOI.org 验证文献身份，再按主题相关性、地大2023等级、
+挪威国家目录2025等级和年份进行可解释选择。
 
 ## 当前数据流
 
@@ -131,7 +131,7 @@ veriwrite-agent/
 概念与方案说明见
 [`docs/v0.1_concepts_and_workflow.md`](docs/v0.1_concepts_and_workflow.md)。
 
-## V0.2.2 文献选择能力
+## V0.2.3 文献选择能力
 
 - 从 V0.1 的确认需求生成 2—8 个需要文献支撑的临时检索主题；
 - 临时检索蓝图必须经用户检查和确认，草案不能直接触发 Crossref 检索；
@@ -139,14 +139,18 @@ veriwrite-agent/
 - 同一主题的多条 Crossref 查询采用公平轮询；
 - 只有通过权威 RIS 与 DOI 解析验证的文献才能进入相关性评分；
 - LLM 只能判断真实题名/摘要与主题的贴切度，不能新增 DOI 或修改元数据；
-- 最终顺序固定为“相关性 > 地大期刊等级 > 年份”；
-- 默认把地大等级作为软偏好，未分级不等于虚假；
+- 最终顺序固定为“相关性 > 地大期刊等级 > 挪威2025等级 > 年份”；
+- Crossref 返回的 ISSN 优先用于挪威目录匹配，规范化期刊题名只作兜底；
+- 默认把两种等级都作为软偏好，未分级不等于虚假；
+- 地大和挪威等级独立展示，不把 Level 2 伪装成地大 T2 或其他分区；
 - 某主题不足时明确输出缺口，不用无关论文静默凑数；
 - 网络验证与 LLM 评分按阶段缓存，中断后可恢复；
 - 真实大气遥感回归实现四主题各 5 篇，最终 20/20 通过 RIS 与 DOI 验证。
 
 设计与回归说明见
-[`docs/v0.2.2_outline_guided_balanced_selection.md`](docs/v0.2.2_outline_guided_balanced_selection.md)。
+[`docs/v0.2.2_outline_guided_balanced_selection.md`](docs/v0.2.2_outline_guided_balanced_selection.md)
+和
+[`docs/v0.2.3_dual_journal_ranking.md`](docs/v0.2.3_dual_journal_ranking.md)。
 
 ## 路线图
 

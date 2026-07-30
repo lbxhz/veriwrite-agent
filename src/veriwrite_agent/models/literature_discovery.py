@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 from veriwrite_agent.models.requirements import StrictModel
 
 CugTier = Literal["T1", "T2", "T3", "T4", "T5", "T6"]
+NorwegianLevel = Literal[0, 1, 2]
 RankingLookupStatus = Literal["matched", "not_found", "ambiguous"]
 CandidateDecisionStatus = Literal["eligible", "excluded"]
 
@@ -27,6 +28,19 @@ def canonicalize_doi(value: str) -> str:
     if not re.fullmatch(r"10\.\d{4,9}/\S+", normalized):
         raise ValueError("doi must be a canonical DOI name")
     return normalized
+
+
+def canonicalize_issn(value: str) -> str:
+    """Return a hyphenated ISSN key, including a checksum guard."""
+
+    compact = re.sub(r"[^0-9X]", "", value.upper())
+    if not re.fullmatch(r"\d{7}[\dX]", compact):
+        raise ValueError("issn must contain eight valid ISSN characters")
+    digits = [int(character) for character in compact[:7]]
+    check_value = 10 if compact[-1] == "X" else int(compact[-1])
+    if (sum((8 - index) * digit for index, digit in enumerate(digits)) + check_value) % 11:
+        raise ValueError("issn checksum is invalid")
+    return f"{compact[:4]}-{compact[4:]}"
 
 
 class LiteratureSearchPlan(StrictModel):
@@ -108,6 +122,7 @@ class LiteratureCandidate(StrictModel):
     authors: list[str] = Field(default_factory=list)
     year: int | None = Field(default=None, ge=1000, le=2100)
     journal_title: str = Field(min_length=1)
+    issns: list[str] = Field(default_factory=list)
     publisher: str | None = None
     source_type: str = "journal-article"
     source_provider: str = Field(min_length=1)
@@ -146,6 +161,19 @@ class LiteratureCandidate(StrictModel):
             if clean and fingerprint not in seen:
                 result.append(clean)
                 seen.add(fingerprint)
+        return result
+
+    @field_validator("issns", mode="after")
+    @classmethod
+    def normalize_issns(cls, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            try:
+                normalized = canonicalize_issn(value)
+            except ValueError:
+                continue
+            if normalized not in result:
+                result.append(normalized)
         return result
 
 
@@ -192,12 +220,61 @@ class JournalRankingLookup(StrictModel):
         return self
 
 
+class NorwegianJournalRankingRecord(StrictModel):
+    """One journal row from the open Norwegian Register 2025 classification."""
+
+    ranking_system: Literal["NORWEGIAN_REGISTER"] = "NORWEGIAN_REGISTER"
+    edition: Literal[2025] = 2025
+    journal_id: str = Field(min_length=1)
+    original_title: str = Field(min_length=1)
+    international_title: str | None = None
+    normalized_titles: list[str] = Field(default_factory=list)
+    print_issn: str | None = None
+    online_issn: str | None = None
+    scientific_field: str | None = None
+    level: NorwegianLevel
+    source_row: int = Field(ge=2)
+
+
+class NorwegianJournalRankingLookup(StrictModel):
+    """Explain the fixed-year Norwegian Register match independently of CUG."""
+
+    status: RankingLookupStatus
+    query_title: str = Field(min_length=1)
+    query_issns: list[str] = Field(default_factory=list)
+    match_basis: Literal["issn", "title", "none"]
+    records: list[NorwegianJournalRankingRecord] = Field(default_factory=list)
+    reason: str = Field(min_length=1)
+
+    @property
+    def resolved_level(self) -> NorwegianLevel | None:
+        if self.status != "matched" or not self.records:
+            return None
+        return self.records[0].level
+
+    @model_validator(mode="after")
+    def status_must_match_evidence(self) -> NorwegianJournalRankingLookup:
+        if self.status == "not_found":
+            if self.records or self.match_basis != "none":
+                raise ValueError("not_found lookups cannot contain matched evidence")
+            return self
+        if not self.records or self.match_basis == "none":
+            raise ValueError("matched or ambiguous lookups need source evidence")
+        levels = {record.level for record in self.records}
+        if self.status == "matched" and len(levels) != 1:
+            raise ValueError("matched lookups must resolve to one Norwegian level")
+        if self.status == "ambiguous" and len(levels) < 2:
+            raise ValueError("ambiguous lookups need conflicting Norwegian levels")
+        return self
+
+
 class CandidateDecision(StrictModel):
     """Deterministic eligibility decision for one discovered work."""
 
     status: CandidateDecisionStatus
     candidate: LiteratureCandidate
     ranking: JournalRankingLookup
+    norwegian_ranking: NorwegianJournalRankingLookup | None = None
     reason_codes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

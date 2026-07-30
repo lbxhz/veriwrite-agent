@@ -1,5 +1,8 @@
 from veriwrite_agent.literature.cug_catalog import CugJournalRankingProvider
 from veriwrite_agent.literature.fake import FakeLiteratureSearchProvider
+from veriwrite_agent.literature.norwegian_register import (
+    NorwegianRegisterRankingProvider,
+)
 from veriwrite_agent.models.literature_discovery import (
     LiteratureCandidate,
     LiteratureSearchPlan,
@@ -111,3 +114,20 @@ def test_preferred_ranking_policy_keeps_unranked_real_candidates() -> None:
     assert result.target_reached is True
     assert len(result.eligible_records) == 1
     assert result.eligible_records[0].ranking.status == "not_found"
+
+
+def test_discovery_preserves_independent_norwegian_ranking_evidence() -> None:
+    paper = candidate(1).model_copy(update={"issns": ["0034-4257"]})
+    service = LiteratureDiscoveryService(
+        FakeLiteratureSearchProvider([paper]),
+        CugJournalRankingProvider.from_default_catalog(),
+        NorwegianRegisterRankingProvider.from_default_catalog(),
+    )
+    one_result_plan = plan().model_copy(update={"target_eligible_count": 1})
+
+    result = service.discover(one_result_plan)
+
+    norwegian = result.eligible_records[0].norwegian_ranking
+    assert norwegian is not None
+    assert norwegian.resolved_level == 2
+    assert norwegian.match_basis == "issn"

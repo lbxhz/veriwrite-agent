@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from veriwrite_agent.literature.base import (
+    InternationalJournalRankingProvider,
     JournalRankingProvider,
     LiteratureSearchProvider,
 )
@@ -21,9 +22,11 @@ class LiteratureDiscoveryService:
         self,
         search_provider: LiteratureSearchProvider,
         ranking_provider: JournalRankingProvider,
+        international_ranking_provider: InternationalJournalRankingProvider | None = None,
     ) -> None:
         self._search_provider = search_provider
         self._ranking_provider = ranking_provider
+        self._international_ranking_provider = international_ranking_provider
 
     def discover(self, plan: LiteratureSearchPlan) -> LiteratureDiscoveryResult:
         if plan.discipline not in self._ranking_provider.available_disciplines:
@@ -70,6 +73,14 @@ class LiteratureDiscoveryService:
             candidate.journal_title,
             plan.discipline,
         )
+        norwegian_ranking = (
+            self._international_ranking_provider.lookup(
+                candidate.journal_title,
+                candidate.issns,
+            )
+            if self._international_ranking_provider is not None
+            else None
+        )
         reasons: list[str] = []
         if candidate.source_type != plan.work_type:
             reasons.append("source_type_not_journal_article")
@@ -103,5 +114,6 @@ class LiteratureDiscoveryService:
             status="excluded" if reasons else "eligible",
             candidate=candidate,
             ranking=ranking,
+            norwegian_ranking=norwegian_ranking,
             reason_codes=reasons,
         )

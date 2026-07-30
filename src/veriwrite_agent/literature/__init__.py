@@ -3,6 +3,7 @@
 from veriwrite_agent.literature.base import (
     AuthoritativeMetadataProvider,
     DoiResolver,
+    InternationalJournalRankingProvider,
     JournalRankingProvider,
     LiteratureSearchError,
     LiteratureSearchProvider,
@@ -14,6 +15,9 @@ from veriwrite_agent.literature.fake import (
     FakeAuthoritativeMetadataProvider,
     FakeDoiResolver,
     FakeLiteratureSearchProvider,
+)
+from veriwrite_agent.literature.norwegian_register import (
+    NorwegianRegisterRankingProvider,
 )
 from veriwrite_agent.literature.ris import RisParseError, parse_ris
 
@@ -27,9 +31,11 @@ __all__ = [
     "FakeAuthoritativeMetadataProvider",
     "FakeDoiResolver",
     "FakeLiteratureSearchProvider",
+    "InternationalJournalRankingProvider",
     "JournalRankingProvider",
     "LiteratureSearchError",
     "LiteratureSearchProvider",
+    "NorwegianRegisterRankingProvider",
     "RisParseError",
     "parse_ris",
 ]
