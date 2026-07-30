@@ -1,0 +1,859 @@
+{
+  "blueprint": {
+    "schema_version": "0.2.2",
+    "outline_status": "provisional_search_blueprint",
+    "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量",
+    "discipline": "大气科学",
+    "writing_through_line": "综合卫星、激光雷达和光谱遥感技术，系统评估气溶胶、云、温室气体和空气质量的观测方法与反演算法，揭示其在大气环境与气候变化研究中的协同作用。",
+    "target_total": 20,
+    "themes": [
+      {
+        "theme_id": "aerosol_remote_sensing",
+        "section_title": "气溶胶遥感反演与特性研究",
+        "section_purpose": "综述卫星和激光雷达气溶胶反演算法、光学特性及辐射强迫估算。",
+        "research_questions": [
+          "主被动遥感如何协同反演气溶胶光学厚度与垂直分布？",
+          "不同反演算法对气溶胶类型识别的适用性如何？"
+        ],
+        "primary_keywords": [
+          "aerosol remote sensing",
+          "aerosol optical depth",
+          "lidar",
+          "satellite retrieval"
+        ],
+        "related_keywords": [
+          "MODIS",
+          "CALIPSO",
+          "AERONET",
+          "radiative forcing",
+          "aerosol type"
+        ],
+        "search_queries": [
+          "aerosol optical depth retrieval satellite lidar",
+          "aerosol vertical distribution CALIPSO",
+          "aerosol radiative forcing satellite observations",
+          "aerosol type classification remote sensing"
+        ],
+        "target_count": 5,
+        "priority": 5
+      },
+      {
+        "theme_id": "cloud_remote_sensing",
+        "section_title": "云遥感观测与微物理参数反演",
+        "section_purpose": "总结云相态、云光学厚度、云顶高度等参数的遥感反演方法及不确定性。",
+        "research_questions": [
+          "如何利用多光谱和激光雷达反演云微物理参数？",
+          "云检测算法对辐射平衡评估的影响如何？"
+        ],
+        "primary_keywords": [
+          "cloud remote sensing",
+          "cloud microphysics",
+          "lidar",
+          "satellite"
+        ],
+        "related_keywords": [
+          "cloud optical thickness",
+          "cloud phase",
+          "MODIS",
+          "CloudSat",
+          "CALIPSO"
+        ],
+        "search_queries": [
+          "cloud microphysics retrieval satellite lidar",
+          "cloud phase classification MODIS",
+          "cloud optical depth remote sensing",
+          "cloud top height lidar satellite"
+        ],
+        "target_count": 5,
+        "priority": 5
+      },
+      {
+        "theme_id": "ghg_remote_sensing",
+        "section_title": "温室气体遥感监测与排放估算",
+        "section_purpose": "评述CO2和CH4的卫星光谱反演方法、柱浓度产品及同化系统。",
+        "research_questions": [
+          "近红外与热红外遥感反演温室气体的精度对比如何？",
+          "卫星观测如何约束全球碳源汇估算？"
+        ],
+        "primary_keywords": [
+          "greenhouse gas remote sensing",
+          "CO2",
+          "CH4",
+          "satellite spectroscopy"
+        ],
+        "related_keywords": [
+          "GOSAT",
+          "OCO-2",
+          "TROPOMI",
+          "XCO2",
+          "XCH4",
+          "carbon flux inversion"
+        ],
+        "search_queries": [
+          "satellite CO2 retrieval XCO2 OCO-2",
+          "methane CH4 TROPOMI retrieval",
+          "greenhouse gas flux inversion satellite",
+          "near infrared thermal infrared GHG comparison"
+        ],
+        "target_count": 5,
+        "priority": 5
+      },
+      {
+        "theme_id": "air_quality_remote_sensing",
+        "section_title": "空气质量遥感：污染物监测与健康影响",
+        "section_purpose": "综述卫星和激光雷达反演PM2.5、O3、NO2等污染物，及其在空气质量评估中的应用。",
+        "research_questions": [
+          "卫星气溶胶产品如何与地面观测结合估算近地面PM2.5？",
+          "遥感数据在空气污染健康效应研究中的角色如何？"
+        ],
+        "primary_keywords": [
+          "air quality remote sensing",
+          "PM2.5",
+          "NO2",
+          "O3",
+          "satellite"
+        ],
+        "related_keywords": [
+          "MODIS AOD",
+          "TROPOMI NO2",
+          "OMI",
+          "ground-level PM2.5 estimation",
+          "health impact"
+        ],
+        "search_queries": [
+          "satellite PM2.5 estimation AOD",
+          "NO2 column TROPOMI OMI air quality",
+          "ozone remote sensing Tropospheric column",
+          "air pollution health satellite remote sensing"
+        ],
+        "target_count": 5,
+        "priority": 5
+      }
+    ],
+    "accepted_tiers": [
+      "T1",
+      "T2",
+      "T3",
+      "T4",
+      "T5",
+      "T6"
+    ],
+    "journal_ranking_policy": "preferred",
+    "year_from": 2022,
+    "year_to": 2026,
+    "max_candidates": 300,
+    "relevance_threshold": 0.6
+  },
+  "discovery": [
+    {
+      "theme_id": "aerosol_remote_sensing",
+      "search_plan": {
+        "schema_version": "0.2.0",
+        "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量：气溶胶遥感反演与特性研究",
+        "discipline": "大气科学",
+        "primary_keywords": [
+          "aerosol remote sensing",
+          "aerosol optical depth",
+          "lidar",
+          "satellite retrieval"
+        ],
+        "related_keywords": [
+          "MODIS",
+          "CALIPSO",
+          "AERONET",
+          "radiative forcing",
+          "aerosol type"
+        ],
+        "search_queries": [
+          "aerosol optical depth retrieval satellite lidar",
+          "aerosol vertical distribution CALIPSO",
+          "aerosol radiative forcing satellite observations",
+          "aerosol type classification remote sensing"
+        ],
+        "accepted_tiers": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5",
+          "T6"
+        ],
+        "year_from": 2022,
+        "year_to": 2026,
+        "work_type": "journal-article",
+        "journal_ranking_policy": "preferred",
+        "target_eligible_count": 10,
+        "max_candidates": 75
+      },
+      "scanned_count": 10,
+      "duplicate_count": 0,
+      "eligible_count": 10,
+      "excluded_count": 0,
+      "target_reached": true
+    },
+    {
+      "theme_id": "cloud_remote_sensing",
+      "search_plan": {
+        "schema_version": "0.2.0",
+        "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量：云遥感观测与微物理参数反演",
+        "discipline": "大气科学",
+        "primary_keywords": [
+          "cloud remote sensing",
+          "cloud microphysics",
+          "lidar",
+          "satellite"
+        ],
+        "related_keywords": [
+          "cloud optical thickness",
+          "cloud phase",
+          "MODIS",
+          "CloudSat",
+          "CALIPSO"
+        ],
+        "search_queries": [
+          "cloud microphysics retrieval satellite lidar",
+          "cloud phase classification MODIS",
+          "cloud optical depth remote sensing",
+          "cloud top height lidar satellite"
+        ],
+        "accepted_tiers": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5",
+          "T6"
+        ],
+        "year_from": 2022,
+        "year_to": 2026,
+        "work_type": "journal-article",
+        "journal_ranking_policy": "preferred",
+        "target_eligible_count": 10,
+        "max_candidates": 75
+      },
+      "scanned_count": 10,
+      "duplicate_count": 0,
+      "eligible_count": 10,
+      "excluded_count": 0,
+      "target_reached": true
+    },
+    {
+      "theme_id": "ghg_remote_sensing",
+      "search_plan": {
+        "schema_version": "0.2.0",
+        "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量：温室气体遥感监测与排放估算",
+        "discipline": "大气科学",
+        "primary_keywords": [
+          "greenhouse gas remote sensing",
+          "CO2",
+          "CH4",
+          "satellite spectroscopy"
+        ],
+        "related_keywords": [
+          "GOSAT",
+          "OCO-2",
+          "TROPOMI",
+          "XCO2",
+          "XCH4",
+          "carbon flux inversion"
+        ],
+        "search_queries": [
+          "satellite CO2 retrieval XCO2 OCO-2",
+          "methane CH4 TROPOMI retrieval",
+          "greenhouse gas flux inversion satellite",
+          "near infrared thermal infrared GHG comparison"
+        ],
+        "accepted_tiers": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5",
+          "T6"
+        ],
+        "year_from": 2022,
+        "year_to": 2026,
+        "work_type": "journal-article",
+        "journal_ranking_policy": "preferred",
+        "target_eligible_count": 10,
+        "max_candidates": 75
+      },
+      "scanned_count": 10,
+      "duplicate_count": 0,
+      "eligible_count": 10,
+      "excluded_count": 0,
+      "target_reached": true
+    },
+    {
+      "theme_id": "air_quality_remote_sensing",
+      "search_plan": {
+        "schema_version": "0.2.0",
+        "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量：空气质量遥感：污染物监测与健康影响",
+        "discipline": "大气科学",
+        "primary_keywords": [
+          "air quality remote sensing",
+          "PM2.5",
+          "NO2",
+          "O3",
+          "satellite"
+        ],
+        "related_keywords": [
+          "MODIS AOD",
+          "TROPOMI NO2",
+          "OMI",
+          "ground-level PM2.5 estimation",
+          "health impact"
+        ],
+        "search_queries": [
+          "satellite PM2.5 estimation AOD",
+          "NO2 column TROPOMI OMI air quality",
+          "ozone remote sensing Tropospheric column",
+          "air pollution health satellite remote sensing"
+        ],
+        "accepted_tiers": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5",
+          "T6"
+        ],
+        "year_from": 2022,
+        "year_to": 2026,
+        "work_type": "journal-article",
+        "journal_ranking_policy": "preferred",
+        "target_eligible_count": 10,
+        "max_candidates": 75
+      },
+      "scanned_count": 10,
+      "duplicate_count": 0,
+      "eligible_count": 10,
+      "excluded_count": 0,
+      "target_reached": true
+    }
+  ],
+  "unique_prefiltered_count": 40,
+  "verified_count": 40,
+  "excluded_count": 0,
+  "target_reached": true,
+  "shortages": {},
+  "selected": [
+    {
+      "doi": "10.1016/j.atmosres.2025.108411",
+      "title": "Downscaling aerosol optical depth by fusing satellite retrieval and model simulation using artificial intelligence technology",
+      "theme_id": "aerosol_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2026,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2026"
+      ],
+      "authors": [
+        "Sun, Lin",
+        "Zhang, Xiangshuo",
+        "Fan, Yulong",
+        "Wang, Zhihui",
+        "Sun, Xiaohu"
+      ],
+      "journal": "Atmospheric Research",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0169809525005034",
+      "warnings": []
+    },
+    {
+      "doi": "10.1007/s00477-023-02459-4",
+      "title": "Estimation of particulate matter concentrations in Türkiye using a random forest model based on satellite AOD retrievals",
+      "theme_id": "air_quality_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T3",
+      "ranking_status": "matched",
+      "year": 2023,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T3",
+        "发表年份2023"
+      ],
+      "authors": [
+        "Tuna Tuygun, Gizem",
+        "Elbir, Tolga"
+      ],
+      "journal": "Stochastic Environmental Research and Risk Assessment",
+      "publisher": "Springer Science and Business Media LLC",
+      "final_url": "https://link.springer.com/10.1007/s00477-023-02459-4",
+      "warnings": []
+    },
+    {
+      "doi": "10.1029/2022jd036826",
+      "title": "Characterizing Vertical Stratification of the Cloud Thermodynamic Phase With a Combined Use of CALIPSO Lidar and MODIS SWIR Measurements",
+      "theme_id": "cloud_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T1",
+      "ranking_status": "matched",
+      "year": 2022,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T1",
+        "发表年份2022"
+      ],
+      "authors": [
+        "Nagao, Takashi M.",
+        "Suzuki, Kentaroh"
+      ],
+      "journal": "Journal of Geophysical Research: Atmospheres",
+      "publisher": "American Geophysical Union (AGU)",
+      "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022JD036826",
+      "warnings": [
+        "landing_page_unavailable"
+      ]
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2026.122177",
+      "title": "Dynamic estimation of a priori CO2 vertical profiles from satellite SWIR spectra for improved XCO2 retrieval",
+      "theme_id": "ghg_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2026,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2026"
+      ],
+      "authors": [
+        "Xu, Shaokun",
+        "Wan, Yong",
+        "Liu, Yu",
+        "Xiao, Qian",
+        "Dai, Yongshou"
+      ],
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231026004073",
+      "warnings": []
+    },
+    {
+      "doi": "10.5194/amt-19-293-2026",
+      "title": "Application of XBAER aerosol optical depth retrieval algorithm to hyperspectral EnMAP satellite data",
+      "theme_id": "aerosol_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2026,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2026"
+      ],
+      "authors": [
+        "Laffoy, Simon",
+        "Vountas, Marco",
+        "Mei, Linlu",
+        "Bösch, Hartmut"
+      ],
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/19/293/2026/",
+      "warnings": []
+    },
+    {
+      "doi": "10.1038/s44407-024-00003-4",
+      "title": "Nitrogen dioxide (NO2) Meteorology and predictability for air quality management using TROPOMI",
+      "theme_id": "air_quality_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2025,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2025"
+      ],
+      "authors": [
+        "Asilevi, Prince Junior",
+        "Dzidzorm, Enock Nyameasem",
+        "Boakye, Patrick",
+        "Quansah, Emmanuel"
+      ],
+      "journal": "npj Clean Air",
+      "publisher": "Springer Science and Business Media LLC",
+      "final_url": "https://www.nature.com/articles/s44407-024-00003-4",
+      "warnings": []
+    },
+    {
+      "doi": "10.5194/amt-17-5655-2024",
+      "title": "Marine cloud base height retrieval from MODIS cloud properties using machine learning",
+      "theme_id": "cloud_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2024,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2024"
+      ],
+      "authors": [
+        "Lenhardt, Julien",
+        "Quaas, Johannes",
+        "Sejdinovic, Dino"
+      ],
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/17/5655/2024/",
+      "warnings": []
+    },
+    {
+      "doi": "10.5194/amt-19-813-2026",
+      "title": "Uncertainty and retrieval sensitivity in TROPOMI-based methane inversions over the North Slope of Alaska",
+      "theme_id": "ghg_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2026,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2026"
+      ],
+      "authors": [
+        "Ward, Rebecca H.",
+        "Western, Luke M.",
+        "Tunnicliffe, Rachel L.",
+        "Fillola, Elena",
+        "Tsuruta, Aki",
+        "Aalto, Tuula",
+        "Ganesan, Anita L."
+      ],
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/19/813/2026/",
+      "warnings": []
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2025.121365",
+      "title": "Enhanced continuous aerosol optical depth (AOD) estimation using geostationary satellite data: focusing on nighttime AOD over East Asia",
+      "theme_id": "aerosol_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2025,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2025"
+      ],
+      "authors": [
+        "Song, Sanghyeon",
+        "Kang, Yoojin",
+        "Im, Jungho",
+        "Park, Sang Seo"
+      ],
+      "journal": "Atmospheric Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231025003401",
+      "warnings": []
+    },
+    {
+      "doi": "10.1109/tgrs.2025.3643189",
+      "title": "Retrieval of CrIS Tropospheric Ozone Profiles Constrained by OMPS Total Column Measurements",
+      "theme_id": "air_quality_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2025,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2025"
+      ],
+      "authors": [
+        "Zhang, Xinxin",
+        "Zhang, Ying",
+        "Wang, Yapeng",
+        "Fan, Meng",
+        "Wang, Hongmei",
+        "Tao, Jinhua",
+        "Chen, Liangfu"
+      ],
+      "journal": "IEEE Transactions on Geoscience and Remote Sensing",
+      "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+      "final_url": "https://ieeexplore.ieee.org/document/11298326/",
+      "warnings": []
+    },
+    {
+      "doi": "10.1029/2022ea002299",
+      "title": "Cloud and Precipitation Particle Identification Using Cloud Radar and Lidar Measurements: Retrieval Technique and Validation",
+      "theme_id": "cloud_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T3",
+      "ranking_status": "matched",
+      "year": 2022,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T3",
+        "发表年份2022"
+      ],
+      "authors": [
+        "Romatschke, Ulrike",
+        "Vivekanandan, Jothiram"
+      ],
+      "journal": "Earth and Space Science",
+      "publisher": "American Geophysical Union (AGU)",
+      "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002299",
+      "warnings": [
+        "landing_page_unavailable"
+      ]
+    },
+    {
+      "doi": "10.5194/amt-15-4407-2022",
+      "title": "Comment on “Synergetic use of IASI profile and TROPOMI total-column level 2 methane retrieval products” by Schneider et al. (2022)",
+      "theme_id": "ghg_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2022,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2022"
+      ],
+      "authors": [
+        "Ceccherini, Simone"
+      ],
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/15/4407/2022/",
+      "warnings": []
+    },
+    {
+      "doi": "10.1002/joc.7599",
+      "title": "Climatology of aerosol types and their vertical distribution over East Asia based on <scp>CALIPSO</scp> lidar measurements",
+      "theme_id": "aerosol_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2022,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2022"
+      ],
+      "authors": [
+        "Gui, Lu",
+        "Tao, Minghui",
+        "Wang, Yi",
+        "Wang, Lunche",
+        "Chen, Liangfu",
+        "Lin, Changqing",
+        "Tao, Jinhua",
+        "Wang, Jun",
+        "Yu, Chao"
+      ],
+      "journal": "International Journal of Climatology",
+      "publisher": "Wiley",
+      "final_url": "https://rmets.onlinelibrary.wiley.com/doi/10.1002/joc.7599",
+      "warnings": [
+        "landing_page_unavailable"
+      ]
+    },
+    {
+      "doi": "10.1016/j.rsase.2024.101292",
+      "title": "Respiratory health assessment of outdoor workers exposed to urban air pollution based on satellite observations",
+      "theme_id": "air_quality_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2024,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2024"
+      ],
+      "authors": [
+        "Zanaty, Naglaa",
+        "Eldesouky Mohamed, Asmaa",
+        "Nabil, Nashwa"
+      ],
+      "journal": "Remote Sensing Applications: Society and Environment",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S2352938524001563",
+      "warnings": []
+    },
+    {
+      "doi": "10.1029/2026gl122478",
+      "title": "Trends and Sensitivities of Low‐Cloud Cover and Top Height From Spaceborne Lidar Observations",
+      "theme_id": "cloud_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2026,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2026"
+      ],
+      "authors": [
+        "Tesche, M.",
+        "Andersen, H.",
+        "Choudhury, G.",
+        "Goren, T."
+      ],
+      "journal": "Geophysical Research Letters",
+      "publisher": "American Geophysical Union (AGU)",
+      "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2026GL122478",
+      "warnings": [
+        "landing_page_unavailable"
+      ]
+    },
+    {
+      "doi": "10.5194/amt-15-6585-2022",
+      "title": "Evaluation of the methane full-physics retrieval applied to TROPOMI ocean sun glint measurements",
+      "theme_id": "ghg_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2022,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2022"
+      ],
+      "authors": [
+        "Lorente, Alba",
+        "Borsdorff, Tobias",
+        "Martinez-Velarte, Mari C.",
+        "Butz, Andre",
+        "Hasekamp, Otto P.",
+        "Wu, Lianghai",
+        "Landgraf, Jochen"
+      ],
+      "journal": "Atmospheric Measurement Techniques",
+      "publisher": "Copernicus GmbH",
+      "final_url": "https://amt.copernicus.org/articles/15/6585/2022/",
+      "warnings": []
+    },
+    {
+      "doi": "10.1016/j.atmosres.2021.105938",
+      "title": "Spatio-temporal distribution of aerosol direct radiative forcing over mid-latitude regions in north hemisphere estimated from satellite observations",
+      "theme_id": "aerosol_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": "T2",
+      "ranking_status": "matched",
+      "year": 2022,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "中国地质大学（武汉）2023版期刊等级T2",
+        "发表年份2022"
+      ],
+      "authors": [
+        "Chen, Annan",
+        "Zhao, Chuanfeng",
+        "Fan, Tianyi"
+      ],
+      "journal": "Atmospheric Research",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0169809521004944",
+      "warnings": []
+    },
+    {
+      "doi": "10.3390/rs16162932",
+      "title": "Recent Developments in Satellite Remote Sensing for Air Pollution Surveillance in Support of Sustainable Development Goals",
+      "theme_id": "air_quality_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2024,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2024"
+      ],
+      "authors": [
+        "Stratoulias, Dimitris",
+        "Nuthammachot, Narissara",
+        "Dejchanchaiwong, Racha",
+        "Tekasakul, Perapong",
+        "Carmichael, Gregory R."
+      ],
+      "journal": "Remote Sensing",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/2072-4292/16/16/2932",
+      "warnings": []
+    },
+    {
+      "doi": "10.3390/s24020541",
+      "title": "Remote Sensing Retrieval of Cloud Top Height Using Neural Networks and Data from Cloud-Aerosol Lidar with Orthogonal Polarization",
+      "theme_id": "cloud_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2024,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2024"
+      ],
+      "authors": [
+        "Cheng, Yinhe",
+        "He, Hongjian",
+        "Xue, Qiangyu",
+        "Yang, Jiaxuan",
+        "Zhong, Wei",
+        "Zhu, Xinyu",
+        "Peng, Xiangyu"
+      ],
+      "journal": "Sensors",
+      "publisher": "MDPI AG",
+      "final_url": "https://www.mdpi.com/1424-8220/24/2/541",
+      "warnings": []
+    },
+    {
+      "doi": "10.1016/j.ecoinf.2026.103921",
+      "title": "Full-coverage and fine-scale spatiotemporal retrieval of XCO2 in China based on OCO-2 satellite observations",
+      "theme_id": "ghg_remote_sensing",
+      "relevance_score": 1.0,
+      "cug_tier": null,
+      "ranking_status": "not_found",
+      "year": 2026,
+      "selection_reasons": [
+        "通过Crossref RIS与DOI真实性验证",
+        "与章节主题相关性得分1.00",
+        "地大2023版目录未给出该学科唯一等级；未据此判假，作为同等相关性下的末位偏好",
+        "发表年份2026"
+      ],
+      "authors": [
+        "Yang, Yuanyuan",
+        "Chen, Qianqian",
+        "Shi, Zhou",
+        "Lu, Rui",
+        "Xu, Xiangrui"
+      ],
+      "journal": "Ecological Informatics",
+      "publisher": "Elsevier BV",
+      "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1574954126003286",
+      "warnings": []
+    }
+  ]
+}

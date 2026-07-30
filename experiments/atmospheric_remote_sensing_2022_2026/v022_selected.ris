@@ -1,0 +1,362 @@
+TY  - JOUR
+DO  - 10.1016/j.atmosres.2025.108411
+UR  - http://dx.doi.org/10.1016/j.atmosres.2025.108411
+TI  - Downscaling aerosol optical depth by fusing satellite retrieval and model simulation using artificial intelligence technology
+T2  - Atmospheric Research
+AU  - Sun, Lin
+AU  - Zhang, Xiangshuo
+AU  - Fan, Yulong
+AU  - Wang, Zhihui
+AU  - Sun, Xiaohu
+PY  - 2026
+DA  - 2026/01
+PB  - Elsevier BV
+SP  - 108411
+VL  - 328
+SN  - 0169-8095
+ER  - 
+
+TY  - JOUR
+DO  - 10.1007/s00477-023-02459-4
+UR  - http://dx.doi.org/10.1007/s00477-023-02459-4
+TI  - Estimation of particulate matter concentrations in Türkiye using a random forest model based on satellite AOD retrievals
+T2  - Stochastic Environmental Research and Risk Assessment
+AU  - Tuna Tuygun, Gizem
+AU  - Elbir, Tolga
+PY  - 2023
+DA  - 2023/05/08
+PB  - Springer Science and Business Media LLC
+SP  - 3469-3491
+IS  - 9
+VL  - 37
+SN  - 1436-3240
+SN  - 1436-3259
+ER  - 
+
+TY  - JOUR
+DO  - 10.1029/2022jd036826
+UR  - http://dx.doi.org/10.1029/2022jd036826
+TI  - Characterizing Vertical Stratification of the Cloud Thermodynamic Phase With a Combined Use of CALIPSO Lidar and MODIS SWIR Measurements
+T2  - Journal of Geophysical Research: Atmospheres
+AU  - Nagao, Takashi M.
+AU  - Suzuki, Kentaroh
+PY  - 2022
+DA  - 2022/11/08
+PB  - American Geophysical Union (AGU)
+IS  - 21
+VL  - 127
+SN  - 2169-897X
+SN  - 2169-8996
+ER  - 
+
+TY  - JOUR
+DO  - 10.1016/j.atmosenv.2026.122177
+UR  - http://dx.doi.org/10.1016/j.atmosenv.2026.122177
+TI  - Dynamic estimation of a priori CO2 vertical profiles from satellite SWIR spectra for improved XCO2 retrieval
+T2  - Atmospheric Environment
+AU  - Xu, Shaokun
+AU  - Wan, Yong
+AU  - Liu, Yu
+AU  - Xiao, Qian
+AU  - Dai, Yongshou
+PY  - 2026
+DA  - 2026/10
+PB  - Elsevier BV
+SP  - 122177
+VL  - 382
+SN  - 1352-2310
+ER  - 
+
+TY  - JOUR
+DO  - 10.5194/amt-19-293-2026
+UR  - http://dx.doi.org/10.5194/amt-19-293-2026
+TI  - Application of XBAER aerosol optical depth retrieval algorithm to hyperspectral EnMAP satellite data
+T2  - Atmospheric Measurement Techniques
+AU  - Laffoy, Simon
+AU  - Vountas, Marco
+AU  - Mei, Linlu
+AU  - Bösch, Hartmut
+PY  - 2026
+DA  - 2026/01/15
+PB  - Copernicus GmbH
+SP  - 293-306
+IS  - 1
+VL  - 19
+SN  - 1867-8548
+ER  - 
+
+TY  - JOUR
+DO  - 10.1038/s44407-024-00003-4
+UR  - http://dx.doi.org/10.1038/s44407-024-00003-4
+TI  - Nitrogen dioxide (NO2) Meteorology and predictability for air quality management using TROPOMI
+T2  - npj Clean Air
+AU  - Asilevi, Prince Junior
+AU  - Dzidzorm, Enock Nyameasem
+AU  - Boakye, Patrick
+AU  - Quansah, Emmanuel
+PY  - 2025
+DA  - 2025/03/12
+PB  - Springer Science and Business Media LLC
+IS  - 1
+VL  - 1
+SN  - 3059-2240
+ER  - 
+
+TY  - JOUR
+DO  - 10.5194/amt-17-5655-2024
+UR  - http://dx.doi.org/10.5194/amt-17-5655-2024
+TI  - Marine cloud base height retrieval from MODIS cloud properties using machine learning
+T2  - Atmospheric Measurement Techniques
+AU  - Lenhardt, Julien
+AU  - Quaas, Johannes
+AU  - Sejdinovic, Dino
+PY  - 2024
+DA  - 2024/09/26
+PB  - Copernicus GmbH
+SP  - 5655-5677
+IS  - 18
+VL  - 17
+SN  - 1867-8548
+ER  - 
+
+TY  - JOUR
+DO  - 10.5194/amt-19-813-2026
+UR  - http://dx.doi.org/10.5194/amt-19-813-2026
+TI  - Uncertainty and retrieval sensitivity in TROPOMI-based methane inversions over the North Slope of Alaska
+T2  - Atmospheric Measurement Techniques
+AU  - Ward, Rebecca H.
+AU  - Western, Luke M.
+AU  - Tunnicliffe, Rachel L.
+AU  - Fillola, Elena
+AU  - Tsuruta, Aki
+AU  - Aalto, Tuula
+AU  - Ganesan, Anita L.
+PY  - 2026
+DA  - 2026/02/05
+PB  - Copernicus GmbH
+SP  - 813-837
+IS  - 3
+VL  - 19
+SN  - 1867-8548
+ER  - 
+
+TY  - JOUR
+DO  - 10.1016/j.atmosenv.2025.121365
+UR  - http://dx.doi.org/10.1016/j.atmosenv.2025.121365
+TI  - Enhanced continuous aerosol optical depth (AOD) estimation using geostationary satellite data: focusing on nighttime AOD over East Asia
+T2  - Atmospheric Environment
+AU  - Song, Sanghyeon
+AU  - Kang, Yoojin
+AU  - Im, Jungho
+AU  - Park, Sang Seo
+PY  - 2025
+DA  - 2025/10
+PB  - Elsevier BV
+SP  - 121365
+VL  - 358
+SN  - 1352-2310
+ER  - 
+
+TY  - JOUR
+DO  - 10.1109/tgrs.2025.3643189
+UR  - http://dx.doi.org/10.1109/tgrs.2025.3643189
+TI  - Retrieval of CrIS Tropospheric Ozone Profiles Constrained by OMPS Total Column Measurements
+T2  - IEEE Transactions on Geoscience and Remote Sensing
+AU  - Zhang, Xinxin
+AU  - Zhang, Ying
+AU  - Wang, Yapeng
+AU  - Fan, Meng
+AU  - Wang, Hongmei
+AU  - Tao, Jinhua
+AU  - Chen, Liangfu
+PY  - 2025
+PB  - Institute of Electrical and Electronics Engineers (IEEE)
+SP  - 1-16
+VL  - 63
+SN  - 0196-2892
+SN  - 1558-0644
+ER  - 
+
+TY  - JOUR
+DO  - 10.1029/2022ea002299
+UR  - http://dx.doi.org/10.1029/2022ea002299
+TI  - Cloud and Precipitation Particle Identification Using Cloud Radar and Lidar Measurements: Retrieval Technique and Validation
+T2  - Earth and Space Science
+AU  - Romatschke, Ulrike
+AU  - Vivekanandan, Jothiram
+PY  - 2022
+DA  - 2022/05
+PB  - American Geophysical Union (AGU)
+IS  - 5
+VL  - 9
+SN  - 2333-5084
+SN  - 2333-5084
+ER  - 
+
+TY  - JOUR
+DO  - 10.5194/amt-15-4407-2022
+UR  - http://dx.doi.org/10.5194/amt-15-4407-2022
+TI  - Comment on “Synergetic use of IASI profile and TROPOMI total-column level 2 methane retrieval products” by Schneider et al. (2022)
+T2  - Atmospheric Measurement Techniques
+AU  - Ceccherini, Simone
+PY  - 2022
+DA  - 2022/07/29
+PB  - Copernicus GmbH
+SP  - 4407-4410
+IS  - 14
+VL  - 15
+SN  - 1867-8548
+ER  - 
+
+TY  - JOUR
+DO  - 10.1002/joc.7599
+UR  - http://dx.doi.org/10.1002/joc.7599
+TI  - Climatology of aerosol types and their vertical distribution over East Asia based on <scp>CALIPSO</scp> lidar measurements
+T2  - International Journal of Climatology
+AU  - Gui, Lu
+AU  - Tao, Minghui
+AU  - Wang, Yi
+AU  - Wang, Lunche
+AU  - Chen, Liangfu
+AU  - Lin, Changqing
+AU  - Tao, Jinhua
+AU  - Wang, Jun
+AU  - Yu, Chao
+PY  - 2022
+DA  - 2022/04
+PB  - Wiley
+SP  - 6042-6054
+IS  - 11
+VL  - 42
+SN  - 0899-8418
+SN  - 1097-0088
+ER  - 
+
+TY  - JOUR
+DO  - 10.1016/j.rsase.2024.101292
+UR  - http://dx.doi.org/10.1016/j.rsase.2024.101292
+TI  - Respiratory health assessment of outdoor workers exposed to urban air pollution based on satellite observations
+T2  - Remote Sensing Applications: Society and Environment
+AU  - Zanaty, Naglaa
+AU  - Eldesouky Mohamed, Asmaa
+AU  - Nabil, Nashwa
+PY  - 2024
+DA  - 2024/11
+PB  - Elsevier BV
+SP  - 101292
+VL  - 36
+SN  - 2352-9385
+ER  - 
+
+TY  - JOUR
+DO  - 10.1029/2026gl122478
+UR  - http://dx.doi.org/10.1029/2026gl122478
+TI  - Trends and Sensitivities of Low‐Cloud Cover and Top Height From Spaceborne Lidar Observations
+T2  - Geophysical Research Letters
+AU  - Tesche, M.
+AU  - Andersen, H.
+AU  - Choudhury, G.
+AU  - Goren, T.
+PY  - 2026
+DA  - 2026/07/10
+PB  - American Geophysical Union (AGU)
+IS  - 14
+VL  - 53
+SN  - 0094-8276
+SN  - 1944-8007
+ER  - 
+
+TY  - JOUR
+DO  - 10.5194/amt-15-6585-2022
+UR  - http://dx.doi.org/10.5194/amt-15-6585-2022
+TI  - Evaluation of the methane full-physics retrieval applied to TROPOMI ocean sun glint measurements
+T2  - Atmospheric Measurement Techniques
+AU  - Lorente, Alba
+AU  - Borsdorff, Tobias
+AU  - Martinez-Velarte, Mari C.
+AU  - Butz, Andre
+AU  - Hasekamp, Otto P.
+AU  - Wu, Lianghai
+AU  - Landgraf, Jochen
+PY  - 2022
+DA  - 2022/11/17
+PB  - Copernicus GmbH
+SP  - 6585-6603
+IS  - 22
+VL  - 15
+SN  - 1867-8548
+ER  - 
+
+TY  - JOUR
+DO  - 10.1016/j.atmosres.2021.105938
+UR  - http://dx.doi.org/10.1016/j.atmosres.2021.105938
+TI  - Spatio-temporal distribution of aerosol direct radiative forcing over mid-latitude regions in north hemisphere estimated from satellite observations
+T2  - Atmospheric Research
+AU  - Chen, Annan
+AU  - Zhao, Chuanfeng
+AU  - Fan, Tianyi
+PY  - 2022
+DA  - 2022/03
+PB  - Elsevier BV
+SP  - 105938
+VL  - 266
+SN  - 0169-8095
+ER  - 
+
+TY  - JOUR
+DO  - 10.3390/rs16162932
+UR  - http://dx.doi.org/10.3390/rs16162932
+TI  - Recent Developments in Satellite Remote Sensing for Air Pollution Surveillance in Support of Sustainable Development Goals
+T2  - Remote Sensing
+AU  - Stratoulias, Dimitris
+AU  - Nuthammachot, Narissara
+AU  - Dejchanchaiwong, Racha
+AU  - Tekasakul, Perapong
+AU  - Carmichael, Gregory R.
+PY  - 2024
+DA  - 2024/08/09
+PB  - MDPI AG
+SP  - 2932
+IS  - 16
+VL  - 16
+SN  - 2072-4292
+ER  - 
+
+TY  - JOUR
+DO  - 10.3390/s24020541
+UR  - http://dx.doi.org/10.3390/s24020541
+TI  - Remote Sensing Retrieval of Cloud Top Height Using Neural Networks and Data from Cloud-Aerosol Lidar with Orthogonal Polarization
+T2  - Sensors
+AU  - Cheng, Yinhe
+AU  - He, Hongjian
+AU  - Xue, Qiangyu
+AU  - Yang, Jiaxuan
+AU  - Zhong, Wei
+AU  - Zhu, Xinyu
+AU  - Peng, Xiangyu
+PY  - 2024
+DA  - 2024/01/15
+PB  - MDPI AG
+SP  - 541
+IS  - 2
+VL  - 24
+SN  - 1424-8220
+ER  - 
+
+TY  - JOUR
+DO  - 10.1016/j.ecoinf.2026.103921
+UR  - http://dx.doi.org/10.1016/j.ecoinf.2026.103921
+TI  - Full-coverage and fine-scale spatiotemporal retrieval of XCO2 in China based on OCO-2 satellite observations
+T2  - Ecological Informatics
+AU  - Yang, Yuanyuan
+AU  - Chen, Qianqian
+AU  - Shi, Zhou
+AU  - Lu, Rui
+AU  - Xu, Xiangrui
+PY  - 2026
+DA  - 2026/08
+PB  - Elsevier BV
+SP  - 103921
+VL  - 97
+SN  - 1574-9541
+ER  - 

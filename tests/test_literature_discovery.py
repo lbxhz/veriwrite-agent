@@ -89,3 +89,25 @@ def test_deduplicates_doi_and_explains_hard_filter_failures() -> None:
     assert "journal_tier_not_accepted" in reasons
     assert "journal_not_in_cug_2023_catalog" in reasons
     assert "publication_year_below_requirement" in reasons
+
+
+def test_preferred_ranking_policy_keeps_unranked_real_candidates() -> None:
+    search = FakeLiteratureSearchProvider(
+        [candidate(1, journal="Journal Outside Local Catalog")]
+    )
+    service = LiteratureDiscoveryService(
+        search,
+        CugJournalRankingProvider.from_default_catalog(),
+    )
+    preferred_plan = plan().model_copy(
+        update={
+            "journal_ranking_policy": "preferred",
+            "target_eligible_count": 1,
+        }
+    )
+
+    result = service.discover(preferred_plan)
+
+    assert result.target_reached is True
+    assert len(result.eligible_records) == 1
+    assert result.eligible_records[0].ranking.status == "not_found"

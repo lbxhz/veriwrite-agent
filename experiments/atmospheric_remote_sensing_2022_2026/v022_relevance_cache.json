@@ -1,0 +1,1344 @@
+{
+  "assessments": [
+    {
+      "doi": "10.31871/ijntr.8.5.27",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.5,
+          "rationale": "Title suggests focus on aerosol model, but abstract missing; limited relevance.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No reference to clouds.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No reference to greenhouse gases.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "No reference to air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1109/jstars.2025.3538572",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "Title explicitly about vertical distribution of aerosol mass concentration using CALIPSO, directly supports aerosol remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No mention of clouds.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No mention of greenhouse gases.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.5,
+          "rationale": "Aerosol mass concentration is relevant to air quality, though primary focus is vertical distribution.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.atmosres.2021.105938",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "Directly studies aerosol direct radiative forcing from satellite observations, core to aerosol remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas discussion.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.3,
+          "rationale": "Radiative forcing indirectly relates to air quality, but primary focus is climate.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs15102670",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Focuses on hydrometeor classification, not aerosol.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "Directly addresses hydrometeor (cloud and precipitation) classification using passive microwave, strongly supports cloud remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "No air quality link.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.5194/amt-19-293-2026",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "Presents and applies XBAER algorithm for aerosol optical depth retrieval from hyperspectral data, core to aerosol remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas discussion.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.4,
+          "rationale": "AOD retrieval is used in air quality studies, but paper focuses on algorithm and validation.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1002/joc.7599",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "Provides climatology of aerosol types and vertical distribution using CALIPSO, directly supports aerosol remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas discussion.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.5,
+          "rationale": "Aerosol types and vertical distribution are relevant to air quality, though primary focus is climatology.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1029/2023gl105282",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.9,
+          "rationale": "Focuses on aerosol-cloud interactions and radiative forcing, strongly relevant to aerosol radiative effects.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.9,
+          "rationale": "Directly studies cloud albedo and aerosol-cloud interactions, central to cloud remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas discussion.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.2,
+          "rationale": "Indirect link through aerosol, but primary focus is radiative forcing.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs18020334",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Focuses on ocean water type and phytoplankton, not atmospheric aerosols.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "No air quality connection.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.atmosres.2025.108411",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "Explicitly about downscaling aerosol optical depth using satellite and model, core to aerosol remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas discussion.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.5,
+          "rationale": "Downscaled AOD is used for air quality applications, but primary focus is methodology.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.2139/ssrn.4232507",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "Studies optical properties of dust aerosol using CALIPSO and CATS, directly supports aerosol remote sensing.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas discussion.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.5,
+          "rationale": "Dust aerosol is a major air quality concern, but paper focuses on optical properties.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs17142507",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "论文聚焦云微物理初始化对降水预报的影响，未涉及气溶胶反演或特性。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.7,
+          "rationale": "使用卫星和雷达数据初始化云微物理参数，涉及云观测与模型同化，但主要面向预报而非反演。",
+          "matched_concepts": [
+            "cloud microphysics",
+            "satellite cloud data",
+            "radar reflectivity"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体遥感监测。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及污染物或空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.1029/2022jd036826",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶遥感。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "直接研究云热力相态垂直分层，使用CALIOP和MODIS SWIR，完全符合云遥感主题。",
+          "matched_concepts": [
+            "cloud thermodynamic phase",
+            "CALIPSO lidar",
+            "MODIS SWIR",
+            "vertical stratification"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气污染物。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs14163844",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.7,
+          "rationale": "核心研究AOD与云特性的长期关系，涉及气溶胶光学厚度和类型，但未深入反演算法。",
+          "matched_concepts": [
+            "aerosol optical depth",
+            "cloud regime",
+            "MODIS"
+          ]
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.7,
+          "rationale": "详细分析云类别、云顶压力、液水路径等参数，但侧重与AOD的相互关系。",
+          "matched_concepts": [
+            "cloud regime",
+            "cloud top pressure",
+            "liquid water path",
+            "cloud cover"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气污染物。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.3390/s24020541",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "专注于云顶高度反演，使用CALIOP和神经网络，直接支撑云遥感研究问题。",
+          "matched_concepts": [
+            "cloud top height",
+            "CALIOP",
+            "neural network",
+            "MODIS"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.rse.2022.113235",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.2,
+          "rationale": "使用CALIOP传感器，但主要反演海洋光学和浮游生物，与气溶胶间接相关。",
+          "matched_concepts": [
+            "CALIOP",
+            "ocean optics"
+          ]
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云遥感。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.5194/amt-17-5655-2024",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "直接反演云底高度，使用MODIS云属性和机器学习，完全符合云遥感。",
+          "matched_concepts": [
+            "cloud base height",
+            "MODIS",
+            "machine learning",
+            "ceilometer"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs17142439",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.6,
+          "rationale": "评估CMIP6模式中的AOD，与卫星观测对比，涉及气溶胶，但未深入反演算法。",
+          "matched_concepts": [
+            "aerosol optical depth",
+            "CMIP6",
+            "MODIS"
+          ]
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.6,
+          "rationale": "同时评估云分数和液水路径，涉及云参数，但主要是模式评估。",
+          "matched_concepts": [
+            "cloud fraction",
+            "liquid water path",
+            "MODIS"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气污染物。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1029/2026gl122478",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "利用空间激光雷达观测低云覆盖和云顶高度趋势，直接相关。",
+          "matched_concepts": [
+            "low cloud cover",
+            "cloud top height",
+            "lidar",
+            "trends"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.1029/2022ea002299",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "使用云雷达和HSRL识别云和降水粒子类型，直接支撑云微物理研究。",
+          "matched_concepts": [
+            "hydrometeor particle identification",
+            "cloud radar",
+            "lidar",
+            "mixed-phase clouds"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs15030816",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 1.0,
+          "rationale": "从MODIS云产品反演垂直云雷达反射率，直接涉及云垂直结构反演。",
+          "matched_concepts": [
+            "cloud vertical structure",
+            "CGAN",
+            "MODIS",
+            "cloud radar reflectivity"
+          ]
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及空气质量。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "cloud_remote_sensing"
+    },
+    {
+      "doi": "10.5572/kosae.2024.40.5.572",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Title indicates CO2 monitoring, no aerosol relevance.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud-related content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 1.0,
+          "rationale": "Directly focuses on XCO2 monitoring and forecasting using OCO-2 satellite and deep learning.",
+          "matched_concepts": [
+            "XCO2",
+            "OCO-2",
+            "deep learning",
+            "CO2 monitoring"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not related to air quality pollutants.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.5194/amt-15-4407-2022",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Comment on methane product fusion, no aerosol focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud-related content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 1.0,
+          "rationale": "Directly addresses methane retrieval fusion between IASI and TROPOMI.",
+          "matched_concepts": [
+            "methane",
+            "IASI",
+            "TROPOMI",
+            "data fusion",
+            "Kalman filter"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not related to air quality pollutants.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.ijggc.2024.104224",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Seismic inversion for CO2 plume monitoring, not remote sensing of aerosols.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.5,
+          "rationale": "Partly relevant as it monitors CO2 plume, but uses seismic method not satellite/remote sensing.",
+          "matched_concepts": [
+            "CO2 plume",
+            "carbon sequestration"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not related to air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.1177/09670335261447374",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Pharmaceutical study using NIR/THz spectroscopy, no atmospheric relevance.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "Unrelated to clouds.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.ecoinf.2026.103921",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "XCO2 retrieval, no aerosol focus.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 1.0,
+          "rationale": "Full-coverage XCO2 retrieval in China using OCO-2 satellite data.",
+          "matched_concepts": [
+            "XCO2",
+            "OCO-2",
+            "spatiotemporal retrieval"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.5194/amt-15-6585-2022",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Primarily methane retrieval, though involves scattering properties; not aerosol-focused.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "Scattering properties mentioned but not cloud microphysics.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 1.0,
+          "rationale": "Directly evaluates methane retrieval from TROPOMI ocean sun glint measurements.",
+          "matched_concepts": [
+            "methane",
+            "TROPOMI",
+            "full-physics retrieval",
+            "ocean sun glint"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.ijggc.2025.104460",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Petrophysical inversion for carbon sequestration, not aerosol.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.5,
+          "rationale": "Partly relevant to carbon sequestration monitoring, but uses invertible neural networks for petrophysical inversion, not satellite remote sensing.",
+          "matched_concepts": [
+            "carbon sequestration",
+            "CO2"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.1177/09670335241257649",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Cellulose NIR/DSC study, no atmospheric relevance.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "Unrelated.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "No greenhouse gas content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2026.122177",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "CO2 retrieval a priori profiles, no aerosol.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 1.0,
+          "rationale": "Improves XCO2 retrieval using dynamic a priori vertical profiles from SWIR spectra.",
+          "matched_concepts": [
+            "XCO2",
+            "a priori profiles",
+            "SWIR",
+            "OCO-2"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.5194/amt-19-813-2026",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "Focus on methane inversions, not aerosols.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "No cloud content.",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 1.0,
+          "rationale": "Evaluates TROPOMI methane inversions over Alaska, assessing emission estimates.",
+          "matched_concepts": [
+            "methane",
+            "TROPOMI",
+            "inverse modelling",
+            "emissions"
+          ]
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.0,
+          "rationale": "Not air quality.",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "ghg_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.atmosenv.2025.121365",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "直接研究气溶胶光学厚度（AOD）遥感反演，尤其夜间AOD，支撑气溶胶遥感章节。",
+          "matched_concepts": [
+            "气溶胶光学厚度",
+            "静止卫星",
+            "夜间遥感"
+          ]
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云参数反演。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.5,
+          "rationale": "AOD可用于空气质量，但论文聚焦反演算法而非污染物监测。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1038/s44407-024-00003-4",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "NO2不是温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "利用TROPOMI NO2数据预测空气质量，直接支撑空气质量遥感章节中的NO2监测。",
+          "matched_concepts": [
+            "NO2柱浓度",
+            "气象驱动",
+            "随机森林",
+            "空气质量"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs15225293",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.3,
+          "rationale": "臭氧有温室效应，但论文主要关注对流层臭氧作为污染物。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "使用卫星数据分析对流层臭氧趋势，直接支撑空气质量遥感中O3部分。",
+          "matched_concepts": [
+            "对流层臭氧",
+            "OMI/MLS",
+            "排放影响",
+            "气象影响"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.rsase.2024.101292",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.2,
+          "rationale": "可能用到气溶胶数据，但重点是健康评估。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "利用卫星观测评估空气污染对户外工人呼吸健康的影响，直接支撑空气质量健康效应。",
+          "matched_concepts": [
+            "空气污染",
+            "呼吸健康",
+            "卫星观测"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2022.161055",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 1.0,
+          "rationale": "核心是使用卫星AOD数据估算生物质燃烧颗粒物排放，直接涉及气溶胶遥感应用。",
+          "matched_concepts": [
+            "AOD",
+            "生物质燃烧",
+            "颗粒物排放"
+          ]
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 0.8,
+          "rationale": "估算PM排放直接关联空气质量，但主要贡献在AOD使用。",
+          "matched_concepts": []
+        }
+      ],
+      "best_theme_id": "aerosol_remote_sensing"
+    },
+    {
+      "doi": "10.1007/s11869-023-01450-w",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.5,
+          "rationale": "涉及气溶胶和云，但重点是空气质量时空模式。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "云仅作为外参数提及，非主要研究内容。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "利用TROPOMI和OMI分析多种污染物时空特征，直接支撑空气质量遥感。",
+          "matched_concepts": [
+            "NO2",
+            "SO2",
+            "HCHO",
+            "O3",
+            "气溶胶",
+            "空气质量"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.1109/tgrs.2025.3643189",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.2,
+          "rationale": "臭氧有温室效应，但主要作为污染物。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "反演对流层臭氧廓线，直接支撑空气质量臭氧监测。",
+          "matched_concepts": [
+            "臭氧廓线",
+            "CrIS",
+            "OMPS",
+            "反演"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.3390/rs16162932",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.5,
+          "rationale": "综述涵盖气溶胶监测，但整体聚焦空气污染。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "综述卫星遥感在空气污染监测中的应用，直接支撑空气质量章节。",
+          "matched_concepts": [
+            "空气污染",
+            "卫星遥感",
+            "SDGs",
+            "GEMS",
+            "Sentinel-5P"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.1007/s00477-023-02459-4",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.8,
+          "rationale": "基于卫星AOD估算PM，核心是AOD应用。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "直接估算PM浓度，支撑近地面PM2.5遥感估算研究问题。",
+          "matched_concepts": [
+            "PM",
+            "AOD",
+            "随机森林",
+            "卫星遥感"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    },
+    {
+      "doi": "10.4209/aaqr.210398",
+      "theme_scores": [
+        {
+          "theme_id": "aerosol_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及气溶胶。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "cloud_remote_sensing",
+          "score": 0.0,
+          "rationale": "未涉及云。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "ghg_remote_sensing",
+          "score": 0.0,
+          "rationale": "NO2不是温室气体。",
+          "matched_concepts": []
+        },
+        {
+          "theme_id": "air_quality_remote_sensing",
+          "score": 1.0,
+          "rationale": "反演NO2柱浓度并与卫星数据对比，直接支撑空气质量NO2监测。",
+          "matched_concepts": [
+            "NO2",
+            "MAX-DOAS",
+            "OMI",
+            "TROPOMI"
+          ]
+        }
+      ],
+      "best_theme_id": "air_quality_remote_sensing"
+    }
+  ]
+}

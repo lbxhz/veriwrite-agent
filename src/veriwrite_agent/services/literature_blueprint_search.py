@@ -1,0 +1,56 @@
+"""Expand provisional outline themes into bounded executable search plans."""
+
+from __future__ import annotations
+
+import math
+
+from veriwrite_agent.models.literature_discovery import LiteratureSearchPlan
+from veriwrite_agent.models.literature_selection import (
+    LiteratureSearchBlueprint,
+    ThemedLiteratureSearchPlan,
+)
+
+
+class LiteratureBlueprintSearchExpander:
+    """Allocate candidate-pool budget across provisional outline themes."""
+
+    def __init__(self, *, pool_multiplier: int = 3) -> None:
+        if not 1 <= pool_multiplier <= 10:
+            raise ValueError("pool_multiplier must be between 1 and 10")
+        self._pool_multiplier = pool_multiplier
+
+    def expand(
+        self,
+        blueprint: LiteratureSearchBlueprint,
+    ) -> list[ThemedLiteratureSearchPlan]:
+        per_theme_max = max(
+            1,
+            math.ceil(blueprint.max_candidates / len(blueprint.themes)),
+        )
+        results: list[ThemedLiteratureSearchPlan] = []
+        for theme in blueprint.themes:
+            pool_target = min(
+                100,
+                per_theme_max,
+                max(theme.target_count, theme.target_count * self._pool_multiplier),
+            )
+            plan = LiteratureSearchPlan(
+                topic=f"{blueprint.topic}：{theme.section_title}",
+                discipline=blueprint.discipline,
+                primary_keywords=theme.primary_keywords,
+                related_keywords=theme.related_keywords,
+                search_queries=theme.search_queries,
+                accepted_tiers=blueprint.accepted_tiers,
+                year_from=blueprint.year_from,
+                year_to=blueprint.year_to,
+                journal_ranking_policy=blueprint.journal_ranking_policy,
+                target_eligible_count=pool_target,
+                max_candidates=per_theme_max,
+            )
+            results.append(
+                ThemedLiteratureSearchPlan(
+                    theme_id=theme.theme_id,
+                    plan=plan,
+                )
+            )
+        return results

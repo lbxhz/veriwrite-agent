@@ -7,12 +7,26 @@ from veriwrite_agent.services.llm_requirement_parser import (
 from veriwrite_agent.services.literature_discovery import (
     LiteratureDiscoveryService,
 )
+from veriwrite_agent.services.literature_blueprint_planner import (
+    BlueprintPlanningError,
+    LiteratureBlueprintPlanner,
+)
+from veriwrite_agent.services.literature_blueprint_search import (
+    LiteratureBlueprintSearchExpander,
+)
 from veriwrite_agent.services.literature_keyword_planner import (
     KeywordPlanningError,
     LiteratureKeywordPlanner,
 )
 from veriwrite_agent.services.literature_identity_verification import (
     LiteratureIdentityVerificationService,
+)
+from veriwrite_agent.services.literature_relevance_scorer import (
+    LLMLiteratureRelevanceScorer,
+    RelevanceScoringError,
+)
+from veriwrite_agent.services.literature_selector import (
+    BalancedLiteratureSelector,
 )
 from veriwrite_agent.services.requirement_completeness import (
     RequirementCompletenessChecker,
@@ -39,10 +53,16 @@ from veriwrite_agent.services.requirement_review_renderer import (
 __all__ = [
     "LLMOutputValidationError",
     "LLMRequirementParser",
+    "BlueprintPlanningError",
+    "BalancedLiteratureSelector",
     "KeywordPlanningError",
+    "LLMLiteratureRelevanceScorer",
+    "LiteratureBlueprintPlanner",
+    "LiteratureBlueprintSearchExpander",
     "LiteratureDiscoveryService",
     "LiteratureIdentityVerificationService",
     "LiteratureKeywordPlanner",
+    "RelevanceScoringError",
     "RequirementCompletenessChecker",
     "RequirementConfirmationError",
     "RequirementConfirmationService",

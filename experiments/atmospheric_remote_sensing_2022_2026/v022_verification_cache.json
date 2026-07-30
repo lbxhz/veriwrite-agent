@@ -1,0 +1,2389 @@
+{
+  "schema_version": "0.2.1",
+  "results": [
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.31871/ijntr.8.5.27",
+        "title": "Determining the Optimal Aerosol Model and Assumed DT Surface Reflectance in Aerosol Optical Depth Retrieval Procedure for Satellite Images",
+        "authors": [
+          "Chien-Hui Liu"
+        ],
+        "year": 2022,
+        "journal_title": "International Journal of New Technology and Research",
+        "publisher": "Nextgen Research Publications",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.31871/ijntr.8.5.27",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.31871/ijntr.8.5.27",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.31871/ijntr.8.5.27",
+        "final_url": "https://www.ijntr.org/download_data/IJNTR08050027.pdf",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:11.391659Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.31871/ijntr.8.5.27",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.31871%2Fijntr.8.5.27/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.31871/ijntr.8.5.27",
+          "title": "Determining the Optimal Aerosol Model and",
+          "authors": [
+            "Liu, Chien-Hui"
+          ],
+          "year": 2022,
+          "journal_title": "International Journal of New Technology and Research",
+          "publisher": "Nextgen Research Publications",
+          "url": "http://dx.doi.org/10.31871/ijntr.8.5.27",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.31871/ijntr.8.5.27\nUR  - http://dx.doi.org/10.31871/ijntr.8.5.27\nTI  - Determining the Optimal Aerosol Model and\nAssumed DT Surface Reflectance in Aerosol Optical\nDepth Retrieval Procedure for Satellite Images\nT2  - International Journal of New Technology and Research\nAU  - Liu, Chien-Hui\nPY  - 2022\nDA  - 2022/06/04\nPB  - Nextgen Research Publications\nIS  - 5\nVL  - 8\nSN  - 2454-4116\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:10.651864Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:11.391879Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1109/jstars.2025.3538572",
+        "title": "Vertical Distribution of the Aerosol Mass Concentration in East Asia Using CALIPSO Data",
+        "authors": [
+          "Sihan Li",
+          "Siqi Qi",
+          "Xiaojun Ma"
+        ],
+        "year": 2025,
+        "journal_title": "IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing",
+        "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1109/jstars.2025.3538572",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1109/jstars.2025.3538572",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1109/jstars.2025.3538572",
+        "final_url": "https://ieeexplore.ieee.org/document/10873820/",
+        "http_status": 202,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:13.236648Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1109/jstars.2025.3538572",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1109%2Fjstars.2025.3538572/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1109/jstars.2025.3538572",
+          "title": "Vertical Distribution of the Aerosol Mass Concentration in East Asia Using CALIPSO Data",
+          "authors": [
+            "Li, Sihan",
+            "Qi, Siqi",
+            "Ma, Xiaojun"
+          ],
+          "year": 2025,
+          "journal_title": "IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing",
+          "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+          "url": "http://dx.doi.org/10.1109/jstars.2025.3538572",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1109/jstars.2025.3538572\nUR  - http://dx.doi.org/10.1109/jstars.2025.3538572\nTI  - Vertical Distribution of the Aerosol Mass Concentration in East Asia Using CALIPSO Data\nT2  - IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing\nAU  - Li, Sihan\nAU  - Qi, Siqi\nAU  - Ma, Xiaojun\nPY  - 2025\nPB  - Institute of Electrical and Electronics Engineers (IEEE)\nSP  - 6041-6046\nVL  - 18\nSN  - 1939-1404\nSN  - 2151-1535\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:12.726867Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:13.236738Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.atmosres.2021.105938",
+        "title": "Spatio-temporal distribution of aerosol direct radiative forcing over mid-latitude regions in north hemisphere estimated from satellite observations",
+        "authors": [
+          "Annan Chen",
+          "Chuanfeng Zhao",
+          "Tianyi Fan"
+        ],
+        "year": 2022,
+        "journal_title": "Atmospheric Research",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.atmosres.2021.105938",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.atmosres.2021.105938",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.atmosres.2021.105938",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0169809521004944",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:15.644400Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.atmosres.2021.105938",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.atmosres.2021.105938/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.atmosres.2021.105938",
+          "title": "Spatio-temporal distribution of aerosol direct radiative forcing over mid-latitude regions in north hemisphere estimated from satellite observations",
+          "authors": [
+            "Chen, Annan",
+            "Zhao, Chuanfeng",
+            "Fan, Tianyi"
+          ],
+          "year": 2022,
+          "journal_title": "Atmospheric Research",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.atmosres.2021.105938",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.atmosres.2021.105938\nUR  - http://dx.doi.org/10.1016/j.atmosres.2021.105938\nTI  - Spatio-temporal distribution of aerosol direct radiative forcing over mid-latitude regions in north hemisphere estimated from satellite observations\nT2  - Atmospheric Research\nAU  - Chen, Annan\nAU  - Zhao, Chuanfeng\nAU  - Fan, Tianyi\nPY  - 2022\nDA  - 2022/03\nPB  - Elsevier BV\nSP  - 105938\nVL  - 266\nSN  - 0169-8095\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:14.365193Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:15.644475Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs15102670",
+        "title": "A Deep-Learning Scheme for Hydrometeor Type Classification Using Passive Microwave Observations",
+        "authors": [
+          "Ruiyao Chen",
+          "Ralf Bennartz"
+        ],
+        "year": 2023,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs15102670",
+        "abstract": "This paper proposes a novel approach for hydrometeor classification using passive microwave observations. The use of passive measurements for this purpose has not been extensively explored, despite being available for over four decades. We utilize the Micro-Wave Humidity Sounder-2 (MWHS-2) to relate microwave brightness temperatures to hydrometeor types derived from the global precipitation measurement’s (GPM) dual-frequency precipitation radar (DPR), which are classified into liquid, mixed, and ice phases. To achieve this, we utilize a convolutional neural network model with an attention mechanism that learns feature representations of MWHS-2 observations from spatial and temporal dimensions. The proposed algorithm classified hydrometeors with 84.7% accuracy using testing data and captured the geographical characteristics of hydrometeor types well in most areas, especially for frozen precipitation. We then evaluated our results by comparing predictions from a different year against DPR retrievals seasonally and globally. Our global annual cycles of precipitation occurrences largely agreed with DPR retrievals with biases being 8.4%, −11.8%, and 3.4%, respectively. Our approach provides a promising direction for utilizing passive microwave observations and deep-learning techniques in hydrometeor classification, with potential applications in the time-resolved observations of precipitation structure and storm intensity with a constellation of smallsats (TROPICS) algorithm development."
+      },
+      "resolution": {
+        "doi": "10.3390/rs15102670",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs15102670",
+        "final_url": "https://www.mdpi.com/2072-4292/15/10/2670",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:17.666258Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs15102670",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs15102670/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs15102670",
+          "title": "A Deep-Learning Scheme for Hydrometeor Type Classification Using Passive Microwave Observations",
+          "authors": [
+            "Chen, Ruiyao",
+            "Bennartz, Ralf"
+          ],
+          "year": 2023,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs15102670",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs15102670\nUR  - http://dx.doi.org/10.3390/rs15102670\nTI  - A Deep-Learning Scheme for Hydrometeor Type Classification Using Passive Microwave Observations\nT2  - Remote Sensing\nAU  - Chen, Ruiyao\nAU  - Bennartz, Ralf\nPY  - 2023\nDA  - 2023/05/20\nPB  - MDPI AG\nSP  - 2670\nIS  - 10\nVL  - 15\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:16.782023Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:17.666333Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.5194/amt-19-293-2026",
+        "title": "Application of XBAER aerosol optical depth retrieval algorithm to hyperspectral EnMAP satellite data",
+        "authors": [
+          "Simon Laffoy",
+          "Marco Vountas",
+          "Linlu Mei",
+          "Hartmut Bösch"
+        ],
+        "year": 2026,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.5194/amt-19-293-2026",
+        "abstract": "Abstract. New high-resolution hyper and multispectral satellite instruments enable the retrieval of aerosol optical depth (AOD) at spatial resolutions of tens of meters. The eXtensible Bremen AErosol Retrieval (XBAER) AOD retrieval algorithm has previously been developed for use with Ocean and Land Colour Instrument (OLCI) and MEdium Resolution Imaging Spectrometer (MERIS) radiance data. With the intention of later modifying XBAER to use the full 30 m spatial resolution data from the Hyper-Spectral Imager (HSI) on board the Environmental Mapping and Analysis Program (EnMAP) satellite, the present study investigates how HSI data compare to OLCI data. For the bands of interest, top of atmosphere reflectances generally compare well (R&gt;0.9), the intercept of the best fit line is less than 0.05 from the origin, and the slope is less than 0.1 from 1. However exceptions exist and these are explained as the result of differences in the spectral response functions of the instruments in the region of the spectrum around the O2 A-Band absorption feature, or as a result of differences in the viewing geometry of the satellites which produces differing bidirectional reflectance distribution function (BRDF) effects. XBAER is then used to retrieve OLCI and HSI surface reflectance (SRF) and AOD. For SRF the comparison between OLCI and HSI yields R=0.953, best fit intercept =0.003 and best fit slope =1.082. The respective comparison for AOD yields R=0.809, best fit intercept =0.153 and best fit slope =0.785. These comparisons are then separated by surface type and insights are gained into the performance of the algorithm. Finally, the unmodified XBAER algorithm is run using the full spatial resolution HSI data. Plumes from biomass-burning are identified in a single scene, and a comparison with AErosol RObotic NETwork (AERONET) AOD is performed for multiple scenes, achieving R=0.631."
+      },
+      "resolution": {
+        "doi": "10.5194/amt-19-293-2026",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.5194/amt-19-293-2026",
+        "final_url": "https://amt.copernicus.org/articles/19/293/2026/",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:20.830981Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.5194/amt-19-293-2026",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.5194%2Famt-19-293-2026/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.5194/amt-19-293-2026",
+          "title": "Application of XBAER aerosol optical depth retrieval algorithm to hyperspectral EnMAP satellite data",
+          "authors": [
+            "Laffoy, Simon",
+            "Vountas, Marco",
+            "Mei, Linlu",
+            "Bösch, Hartmut"
+          ],
+          "year": 2026,
+          "journal_title": "Atmospheric Measurement Techniques",
+          "publisher": "Copernicus GmbH",
+          "url": "http://dx.doi.org/10.5194/amt-19-293-2026",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.5194/amt-19-293-2026\nUR  - http://dx.doi.org/10.5194/amt-19-293-2026\nTI  - Application of XBAER aerosol optical depth retrieval algorithm to hyperspectral EnMAP satellite data\nT2  - Atmospheric Measurement Techniques\nAU  - Laffoy, Simon\nAU  - Vountas, Marco\nAU  - Mei, Linlu\nAU  - Bösch, Hartmut\nPY  - 2026\nDA  - 2026/01/15\nPB  - Copernicus GmbH\nSP  - 293-306\nIS  - 1\nVL  - 19\nSN  - 1867-8548\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:19.131465Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:20.831064Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1002/joc.7599",
+        "title": "Climatology of aerosol types and their vertical distribution over East Asia based on <scp>CALIPSO</scp> lidar measurements",
+        "authors": [
+          "Lu Gui",
+          "Minghui Tao",
+          "Yi Wang",
+          "Lunche Wang",
+          "Liangfu Chen",
+          "Changqing Lin",
+          "Jinhua Tao",
+          "Jun Wang",
+          "Chao Yu"
+        ],
+        "year": 2022,
+        "journal_title": "International Journal of Climatology",
+        "publisher": "Wiley",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1002/joc.7599",
+        "abstract": "Abstract Aerosol vertical distribution generally determines their health impacts and climate effects. By using long‐term (2007–2019) CALIPSO lidar measurements, we present a large‐scale insight into the climatology of aerosol types and their vertical structure over East Asia. Despite the low sampling frequency, comparison with MODIS aerosol optical depth (AOD) shows that the integrated CAIPSO vertical extinction can reasonably reproduce spatial patterns of the aerosol loading. With the unique advantage of active detection, CALIPSO reveals an obvious enhancement of the night‐time AOD due to worse diffusion conditions. Moreover, long‐range transport of different aerosols including dust, polluted dust, and smoke has substantial contribution to the aerosol loading over East Asia. Pure dust particles are mainly concentrated over the deserts with notable dust transport belts (dust AOD &gt; 0.2 at 532 nm) along downwind regions during winter and spring. By contrast, polluted dust is prevalent over the downstream eastern China with much higher AODs throughout the year. In particular, AOD of polluted dust (~0.5) is higher in winter rather than in spring, which is consistent with their seasonal occurrences. Smoke aerosols usually appear in the night‐time over southern China. The top heights of aerosols are around 4–6 km, with dust and smoke having higher extinction at upstream regions. The climatology of these aerosol types and vertical distribution can provide a significant constraint for associated studies of air quality and climate effects."
+      },
+      "resolution": {
+        "doi": "10.1002/joc.7599",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1002/joc.7599",
+        "final_url": "https://rmets.onlinelibrary.wiley.com/doi/10.1002/joc.7599",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:22.624210Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1002/joc.7599",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1002%2Fjoc.7599/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1002/joc.7599",
+          "title": "Climatology of aerosol types and their vertical distribution over East Asia based on <scp>CALIPSO</scp> lidar measurements",
+          "authors": [
+            "Gui, Lu",
+            "Tao, Minghui",
+            "Wang, Yi",
+            "Wang, Lunche",
+            "Chen, Liangfu",
+            "Lin, Changqing",
+            "Tao, Jinhua",
+            "Wang, Jun",
+            "Yu, Chao"
+          ],
+          "year": 2022,
+          "journal_title": "International Journal of Climatology",
+          "publisher": "Wiley",
+          "url": "http://dx.doi.org/10.1002/joc.7599",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1002/joc.7599\nUR  - http://dx.doi.org/10.1002/joc.7599\nTI  - Climatology of aerosol types and their vertical distribution over East Asia based on <scp>CALIPSO</scp> lidar measurements\nT2  - International Journal of Climatology\nAU  - Gui, Lu\nAU  - Tao, Minghui\nAU  - Wang, Yi\nAU  - Wang, Lunche\nAU  - Chen, Liangfu\nAU  - Lin, Changqing\nAU  - Tao, Jinhua\nAU  - Wang, Jun\nAU  - Yu, Chao\nPY  - 2022\nDA  - 2022/04\nPB  - Wiley\nSP  - 6042-6054\nIS  - 11\nVL  - 42\nSN  - 0899-8418\nSN  - 1097-0088\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:22.099642Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:22.624257Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1029/2023gl105282",
+        "title": "Spatial Aggregation of Satellite Observations Leads to an Overestimation of the Radiative Forcing due to Aerosol‐Cloud Interactions",
+        "authors": [
+          "Tom Goren",
+          "Odran Sourdeval",
+          "Jan Kretzschmar",
+          "Johannes Quaas"
+        ],
+        "year": 2023,
+        "journal_title": "Geophysical Research Letters",
+        "publisher": "American Geophysical Union (AGU)",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1029/2023gl105282",
+        "abstract": "Abstract The estimation of cloud radiative forcing due to aerosol‐cloud interactions, RF aci (also known as the first indirect effect), relies on approximating the cloud albedo susceptibility to changes in droplet concentration, β . β depends on the cloud albedo and droplet concentration, both of which can be observed by satellites. Satellite observations are often spatially aggregated to coarser resolutions, typically 1 × 1° scenes. However, on such spatial scales, the cloud albedo tends to be heterogeneous, whereas the β approximation assumes homogeneity. Here, we demonstrate that the common practice of aggregating satellite data and neglecting cloud albedo heterogeneity results in an average overestimation of 10% in previous estimates of the RF aci . Additionally, we establish a relationship between the magnitude of the bias in β and Stratocumulus morphologies, providing a physical context for cloud heterogeneity and the associated bias. Lastly, we propose a correction method that can be applied to cloud albedo gridded data."
+      },
+      "resolution": {
+        "doi": "10.1029/2023gl105282",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1029/2023gl105282",
+        "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2023GL105282",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:24.455528Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1029/2023gl105282",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1029%2F2023gl105282/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1029/2023gl105282",
+          "title": "Spatial Aggregation of Satellite Observations Leads to an Overestimation of the Radiative Forcing due to Aerosol‐Cloud Interactions",
+          "authors": [
+            "Goren, Tom",
+            "Sourdeval, Odran",
+            "Kretzschmar, Jan",
+            "Quaas, Johannes"
+          ],
+          "year": 2023,
+          "journal_title": "Geophysical Research Letters",
+          "publisher": "American Geophysical Union (AGU)",
+          "url": "http://dx.doi.org/10.1029/2023gl105282",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1029/2023gl105282\nUR  - http://dx.doi.org/10.1029/2023gl105282\nTI  - Spatial Aggregation of Satellite Observations Leads to an Overestimation of the Radiative Forcing due to Aerosol‐Cloud Interactions\nT2  - Geophysical Research Letters\nAU  - Goren, Tom\nAU  - Sourdeval, Odran\nAU  - Kretzschmar, Jan\nAU  - Quaas, Johannes\nPY  - 2023\nDA  - 2023/09/14\nPB  - American Geophysical Union (AGU)\nIS  - 18\nVL  - 50\nSN  - 0094-8276\nSN  - 1944-8007\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:23.931389Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:24.455619Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs18020334",
+        "title": "GCOM-C/SGLI-Based Optical-Water-Type Classification with Emphasis on Discriminating Phytoplankton Bloom Types",
+        "authors": [
+          "Eko Siswanto"
+        ],
+        "year": 2026,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs18020334",
+        "abstract": "Classifying optical water types (OWTs), particularly concerning different phytoplankton bloom types, is critically important because dominant phytoplankton groups govern key marine ecosystem functions and biogeochemical processes, including nutrient cycling and carbon export. This study refines a recent OWT classification method developed for the Second-Generation Global Imager (SGLI), which was originally proposed to discriminate dinoflagellate and diatom blooms. By employing binary logistic regression (bLR) with independent in situ data from Karenia selliformis (dinoflagellate) blooms off the Kamchatka Peninsula and Skeletonema spp. (diatom) blooms in Tokyo Bay, this study establishes more robust and statistically meaningful boundaries between OWTs. The analysis confirms the diagnostic spectral shapes from SGLI data: a trough at 490 nm for K. selliformis blooms and a peak at 490 nm for diatom blooms, validating the consistency of this spectral criterion. The updated method reliably identifies waters dominated by coloured dissolved organic matter and different phytoplankton functional types in mesotrophic waters, and successfully detected a Karenia mikimotoi bloom in the Gulf St. Vincent, South Australia, demonstrating its potential for the global monitoring of red tides. By providing a reliable, satellite-based tool to distinguish between ecologically distinct phytoplankton groups, this refined OWT classification offers a valuable data product to improve the accuracy of marine ecosystem and carbon cycle models, moving beyond bulk chlorophyll-a parameterizations."
+      },
+      "resolution": {
+        "doi": "10.3390/rs18020334",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs18020334",
+        "final_url": "https://www.mdpi.com/2072-4292/18/2/334",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:26.211329Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs18020334",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs18020334/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs18020334",
+          "title": "GCOM-C/SGLI-Based Optical-Water-Type Classification with Emphasis on Discriminating Phytoplankton Bloom Types",
+          "authors": [
+            "Siswanto, Eko"
+          ],
+          "year": 2026,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs18020334",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs18020334\nUR  - http://dx.doi.org/10.3390/rs18020334\nTI  - GCOM-C/SGLI-Based Optical-Water-Type Classification with Emphasis on Discriminating Phytoplankton Bloom Types\nT2  - Remote Sensing\nAU  - Siswanto, Eko\nPY  - 2026\nDA  - 2026/01/19\nPB  - MDPI AG\nSP  - 334\nIS  - 2\nVL  - 18\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:25.645665Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:26.211412Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.atmosres.2025.108411",
+        "title": "Downscaling aerosol optical depth by fusing satellite retrieval and model simulation using artificial intelligence technology",
+        "authors": [
+          "Lin Sun",
+          "Xiangshuo Zhang",
+          "Yulong Fan",
+          "Zhihui Wang",
+          "Xiaohu Sun"
+        ],
+        "year": 2026,
+        "journal_title": "Atmospheric Research",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.atmosres.2025.108411",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.atmosres.2025.108411",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.atmosres.2025.108411",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0169809525005034",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:28.557127Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.atmosres.2025.108411",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.atmosres.2025.108411/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.atmosres.2025.108411",
+          "title": "Downscaling aerosol optical depth by fusing satellite retrieval and model simulation using artificial intelligence technology",
+          "authors": [
+            "Sun, Lin",
+            "Zhang, Xiangshuo",
+            "Fan, Yulong",
+            "Wang, Zhihui",
+            "Sun, Xiaohu"
+          ],
+          "year": 2026,
+          "journal_title": "Atmospheric Research",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.atmosres.2025.108411",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.atmosres.2025.108411\nUR  - http://dx.doi.org/10.1016/j.atmosres.2025.108411\nTI  - Downscaling aerosol optical depth by fusing satellite retrieval and model simulation using artificial intelligence technology\nT2  - Atmospheric Research\nAU  - Sun, Lin\nAU  - Zhang, Xiangshuo\nAU  - Fan, Yulong\nAU  - Wang, Zhihui\nAU  - Sun, Xiaohu\nPY  - 2026\nDA  - 2026/01\nPB  - Elsevier BV\nSP  - 108411\nVL  - 328\nSN  - 0169-8095\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:27.344842Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:28.557162Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.2139/ssrn.4232507",
+        "title": "Spatiotemporal Distribution of Optical Properties of Dust Aerosol in Xinjiang Basin from Calipso and Cats Observations",
+        "authors": [
+          "Gang Ren",
+          "Baiwan Pan",
+          "Jin Wang",
+          "Dongliang An",
+          "Mingfeng Yang",
+          "Hui Liu"
+        ],
+        "year": 2022,
+        "journal_title": "SSRN Electronic Journal",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.2139/ssrn.4232507",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.2139/ssrn.4232507",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.2139/ssrn.4232507",
+        "final_url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4232507",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:30.974069Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.2139/ssrn.4232507",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.2139%2Fssrn.4232507/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.2139/ssrn.4232507",
+          "title": "Spatiotemporal Distribution of Optical Properties of Dust Aerosol in Xinjiang Basin from Calipso and Cats Observations",
+          "authors": [
+            "Ren, Gang",
+            "Pan, Baiwan",
+            "Wang, Jin",
+            "An, Dongliang",
+            "Yang, Mingfeng",
+            "Liu, Hui"
+          ],
+          "year": 2022,
+          "journal_title": "SSRN Electronic Journal",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.2139/ssrn.4232507",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.2139/ssrn.4232507\nUR  - http://dx.doi.org/10.2139/ssrn.4232507\nTI  - Spatiotemporal Distribution of Optical Properties of Dust Aerosol in Xinjiang Basin from Calipso and Cats Observations\nT2  - SSRN Electronic Journal\nAU  - Ren, Gang\nAU  - Pan, Baiwan\nAU  - Wang, Jin\nAU  - An, Dongliang\nAU  - Yang, Mingfeng\nAU  - Liu, Hui\nPY  - 2022\nPB  - Elsevier BV\nSN  - 1556-5068\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:30.025745Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:30.974128Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs17142507",
+        "title": "Impact of Cloud Microphysics Initialization Using Satellite and Radar Data on CMA-MESO Forecasts",
+        "authors": [
+          "Lijuan Zhu",
+          "Yuan Jiang",
+          "Jiandong Gong",
+          "Dan Wang"
+        ],
+        "year": 2025,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs17142507",
+        "abstract": "High-resolution numerical weather prediction requires accurate cloud microphysical initial conditions to enhance forecasting capabilities for high-impact severe weather events such as convective storms. This study integrated Fengyun-2 (FY-2) geostationary satellite data (equivalent blackbody temperature and total cloud cover) and next-generation 3D weather radar reflectivity from the China Meteorological Administration (CMA) to construct cloud microphysical initial fields and evaluate their impact on the CMA-MESO 3 km regional model. An analysis of the catastrophic rainfall event in Henan on 20 July 2021, and a 92-day continuous experiment (May–July 2024) revealed that assimilating cloud microphysical variables significantly improved precipitation forecasting: the equitable threat scores (ETSs) for 1 h forecasts of light, moderate, and heavy rain increased from 0.083, 0.043, and 0.007 to 0.41, 0.36, and 0.217, respectively, with average hourly ETS improvements of 21–71% for 2–6 h forecasts and increases in ETSs for light, moderate, and heavy rain of 7.5%, 9.8%, and 24.9% at 7–12 h, with limited improvement beyond 12 h. Furthermore, the root mean square error (RMSE) of the 2 m temperature forecasts decreased across all 1–72 h lead times, with a 4.2% reduction during the 1–9 h period, while the geopotential height RMSE reductions reached 5.8%, 3.3%, and 2.0% at 24, 48, and 72 h, respectively. Additionally, synchronized enhancements were observed in 10 m wind prediction accuracy. These findings underscore the critical role of cloud microphysical initialization in advancing mesoscale numerical weather prediction systems."
+      },
+      "resolution": {
+        "doi": "10.3390/rs17142507",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs17142507",
+        "final_url": "https://www.mdpi.com/2072-4292/17/14/2507",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:32.647519Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs17142507",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs17142507/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs17142507",
+          "title": "Impact of Cloud Microphysics Initialization Using Satellite and Radar Data on CMA-MESO Forecasts",
+          "authors": [
+            "Zhu, Lijuan",
+            "Jiang, Yuan",
+            "Gong, Jiandong",
+            "Wang, Dan"
+          ],
+          "year": 2025,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs17142507",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs17142507\nUR  - http://dx.doi.org/10.3390/rs17142507\nTI  - Impact of Cloud Microphysics Initialization Using Satellite and Radar Data on CMA-MESO Forecasts\nT2  - Remote Sensing\nAU  - Zhu, Lijuan\nAU  - Jiang, Yuan\nAU  - Gong, Jiandong\nAU  - Wang, Dan\nPY  - 2025\nDA  - 2025/07/18\nPB  - MDPI AG\nSP  - 2507\nIS  - 14\nVL  - 17\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:32.101204Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:32.647545Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1029/2022jd036826",
+        "title": "Characterizing Vertical Stratification of the Cloud Thermodynamic Phase With a Combined Use of CALIPSO Lidar and MODIS SWIR Measurements",
+        "authors": [
+          "Takashi M. Nagao",
+          "Kentaroh Suzuki"
+        ],
+        "year": 2022,
+        "journal_title": "Journal of Geophysical Research: Atmospheres",
+        "publisher": "American Geophysical Union (AGU)",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1029/2022jd036826",
+        "abstract": "Abstract The cloud thermodynamic phase information derived from the CALIPSO lidar (CALIOP) and shortwave infrared (SWIR) channels of Aqua/MODIS represents different penetration depths within a cloud layer. This study combined them to better characterize the vertical stratification of the cloud thermodynamic phase within the atmospheric column. The temperature dependences of the phase occurrences were first compared between the two sensors to find a significant quantitative difference, which appeared to be large enough to affect climate model evaluations of the cloud phase representations. The two pieces of cloud phase information obtained from the two sensors, each binarized into liquid or ice, were then combined to define the four categories of cloud phases resulting from combinations of the two sensors that provide two cloud phases each (liquid and ice). Global occurrences of the four phase categories were validated against temperature information from MODIS thermal infrared (TIR) channels to confirm that the four categories are reasonably associated with cloud‐top temperature and brightness temperature differences. The vertical stratification of the cloud thermodynamic phase characterized by CALIOP and SWIR was then investigated through comparisons with CloudSat/CPR radar profile statistics to illustrate how cloud vertical structures vary systematically with different combinations of the two cloud phases from CALIOP and SWIR. The results suggest that the combined use of complementary information from the four sensors (lidar, SWIR, TIR, and radar) can better characterize the vertical structures of the cloud thermodynamic phase, which could then provide more detailed observational constraints for model representations of the cloud phase."
+      },
+      "resolution": {
+        "doi": "10.1029/2022jd036826",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1029/2022jd036826",
+        "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022JD036826",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:34.671172Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1029/2022jd036826",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1029%2F2022jd036826/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1029/2022jd036826",
+          "title": "Characterizing Vertical Stratification of the Cloud Thermodynamic Phase With a Combined Use of CALIPSO Lidar and MODIS SWIR Measurements",
+          "authors": [
+            "Nagao, Takashi M.",
+            "Suzuki, Kentaroh"
+          ],
+          "year": 2022,
+          "journal_title": "Journal of Geophysical Research: Atmospheres",
+          "publisher": "American Geophysical Union (AGU)",
+          "url": "http://dx.doi.org/10.1029/2022jd036826",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1029/2022jd036826\nUR  - http://dx.doi.org/10.1029/2022jd036826\nTI  - Characterizing Vertical Stratification of the Cloud Thermodynamic Phase With a Combined Use of CALIPSO Lidar and MODIS SWIR Measurements\nT2  - Journal of Geophysical Research: Atmospheres\nAU  - Nagao, Takashi M.\nAU  - Suzuki, Kentaroh\nPY  - 2022\nDA  - 2022/11/08\nPB  - American Geophysical Union (AGU)\nIS  - 21\nVL  - 127\nSN  - 2169-897X\nSN  - 2169-8996\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:33.756006Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:34.671193Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs14163844",
+        "title": "Quantifying the Long-Term MODIS Cloud Regime Dependent Relationship between Aerosol Optical Depth and Cloud Properties over China",
+        "authors": [
+          "Yanglian Li",
+          "Tianyi Fan",
+          "Chuanfeng Zhao",
+          "Xin Yang",
+          "Ping Zhou",
+          "Keying Li"
+        ],
+        "year": 2022,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs14163844",
+        "abstract": "Aerosols modify cloud properties and influence the regional climate. The impacts of aerosols on clouds differ for various cloud types, but their long-term relationships have not been fully characterized on a cloud regime basis. In this study, we quantified the cloud regime-dependent relationship between aerosol optical depth (AOD) and cloud properties over China using Moderate-Resolution Imaging Spectroradiometer (MODIS) data from 2002 to 2019. Daily clouds in each 1° by 1° grid were categorized into seven cloud regimes based on the “k-means” clustering algorithm. Overall, the cloud height increased, the cloud thickness and liquid water path increased, and the total cloud cover decreased for all cloud regimes during the study period. Linear correlations between AOD and cloud properties were found within stratocumulus, deep convective, and high cloud regimes, showing consistency with the classic aerosol–cloud interaction paradigms. Using stepwise multivariable linear regression, we found that the meteorological factors dominated the variation of cloud top pressure, while AOD dominated the variation of total cloud cover for most cloud regimes. There are regional differences in the main meteorological factors affecting the cloud properties."
+      },
+      "resolution": {
+        "doi": "10.3390/rs14163844",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs14163844",
+        "final_url": "https://www.mdpi.com/2072-4292/14/16/3844",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:36.682704Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs14163844",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs14163844/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs14163844",
+          "title": "Quantifying the Long-Term MODIS Cloud Regime Dependent Relationship between Aerosol Optical Depth and Cloud Properties over China",
+          "authors": [
+            "Li, Yanglian",
+            "Fan, Tianyi",
+            "Zhao, Chuanfeng",
+            "Yang, Xin",
+            "Zhou, Ping",
+            "Li, Keying"
+          ],
+          "year": 2022,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs14163844",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs14163844\nUR  - http://dx.doi.org/10.3390/rs14163844\nTI  - Quantifying the Long-Term MODIS Cloud Regime Dependent Relationship between Aerosol Optical Depth and Cloud Properties over China\nT2  - Remote Sensing\nAU  - Li, Yanglian\nAU  - Fan, Tianyi\nAU  - Zhao, Chuanfeng\nAU  - Yang, Xin\nAU  - Zhou, Ping\nAU  - Li, Keying\nPY  - 2022\nDA  - 2022/08/09\nPB  - MDPI AG\nSP  - 3844\nIS  - 16\nVL  - 14\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:35.832138Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:36.682734Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/s24020541",
+        "title": "Remote Sensing Retrieval of Cloud Top Height Using Neural Networks and Data from Cloud-Aerosol Lidar with Orthogonal Polarization",
+        "authors": [
+          "Yinhe Cheng",
+          "Hongjian He",
+          "Qiangyu Xue",
+          "Jiaxuan Yang",
+          "Wei Zhong",
+          "Xinyu Zhu",
+          "Xiangyu Peng"
+        ],
+        "year": 2024,
+        "journal_title": "Sensors",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/s24020541",
+        "abstract": "In order to enhance the retrieval accuracy of cloud top height (CTH) from MODIS data, neural network models were employed based on Cloud-Aerosol Lidar with Orthogonal Polarization (CALIOP) data. Three types of methods were established using MODIS inputs: cloud parameters, calibrated radiance, and a combination of both. From a statistical standpoint, models with combination inputs demonstrated the best performance, followed by models with calibrated radiance inputs, while models relying solely on calibrated radiance had poorer applicability. This work found that cloud top pressure (CTP) and cloud top temperature played a crucial role in CTH retrieval from MODIS data. However, within the same type of models, there were slight differences in the retrieved results, and these differences were not dependent on the quantity of input parameters. Therefore, the model with fewer inputs using cloud parameters and calibrated radiance was recommended and employed for individual case studies. This model produced results closest to the actual cloud top structure of the typhoon and exhibited similar cloud distribution patterns when compared with the Cloud-Aerosol Lidar and Infrared Pathfinder Satellite Observation (CALIPSO) CTHs from a climatic statistical perspective. This suggests that the recommended model has good applicability and credibility in CTH retrieval from MODIS images. This work provides a method to improve accurate CTHs from MODIS data for better utilization."
+      },
+      "resolution": {
+        "doi": "10.3390/s24020541",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/s24020541",
+        "final_url": "https://www.mdpi.com/1424-8220/24/2/541",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:38.374643Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/s24020541",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Fs24020541/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/s24020541",
+          "title": "Remote Sensing Retrieval of Cloud Top Height Using Neural Networks and Data from Cloud-Aerosol Lidar with Orthogonal Polarization",
+          "authors": [
+            "Cheng, Yinhe",
+            "He, Hongjian",
+            "Xue, Qiangyu",
+            "Yang, Jiaxuan",
+            "Zhong, Wei",
+            "Zhu, Xinyu",
+            "Peng, Xiangyu"
+          ],
+          "year": 2024,
+          "journal_title": "Sensors",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/s24020541",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/s24020541\nUR  - http://dx.doi.org/10.3390/s24020541\nTI  - Remote Sensing Retrieval of Cloud Top Height Using Neural Networks and Data from Cloud-Aerosol Lidar with Orthogonal Polarization\nT2  - Sensors\nAU  - Cheng, Yinhe\nAU  - He, Hongjian\nAU  - Xue, Qiangyu\nAU  - Yang, Jiaxuan\nAU  - Zhong, Wei\nAU  - Zhu, Xinyu\nAU  - Peng, Xiangyu\nPY  - 2024\nDA  - 2024/01/15\nPB  - MDPI AG\nSP  - 541\nIS  - 2\nVL  - 24\nSN  - 1424-8220\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:37.799126Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:38.374678Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.rse.2022.113235",
+        "title": "Retrieval of ocean optical and plankton properties with the satellite Cloud-Aerosol Lidar with Orthogonal Polarization (CALIOP) sensor: Background, data processing, and validation status",
+        "authors": [
+          "Michael J. Behrenfeld",
+          "Yongxiang Hu",
+          "Kelsey M. Bisson",
+          "Xiaomei Lu",
+          "Toby K. Westberry"
+        ],
+        "year": 2022,
+        "journal_title": "Remote Sensing of Environment",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.rse.2022.113235",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.rse.2022.113235",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.rse.2022.113235",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S0034425722003418",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:40.821256Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.rse.2022.113235",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.rse.2022.113235/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.rse.2022.113235",
+          "title": "Retrieval of ocean optical and plankton properties with the satellite Cloud-Aerosol Lidar with Orthogonal Polarization (CALIOP) sensor: Background, data processing, and validation status",
+          "authors": [
+            "Behrenfeld, Michael J.",
+            "Hu, Yongxiang",
+            "Bisson, Kelsey M.",
+            "Lu, Xiaomei",
+            "Westberry, Toby K."
+          ],
+          "year": 2022,
+          "journal_title": "Remote Sensing of Environment",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.rse.2022.113235",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.rse.2022.113235\nUR  - http://dx.doi.org/10.1016/j.rse.2022.113235\nTI  - Retrieval of ocean optical and plankton properties with the satellite Cloud-Aerosol Lidar with Orthogonal Polarization (CALIOP) sensor: Background, data processing, and validation status\nT2  - Remote Sensing of Environment\nAU  - Behrenfeld, Michael J.\nAU  - Hu, Yongxiang\nAU  - Bisson, Kelsey M.\nAU  - Lu, Xiaomei\nAU  - Westberry, Toby K.\nPY  - 2022\nDA  - 2022/11\nPB  - Elsevier BV\nSP  - 113235\nVL  - 281\nSN  - 0034-4257\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:39.514649Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:40.821290Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.5194/amt-17-5655-2024",
+        "title": "Marine cloud base height retrieval from MODIS cloud properties using machine learning",
+        "authors": [
+          "Julien Lenhardt",
+          "Johannes Quaas",
+          "Dino Sejdinovic"
+        ],
+        "year": 2024,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.5194/amt-17-5655-2024",
+        "abstract": "Abstract. Clouds are a crucial regulator in the Earth's energy budget through their radiative properties, both at the top of the atmosphere and at the surface; hence, determining key factors like their vertical extent is of essential interest. While the cloud top height is commonly retrieved by satellites, the cloud base height is difficult to estimate from satellite remote sensing data. Here, we present a novel method called ORABase (Ordinal Regression Auto-encoding of cloud Base), leveraging spatially resolved cloud properties from the Moderate Resolution Imaging Spectroradiometer (MODIS) instrument to retrieve the cloud base height over marine areas. A machine learning model is built with two components to facilitate the cloud base height retrieval: the first component is an auto-encoder designed to learn a representation of the data cubes of cloud properties and to reduce their dimensionality. The second component is developed for predicting the cloud base using ground-based ceilometer observations from the lower-dimensional encodings generated by the aforementioned auto-encoder. The method is then evaluated based on a collection of collocated surface ceilometer observations and retrievals from the CALIOP satellite lidar. The statistical model performs similarly on both datasets and performs notably well on the test set of ceilometer cloud bases, where it exhibits accurate predictions, particularly for lower cloud bases, and a narrow distribution of the absolute error, namely 379 and 328 m for the mean absolute error and the standard deviation of the absolute error, respectively. Furthermore, cloud base height predictions are generated for an entire year over the ocean, and global mean aggregates are also presented, providing insights into global cloud base height distributions and offering a valuable dataset for extensive studies requiring global cloud base height retrievals. The global cloud base height dataset and the presented models constituting ORABase are available from Zenodo (Lenhardt et al., 2024)."
+      },
+      "resolution": {
+        "doi": "10.5194/amt-17-5655-2024",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.5194/amt-17-5655-2024",
+        "final_url": "https://amt.copernicus.org/articles/17/5655/2024/",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:43.233957Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.5194/amt-17-5655-2024",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.5194%2Famt-17-5655-2024/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.5194/amt-17-5655-2024",
+          "title": "Marine cloud base height retrieval from MODIS cloud properties using machine learning",
+          "authors": [
+            "Lenhardt, Julien",
+            "Quaas, Johannes",
+            "Sejdinovic, Dino"
+          ],
+          "year": 2024,
+          "journal_title": "Atmospheric Measurement Techniques",
+          "publisher": "Copernicus GmbH",
+          "url": "http://dx.doi.org/10.5194/amt-17-5655-2024",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.5194/amt-17-5655-2024\nUR  - http://dx.doi.org/10.5194/amt-17-5655-2024\nTI  - Marine cloud base height retrieval from MODIS cloud properties using machine learning\nT2  - Atmospheric Measurement Techniques\nAU  - Lenhardt, Julien\nAU  - Quaas, Johannes\nAU  - Sejdinovic, Dino\nPY  - 2024\nDA  - 2024/09/26\nPB  - Copernicus GmbH\nSP  - 5655-5677\nIS  - 18\nVL  - 17\nSN  - 1867-8548\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:41.977351Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:43.233984Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs17142439",
+        "title": "Assessment of Aerosol Optical Depth, Cloud Fraction, and Liquid Water Path in CMIP6 Models Using Satellite Observations",
+        "authors": [
+          "Jiakun Liang",
+          "Jennifer D. Small Griswold"
+        ],
+        "year": 2025,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs17142439",
+        "abstract": "Aerosols are critical to the Earth’s atmosphere, influencing climate through interactions with solar radiation and clouds. However, accurately replicating the interactions between aerosols and clouds remains challenging due to the complexity of the physical processes involved. This study evaluated the performance of Coupled Model Intercomparison Project phase 6 (CMIP6) models in simulating aerosol optical depth (AOD), cloud fraction (CF), and liquid water path (LWP) by comparing them with satellite observations from MODIS and AMSR-E. Using 30 years of CMIP6 model simulations and available satellite observations during the satellite era, the results show that most CMIP6 models underestimate CF and LWP by 24.3% for LWP in the Northern Hemisphere. An assessment of spatial patterns indicates that models generally align more closely with observations in the Northern Hemisphere than in the Southern Hemisphere. Latitudinal profiles reveal that while most models capture the overall distribution patterns, they struggle to accurately reproduce observed magnitudes. A quantitative scoring system is applied to evaluate each model’s ability to replicate the spatial characteristics of multi-year mean aerosol and cloud properties. Overall, the findings suggest that CMIP6 models perform better in simulating AOD and CF than LWP, particularly in the Southern Hemisphere."
+      },
+      "resolution": {
+        "doi": "10.3390/rs17142439",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs17142439",
+        "final_url": "https://www.mdpi.com/2072-4292/17/14/2439",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:45.134843Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs17142439",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs17142439/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs17142439",
+          "title": "Assessment of Aerosol Optical Depth, Cloud Fraction, and Liquid Water Path in CMIP6 Models Using Satellite Observations",
+          "authors": [
+            "Liang, Jiakun",
+            "Griswold, Jennifer D. Small"
+          ],
+          "year": 2025,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs17142439",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs17142439\nUR  - http://dx.doi.org/10.3390/rs17142439\nTI  - Assessment of Aerosol Optical Depth, Cloud Fraction, and Liquid Water Path in CMIP6 Models Using Satellite Observations\nT2  - Remote Sensing\nAU  - Liang, Jiakun\nAU  - Griswold, Jennifer D. Small\nPY  - 2025\nDA  - 2025/07/14\nPB  - MDPI AG\nSP  - 2439\nIS  - 14\nVL  - 17\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:44.581051Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:45.134871Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1029/2026gl122478",
+        "title": "Trends and Sensitivities of Low‐Cloud Cover and Top Height From Spaceborne Lidar Observations",
+        "authors": [
+          "M. Tesche",
+          "H. Andersen",
+          "G. Choudhury",
+          "T. Goren"
+        ],
+        "year": 2026,
+        "journal_title": "Geophysical Research Letters",
+        "publisher": "American Geophysical Union (AGU)",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1029/2026gl122478",
+        "abstract": "Abstract Low clouds effectively cool the Earth by reflecting incoming solar radiation. Detecting low‐level clouds with passive satellite sensors can be ambiguous, whereas active remote sensing instruments directly measure cloud‐top height. Here, we analyze 14 years of spaceborne lidar observations to assess trends in the occurrence of low‐level clouds and their cloud‐top height. We find that spatial trend patterns in low‐level cloud cover and low‐level cloud top height are negatively correlated, that is, regions with a decrease in low‐cloud cover tend to show an increase in cloud‐top height. We find that spatial trend patterns can be well explained by sea‐surface temperature (SST) and estimated inversion strength. Low‐level clouds in climatological stratocumulus regions are particularly sensitive to changes in SST ( to in cloud cover and in cloud‐top height) and estimated inversion strength ( in cloud cover and in cloud‐top height)."
+      },
+      "resolution": {
+        "doi": "10.1029/2026gl122478",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1029/2026gl122478",
+        "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2026GL122478",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:46.990880Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1029/2026gl122478",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1029%2F2026gl122478/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1029/2026gl122478",
+          "title": "Trends and Sensitivities of Low‐Cloud Cover and Top Height From Spaceborne Lidar Observations",
+          "authors": [
+            "Tesche, M.",
+            "Andersen, H.",
+            "Choudhury, G.",
+            "Goren, T."
+          ],
+          "year": 2026,
+          "journal_title": "Geophysical Research Letters",
+          "publisher": "American Geophysical Union (AGU)",
+          "url": "http://dx.doi.org/10.1029/2026gl122478",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1029/2026gl122478\nUR  - http://dx.doi.org/10.1029/2026gl122478\nTI  - Trends and Sensitivities of Low‐Cloud Cover and Top Height From Spaceborne Lidar Observations\nT2  - Geophysical Research Letters\nAU  - Tesche, M.\nAU  - Andersen, H.\nAU  - Choudhury, G.\nAU  - Goren, T.\nPY  - 2026\nDA  - 2026/07/10\nPB  - American Geophysical Union (AGU)\nIS  - 14\nVL  - 53\nSN  - 0094-8276\nSN  - 1944-8007\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:46.256709Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:46.990938Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1029/2022ea002299",
+        "title": "Cloud and Precipitation Particle Identification Using Cloud Radar and Lidar Measurements: Retrieval Technique and Validation",
+        "authors": [
+          "Ulrike Romatschke",
+          "Jothiram Vivekanandan"
+        ],
+        "year": 2022,
+        "journal_title": "Earth and Space Science",
+        "publisher": "American Geophysical Union (AGU)",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1029/2022ea002299",
+        "abstract": "Abstract This paper describes a technique for identifying hydrometeor particle types using airborne HIAPER Cloud Radar (HCR) and High Spectral Resolution Lidar (HSRL) observations. HCR operates at a frequency of 94 GHz (3 mm wavelength), while HSRL is an eye‐safe lidar system operating at a wavelength of 532 nm. Both instruments are deployed on the NSF‐NCAR HIAPER aircraft. HCR is designed to fly in an underwing pod and HSRL is situated in the cabin. The HCR and HSRL data used in this study were collected during the Southern Ocean Clouds, Radiation, Aerosol Transport Experimental Study (SOCRATES). Comprehensive observations of the vertical distributions of liquid and mixed‐phase clouds were obtained using in situ probes on the aircraft and remote sensing instruments. Hydrometeor particle types were retrieved from HCR, HSRL, and temperature fields with a newly developed fuzzy logic particle identification (PID) algorithm. The PID results were validated with in situ measurements collected onboard the HIAPER aircraft by a 2D‐Stereo (2D‐S) cloud probe. Particle phases derived from the PID results compare well with those obtained from the 2D‐S observations and agree in over 70% of cases. Size distributions are also consistent between the two methods of observation. Knowledge of the particle type distribution gained from the PID results can be used to constrain microphysical parameterizations and improve the representation of cloud radiative effects in weather and climate models."
+      },
+      "resolution": {
+        "doi": "10.1029/2022ea002299",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1029/2022ea002299",
+        "final_url": "https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002299",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:48.901680Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1029/2022ea002299",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1029%2F2022ea002299/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1029/2022ea002299",
+          "title": "Cloud and Precipitation Particle Identification Using Cloud Radar and Lidar Measurements: Retrieval Technique and Validation",
+          "authors": [
+            "Romatschke, Ulrike",
+            "Vivekanandan, Jothiram"
+          ],
+          "year": 2022,
+          "journal_title": "Earth and Space Science",
+          "publisher": "American Geophysical Union (AGU)",
+          "url": "http://dx.doi.org/10.1029/2022ea002299",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1029/2022ea002299\nUR  - http://dx.doi.org/10.1029/2022ea002299\nTI  - Cloud and Precipitation Particle Identification Using Cloud Radar and Lidar Measurements: Retrieval Technique and Validation\nT2  - Earth and Space Science\nAU  - Romatschke, Ulrike\nAU  - Vivekanandan, Jothiram\nPY  - 2022\nDA  - 2022/05\nPB  - American Geophysical Union (AGU)\nIS  - 5\nVL  - 9\nSN  - 2333-5084\nSN  - 2333-5084\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:48.366460Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:48.901746Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs15030816",
+        "title": "Retrieving Vertical Cloud Radar Reflectivity from MODIS Cloud Products with CGAN: An Evaluation for Different Cloud Types and Latitudes",
+        "authors": [
+          "Fengxian Wang",
+          "Yubao Liu",
+          "Yongbo Zhou",
+          "Rongfu Sun",
+          "Jing Duan",
+          "Yang Li",
+          "Qiuji Ding",
+          "Haoliang Wang"
+        ],
+        "year": 2023,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs15030816",
+        "abstract": "Retrieving cloud vertical structures with satellite remote-sensing measurements is highly desirable and technically challenging. In this paper, the conditional adversarial neural network (CGAN) for retrieving the equivalent cloud radar reflectivity at 94 GHz of the Cloud Profile Radar (CPR) onboard CloudSat is extended and evaluated comprehensively for different cloud types and geographical regions. The CGAN-based retrieval model was extended with additional data samples and improved with a new normalization adjustment. The model was trained with the labeled datasets of the moderate-resolution imaging spectroradiometer (MODIS) cloud top pressure, cloud water path, cloud optical thickness, and effective particle radius data, and the CloudSat/CPR reflectivity from 2010 to 2017 over the global oceans. The test dataset, containing 24,427 cloud samples, was statistically analyzed to assess the performance of the model for eight cloud types and three latitude zones with multiple verification metrics. The results show that the CGAN model possesses good reliability for retrieving clouds with reflectivity &gt; −25 dBZ. The model performed the best for deep convective systems, followed by nimbostratus, altostratus, and cumulus, but presented a very limited ability for stratus, cirrus, and altocumulus. The model performs better in the low and middle latitudes than in the high latitudes. This work demonstrated that the CGAN model can be used to retrieve vertical structures of deep convective clouds and nimbostratus with great confidence in the mid- and lower latitude region, laying the ground for retrieving reliable 3D cloud structures of the deep convective systems including convective storms and hurricanes from MODIS cloud products and used for predicting these storms."
+      },
+      "resolution": {
+        "doi": "10.3390/rs15030816",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs15030816",
+        "final_url": "https://www.mdpi.com/2072-4292/15/3/816",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:50.919620Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs15030816",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs15030816/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs15030816",
+          "title": "Retrieving Vertical Cloud Radar Reflectivity from MODIS Cloud Products with CGAN: An Evaluation for Different Cloud Types and Latitudes",
+          "authors": [
+            "Wang, Fengxian",
+            "Liu, Yubao",
+            "Zhou, Yongbo",
+            "Sun, Rongfu",
+            "Duan, Jing",
+            "Li, Yang",
+            "Ding, Qiuji",
+            "Wang, Haoliang"
+          ],
+          "year": 2023,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs15030816",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs15030816\nUR  - http://dx.doi.org/10.3390/rs15030816\nTI  - Retrieving Vertical Cloud Radar Reflectivity from MODIS Cloud Products with CGAN: An Evaluation for Different Cloud Types and Latitudes\nT2  - Remote Sensing\nAU  - Wang, Fengxian\nAU  - Liu, Yubao\nAU  - Zhou, Yongbo\nAU  - Sun, Rongfu\nAU  - Duan, Jing\nAU  - Li, Yang\nAU  - Ding, Qiuji\nAU  - Wang, Haoliang\nPY  - 2023\nDA  - 2023/01/31\nPB  - MDPI AG\nSP  - 816\nIS  - 3\nVL  - 15\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:50.185238Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:50.919680Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.5572/kosae.2024.40.5.572",
+        "title": "Monitoring and Forecasting XCO2 Using OCO-2 Satellite Data and Deep Learning",
+        "authors": [
+          "Kwon-Ho Lee",
+          "Kwanchul Kim"
+        ],
+        "year": 2024,
+        "journal_title": "Journal of Korean Society for Atmospheric Environment",
+        "publisher": "Korean Society for Atmospheric Environment",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.5572/kosae.2024.40.5.572",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.5572/kosae.2024.40.5.572",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.5572/kosae.2024.40.5.572",
+        "final_url": "https://www.jekosae.or.kr/_common/do.php?a=full&b=41&bidx=3845&aidx=42393",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:53.238277Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.5572/kosae.2024.40.5.572",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.5572%2Fkosae.2024.40.5.572/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.5572/kosae.2024.40.5.572",
+          "title": "Monitoring and Forecasting XCO2 Using OCO-2 Satellite Data and Deep Learning",
+          "authors": [
+            "Lee, Kwon-Ho",
+            "Kim, Kwanchul"
+          ],
+          "year": 2024,
+          "journal_title": "Journal of Korean Society for Atmospheric Environment",
+          "publisher": "Korean Society for Atmospheric Environment",
+          "url": "http://dx.doi.org/10.5572/kosae.2024.40.5.572",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.5572/kosae.2024.40.5.572\nUR  - http://dx.doi.org/10.5572/kosae.2024.40.5.572\nTI  - Monitoring and Forecasting XCO2 Using OCO-2 Satellite Data and Deep Learning\nT2  - Journal of Korean Society for Atmospheric Environment\nAU  - Lee, Kwon-Ho\nAU  - Kim, Kwanchul\nPY  - 2024\nDA  - 2024/10/31\nPB  - Korean Society for Atmospheric Environment\nSP  - 572-584\nIS  - 5\nVL  - 40\nSN  - 1598-7132\nSN  - 2383-5346\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:52.220539Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:53.238351Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.5194/amt-15-4407-2022",
+        "title": "Comment on “Synergetic use of IASI profile and TROPOMI total-column level 2 methane retrieval products” by Schneider et al. (2022)",
+        "authors": [
+          "Simone Ceccherini"
+        ],
+        "year": 2022,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.5194/amt-15-4407-2022",
+        "abstract": "Abstract. A great interest is growing about methods that combine measurements from two or more instruments that observe the same species either in different spectral regions or with different geometries. Recently, a method based on the Kalman filter has been proposed to combine IASI (Infrared Atmospheric Sounding Interferometer) and TROPOMI (TROPOspheric Monitoring Instrument) methane products. We show that this method is equivalent to the Complete Data Fusion method. Therefore, the choice between these two methods is driven only by the advantages of the different implementations. From the comparison of the two methods, a generalization of the Complete Data Fusion formula, which is valid also in the case that the noise error covariance matrices of the fused products are singular, is derived. This comment uses several equations reported in the preprint version of Schneider et al. (2022); therefore, reference is made to the preprint version of this paper."
+      },
+      "resolution": {
+        "doi": "10.5194/amt-15-4407-2022",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.5194/amt-15-4407-2022",
+        "final_url": "https://amt.copernicus.org/articles/15/4407/2022/",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:55.640372Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.5194/amt-15-4407-2022",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.5194%2Famt-15-4407-2022/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.5194/amt-15-4407-2022",
+          "title": "Comment on “Synergetic use of IASI profile and TROPOMI total-column level 2 methane retrieval products” by Schneider et al. (2022)",
+          "authors": [
+            "Ceccherini, Simone"
+          ],
+          "year": 2022,
+          "journal_title": "Atmospheric Measurement Techniques",
+          "publisher": "Copernicus GmbH",
+          "url": "http://dx.doi.org/10.5194/amt-15-4407-2022",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.5194/amt-15-4407-2022\nUR  - http://dx.doi.org/10.5194/amt-15-4407-2022\nTI  - Comment on “Synergetic use of IASI profile and TROPOMI total-column level 2 methane retrieval products” by Schneider et al. (2022)\nT2  - Atmospheric Measurement Techniques\nAU  - Ceccherini, Simone\nPY  - 2022\nDA  - 2022/07/29\nPB  - Copernicus GmbH\nSP  - 4407-4410\nIS  - 14\nVL  - 15\nSN  - 1867-8548\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:54.390597Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:55.640396Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.ijggc.2024.104224",
+        "title": "Tuning effect in time-lapse seismic inversion for CO2 plume monitoring at Sleipner field",
+        "authors": [
+          "Saeed Izadian"
+        ],
+        "year": 2024,
+        "journal_title": "International Journal of Greenhouse Gas Control",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.ijggc.2024.104224",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.ijggc.2024.104224",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.ijggc.2024.104224",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1750583624001671",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:57.930392Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.ijggc.2024.104224",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.ijggc.2024.104224/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.ijggc.2024.104224",
+          "title": "Tuning effect in time-lapse seismic inversion for CO2 plume monitoring at Sleipner field",
+          "authors": [
+            "Izadian, Saeed"
+          ],
+          "year": 2024,
+          "journal_title": "International Journal of Greenhouse Gas Control",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.ijggc.2024.104224",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.ijggc.2024.104224\nUR  - http://dx.doi.org/10.1016/j.ijggc.2024.104224\nTI  - Tuning effect in time-lapse seismic inversion for CO2 plume monitoring at Sleipner field\nT2  - International Journal of Greenhouse Gas Control\nAU  - Izadian, Saeed\nPY  - 2024\nDA  - 2024/09\nPB  - Elsevier BV\nSP  - 104224\nVL  - 137\nSN  - 1750-5836\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:56.752762Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:17:57.930424Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1177/09670335261447374",
+        "title": "Thermal melt synthesis and structural reorganization of co-amorphous lidocaine–indomethacin studied by near infrared and terahertz spectroscopy",
+        "authors": [
+          "Yuta Otsuka",
+          "Toyotoshi Suzuki",
+          "Tetsuo Sasaki",
+          "Hiroshi Kono",
+          "Masafumi Kikuchi"
+        ],
+        "year": 2026,
+        "journal_title": "Journal of Near Infrared Spectroscopy",
+        "publisher": "SAGE Publications",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1177/09670335261447374",
+        "abstract": "This study reports a novel process analytical methodology for monitoring thermal co-amorphization of lidocaine (LID) and indomethacin (IMC) by combining in situ near infrared (NIR) spectroscopy, terahertz (THz) spectroscopy, and chemometric analysis. The novelty of this work lies in the real-time, in situ monitoring of molecular-level structural reorganization during thermal co-amorphization, enabling identification of transient intermediate states that have not been previously reported. Unlike conventional approaches that characterize co-amorphous systems only at fixed end-point states, we continuously monitored molecular-level structural reorganization during heating from 30°C to 80°C in real time, enabling identification of transient intermediate states and phase separation behavior. The co-amorphous LID–IMC materials were synthesized by thermal melt synthesis at 80°C, as indicated by broad powder X-ray diffraction patterns. In situ NIR spectral measurements during heating were analyzed using machine learning techniques, revealing that the mixture underwent separation into two distinct components with generation of intermediate states during co-amorphous formation. FTIR spectroscopy indicated the dissociation of indomethacin dimers and their subsequent binding with lidocaine. Terahertz spectroscopy revealed temperature-dependent structural reorganization, with distinct vibrational modes observed at cryogenic and room temperatures, including a thermally stable mode at 4.90 THz. This combined NIR–THz approach suggests a novel quality control methodology for co-amorphization processes in pharmaceutical applications, offering real-time, non-contact monitoring of structural transformations during production cycles."
+      },
+      "resolution": {
+        "doi": "10.1177/09670335261447374",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1177/09670335261447374",
+        "final_url": "https://journals.sagepub.com/doi/10.1177/09670335261447374",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:59.743852Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1177/09670335261447374",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1177%2F09670335261447374/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1177/09670335261447374",
+          "title": "Thermal melt synthesis and structural reorganization of co-amorphous lidocaine–indomethacin studied by near infrared and terahertz spectroscopy",
+          "authors": [
+            "Otsuka, Yuta",
+            "Suzuki, Toyotoshi",
+            "Sasaki, Tetsuo",
+            "Kono, Hiroshi",
+            "Kikuchi, Masafumi"
+          ],
+          "year": 2026,
+          "journal_title": "Journal of Near Infrared Spectroscopy",
+          "publisher": "SAGE Publications",
+          "url": "http://dx.doi.org/10.1177/09670335261447374",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1177/09670335261447374\nUR  - http://dx.doi.org/10.1177/09670335261447374\nTI  - Thermal melt synthesis and structural reorganization of co-amorphous lidocaine–indomethacin studied by near infrared and terahertz spectroscopy\nT2  - Journal of Near Infrared Spectroscopy\nAU  - Otsuka, Yuta\nAU  - Suzuki, Toyotoshi\nAU  - Sasaki, Tetsuo\nAU  - Kono, Hiroshi\nAU  - Kikuchi, Masafumi\nPY  - 2026\nDA  - 2026/05/15\nPB  - SAGE Publications\nSP  - 136-145\nIS  - 3\nVL  - 34\nSN  - 0967-0335\nSN  - 1751-6552\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:17:59.060083Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:17:59.743914Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.ecoinf.2026.103921",
+        "title": "Full-coverage and fine-scale spatiotemporal retrieval of XCO2 in China based on OCO-2 satellite observations",
+        "authors": [
+          "Yuanyuan Yang",
+          "Qianqian Chen",
+          "Zhou Shi",
+          "Rui Lu",
+          "Xiangrui Xu"
+        ],
+        "year": 2026,
+        "journal_title": "Ecological Informatics",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.ecoinf.2026.103921",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.ecoinf.2026.103921",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.ecoinf.2026.103921",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1574954126003286",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:02.046363Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.ecoinf.2026.103921",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.ecoinf.2026.103921/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.ecoinf.2026.103921",
+          "title": "Full-coverage and fine-scale spatiotemporal retrieval of XCO2 in China based on OCO-2 satellite observations",
+          "authors": [
+            "Yang, Yuanyuan",
+            "Chen, Qianqian",
+            "Shi, Zhou",
+            "Lu, Rui",
+            "Xu, Xiangrui"
+          ],
+          "year": 2026,
+          "journal_title": "Ecological Informatics",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.ecoinf.2026.103921",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.ecoinf.2026.103921\nUR  - http://dx.doi.org/10.1016/j.ecoinf.2026.103921\nTI  - Full-coverage and fine-scale spatiotemporal retrieval of XCO2 in China based on OCO-2 satellite observations\nT2  - Ecological Informatics\nAU  - Yang, Yuanyuan\nAU  - Chen, Qianqian\nAU  - Shi, Zhou\nAU  - Lu, Rui\nAU  - Xu, Xiangrui\nPY  - 2026\nDA  - 2026/08\nPB  - Elsevier BV\nSP  - 103921\nVL  - 97\nSN  - 1574-9541\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:00.869329Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:02.046438Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.5194/amt-15-6585-2022",
+        "title": "Evaluation of the methane full-physics retrieval applied to TROPOMI ocean sun glint measurements",
+        "authors": [
+          "Alba Lorente",
+          "Tobias Borsdorff",
+          "Mari C. Martinez-Velarte",
+          "Andre Butz",
+          "Otto P. Hasekamp",
+          "Lianghai Wu",
+          "Jochen Landgraf"
+        ],
+        "year": 2022,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.5194/amt-15-6585-2022",
+        "abstract": "Abstract. The TROPOspheric Monitoring Instrument (TROPOMI), due to its wide swath, performs observations over the ocean in every orbit, enhancing the monitoring capabilities of methane from space. In the short-wave–infrared (SWIR) spectral band ocean surfaces are dark except for the specific sun glint geometry, for which the specular reflectance detected by the satellite provides a signal that is high enough to retrieve methane with high accuracy and precision. In this study, we build upon the RemoTeC full-physics retrieval algorithm for land measurements, and we retrieve 4 years of methane concentrations over the ocean from TROPOMI. We fully assess the quality of the dataset by performing a validation using ground-based measurements of the Total Carbon Column Observing Network (TCCON) from near-ocean sites. The validation results in an agreement of -0.5±0.3 % (-8.4±6.3 ppb) for the mean bias and station-to-station variability, which show that glint measurements comply with the mission requirement of precision and accuracy below 1 %. Comparison to ocean measurements from the Greenhouse gases Observing SATellite (GOSAT) results in a bias of -0.2±0.9 % (-4.4±15.7 ppb), equivalent to the comparison of measurements over land. The full-physics algorithm simultaneously retrieves the amount of atmospheric methane and the physical scattering properties of the atmosphere from measurements in the near-infrared (NIR) and SWIR spectral bands. Based on the scattering properties of the atmosphere and ocean surface reflection we further validate retrievals over the ocean. Using the “upper-edge” method, we identify a set of ocean glint observations where scattering by aerosols and clouds can be ignored in the measurement simulation to investigate other possible error sources such as instrumental errors, radiometric inaccuracies or uncertainties related to spectroscopic absorption cross-sections. With this ensemble we evaluate the RemoTeC forward model via the validation of the total atmospheric oxygen (O2) column retrieved from the O2 A-band, as well as the consistency of XCH4 retrievals using sub-bands from the SWIR band, which show a consistency within 1 %. We discard any instrumental and radiometric errors by a calibration of the O2 absorption line strengths as suggested in the literature."
+      },
+      "resolution": {
+        "doi": "10.5194/amt-15-6585-2022",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.5194/amt-15-6585-2022",
+        "final_url": "https://amt.copernicus.org/articles/15/6585/2022/",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:04.809787Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.5194/amt-15-6585-2022",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.5194%2Famt-15-6585-2022/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.5194/amt-15-6585-2022",
+          "title": "Evaluation of the methane full-physics retrieval applied to TROPOMI ocean sun glint measurements",
+          "authors": [
+            "Lorente, Alba",
+            "Borsdorff, Tobias",
+            "Martinez-Velarte, Mari C.",
+            "Butz, Andre",
+            "Hasekamp, Otto P.",
+            "Wu, Lianghai",
+            "Landgraf, Jochen"
+          ],
+          "year": 2022,
+          "journal_title": "Atmospheric Measurement Techniques",
+          "publisher": "Copernicus GmbH",
+          "url": "http://dx.doi.org/10.5194/amt-15-6585-2022",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.5194/amt-15-6585-2022\nUR  - http://dx.doi.org/10.5194/amt-15-6585-2022\nTI  - Evaluation of the methane full-physics retrieval applied to TROPOMI ocean sun glint measurements\nT2  - Atmospheric Measurement Techniques\nAU  - Lorente, Alba\nAU  - Borsdorff, Tobias\nAU  - Martinez-Velarte, Mari C.\nAU  - Butz, Andre\nAU  - Hasekamp, Otto P.\nAU  - Wu, Lianghai\nAU  - Landgraf, Jochen\nPY  - 2022\nDA  - 2022/11/17\nPB  - Copernicus GmbH\nSP  - 6585-6603\nIS  - 22\nVL  - 15\nSN  - 1867-8548\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:03.564885Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:04.809917Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.ijggc.2025.104460",
+        "title": "Invertible Neural Networks based petrophysical inversion for carbon sequestration projects",
+        "authors": [
+          "Arnab Dhara",
+          "Sohini Dasgupta",
+          "Mrinal K. Sen"
+        ],
+        "year": 2025,
+        "journal_title": "International Journal of Greenhouse Gas Control",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.ijggc.2025.104460",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.ijggc.2025.104460",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.ijggc.2025.104460",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1750583625001586",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:07.300389Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.ijggc.2025.104460",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.ijggc.2025.104460/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.ijggc.2025.104460",
+          "title": "Invertible Neural Networks based petrophysical inversion for carbon sequestration projects",
+          "authors": [
+            "Dhara, Arnab",
+            "Dasgupta, Sohini",
+            "Sen, Mrinal K."
+          ],
+          "year": 2025,
+          "journal_title": "International Journal of Greenhouse Gas Control",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.ijggc.2025.104460",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.ijggc.2025.104460\nUR  - http://dx.doi.org/10.1016/j.ijggc.2025.104460\nTI  - Invertible Neural Networks based petrophysical inversion for carbon sequestration projects\nT2  - International Journal of Greenhouse Gas Control\nAU  - Dhara, Arnab\nAU  - Dasgupta, Sohini\nAU  - Sen, Mrinal K.\nPY  - 2025\nDA  - 2025/10\nPB  - Elsevier BV\nSP  - 104460\nVL  - 147\nSN  - 1750-5836\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:05.961597Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:07.300504Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1177/09670335241257649",
+        "title": "Cellulose crystalline structure and thermal properties under heat treatment: An investigation by two-dimensional correlation of near infrared spectroscopy and differential scanning calorimetry",
+        "authors": [
+          "Siti Hanifah Mahdiyanti",
+          "Masaki Asaoka",
+          "Tetsuya Inagaki",
+          "Satoru Tsuchikawa"
+        ],
+        "year": 2024,
+        "journal_title": "Journal of Near Infrared Spectroscopy",
+        "publisher": "SAGE Publications",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1177/09670335241257649",
+        "abstract": "This study investigated the thermal behavior and crystallinity of microcrystalline cellulose (MCC) under heat treatment using near infrared (NIR) spectroscopy and differential scanning calorimetry (DSC). The results showed that heat treatment reduced the crystallinity and thermal stability of MCC at a certain point, and that the changes in the chemical components and structure of MCC were correlated with the heat flow measured by DSC. The analysis was performed using two-dimensional correlation spectroscopy (2DCOS), which revealed the simultaneous changes in the NIR second-derivative spectra and the DSC thermograms of heat-treated MCC. Linear regression analysis showed a high r 2 value of 0.90 between the DSC enthalpy change at 270 °C–400°C and the PC1 score of NIR second-derivative spectra at 7500–4100 cm −1 . The 2DCOS synchronous map showed a positive correlation at 6656–6229 cm −1 with a r value of 0.70–0.98 for the endothermic reaction, and a negative correlation at 6229; 5620; 5401; 4844; 4535 cm −1 with a r value of −0.90 to −0.99 for the exothermic reaction. This study extended the knowledge on the thermal behavior and decomposition mechanisms of heat-treated MCC, and provided a useful method for cellulose characterization and identification."
+      },
+      "resolution": {
+        "doi": "10.1177/09670335241257649",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.1177/09670335241257649",
+        "final_url": "https://journals.sagepub.com/doi/10.1177/09670335241257649",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:09.166213Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.1177/09670335241257649",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1177%2F09670335241257649/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1177/09670335241257649",
+          "title": "Cellulose crystalline structure and thermal properties under heat treatment: An investigation by two-dimensional correlation of near infrared spectroscopy and differential scanning calorimetry",
+          "authors": [
+            "Mahdiyanti, Siti Hanifah",
+            "Asaoka, Masaki",
+            "Inagaki, Tetsuya",
+            "Tsuchikawa, Satoru"
+          ],
+          "year": 2024,
+          "journal_title": "Journal of Near Infrared Spectroscopy",
+          "publisher": "SAGE Publications",
+          "url": "http://dx.doi.org/10.1177/09670335241257649",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1177/09670335241257649\nUR  - http://dx.doi.org/10.1177/09670335241257649\nTI  - Cellulose crystalline structure and thermal properties under heat treatment: An investigation by two-dimensional correlation of near infrared spectroscopy and differential scanning calorimetry\nT2  - Journal of Near Infrared Spectroscopy\nAU  - Mahdiyanti, Siti Hanifah\nAU  - Asaoka, Masaki\nAU  - Inagaki, Tetsuya\nAU  - Tsuchikawa, Satoru\nPY  - 2024\nDA  - 2024/06\nPB  - SAGE Publications\nSP  - 113-124\nIS  - 3\nVL  - 32\nSN  - 0967-0335\nSN  - 1751-6552\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:08.435821Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:18:09.166273Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.atmosenv.2026.122177",
+        "title": "Dynamic estimation of a priori CO2 vertical profiles from satellite SWIR spectra for improved XCO2 retrieval",
+        "authors": [
+          "Shaokun Xu",
+          "Yong Wan",
+          "Yu Liu",
+          "Qian Xiao",
+          "Yongshou Dai"
+        ],
+        "year": 2026,
+        "journal_title": "Atmospheric Environment",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.atmosenv.2026.122177",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.atmosenv.2026.122177",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.atmosenv.2026.122177",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231026004073",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:11.441172Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.atmosenv.2026.122177",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.atmosenv.2026.122177/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.atmosenv.2026.122177",
+          "title": "Dynamic estimation of a priori CO2 vertical profiles from satellite SWIR spectra for improved XCO2 retrieval",
+          "authors": [
+            "Xu, Shaokun",
+            "Wan, Yong",
+            "Liu, Yu",
+            "Xiao, Qian",
+            "Dai, Yongshou"
+          ],
+          "year": 2026,
+          "journal_title": "Atmospheric Environment",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.atmosenv.2026.122177",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.atmosenv.2026.122177\nUR  - http://dx.doi.org/10.1016/j.atmosenv.2026.122177\nTI  - Dynamic estimation of a priori CO2 vertical profiles from satellite SWIR spectra for improved XCO2 retrieval\nT2  - Atmospheric Environment\nAU  - Xu, Shaokun\nAU  - Wan, Yong\nAU  - Liu, Yu\nAU  - Xiao, Qian\nAU  - Dai, Yongshou\nPY  - 2026\nDA  - 2026/10\nPB  - Elsevier BV\nSP  - 122177\nVL  - 382\nSN  - 1352-2310\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:10.309382Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:11.441233Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.5194/amt-19-813-2026",
+        "title": "Uncertainty and retrieval sensitivity in TROPOMI-based methane inversions over the North Slope of Alaska",
+        "authors": [
+          "Rebecca H. Ward",
+          "Luke M. Western",
+          "Rachel L. Tunnicliffe",
+          "Elena Fillola",
+          "Aki Tsuruta",
+          "Tuula Aalto",
+          "Anita L. Ganesan"
+        ],
+        "year": 2026,
+        "journal_title": "Atmospheric Measurement Techniques",
+        "publisher": "Copernicus GmbH",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.5194/amt-19-813-2026",
+        "abstract": "Abstract. The Arctic is experiencing unprecedented environmental changes with rapidly rising temperatures. Emissions of methane (CH4) – a potent greenhouse gas – may be increasing from the region, making accurate monitoring essential. The TROPOspheric Monitoring Instrument (TROPOMI) instrument offers high spatial and temporal coverage of CH4 column mole fractions. However, its data in the Arctic has historically exhibited seasonal and latitudinal biases and low-quality retrievals. A major challenge is the lack of ground-based validation data in high-latitude regions, which are used to improve satellite retrievals. This study evaluates inverse modelling to estimate CH4 emissions using TROPOMI measurements over the North Slope of Alaska. Using two retrieval products – the operational SRON product and the scientific WFMD product from the University of Bremen – we assess the alignment of derived emissions with surface measurement-derived inversions over 2018–2020 and test their robustness through sensitivity analyses. Our results show that tundra emissions from SRON inversions align more closely with surface measurement-derived emissions than WFMD inversions. Both TROPOMI-product derived emissions have anomalously low emissions in August 2018 compared to surface measurement-derived emissions, likely due to low data density resulting from high cloud cover. TROPOMI inversions provided stronger constraints on fugitive anthropogenic emissions compared to surface inversions. However, each retrieval produced different emission estimates, highlighting retrieval-dependent differences. Sensitivity tests revealed a strong prior dependence in both retrievals, raising concerns about robustness in northern high latitudes. This study highlights the importance of using multiple retrievals and rigorous sensitivity testing in high-latitude satellite inversions."
+      },
+      "resolution": {
+        "doi": "10.5194/amt-19-813-2026",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.5194/amt-19-813-2026",
+        "final_url": "https://amt.copernicus.org/articles/19/813/2026/",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:14.212283Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.5194/amt-19-813-2026",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.5194%2Famt-19-813-2026/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.5194/amt-19-813-2026",
+          "title": "Uncertainty and retrieval sensitivity in TROPOMI-based methane inversions over the North Slope of Alaska",
+          "authors": [
+            "Ward, Rebecca H.",
+            "Western, Luke M.",
+            "Tunnicliffe, Rachel L.",
+            "Fillola, Elena",
+            "Tsuruta, Aki",
+            "Aalto, Tuula",
+            "Ganesan, Anita L."
+          ],
+          "year": 2026,
+          "journal_title": "Atmospheric Measurement Techniques",
+          "publisher": "Copernicus GmbH",
+          "url": "http://dx.doi.org/10.5194/amt-19-813-2026",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.5194/amt-19-813-2026\nUR  - http://dx.doi.org/10.5194/amt-19-813-2026\nTI  - Uncertainty and retrieval sensitivity in TROPOMI-based methane inversions over the North Slope of Alaska\nT2  - Atmospheric Measurement Techniques\nAU  - Ward, Rebecca H.\nAU  - Western, Luke M.\nAU  - Tunnicliffe, Rachel L.\nAU  - Fillola, Elena\nAU  - Tsuruta, Aki\nAU  - Aalto, Tuula\nAU  - Ganesan, Anita L.\nPY  - 2026\nDA  - 2026/02/05\nPB  - Copernicus GmbH\nSP  - 813-837\nIS  - 3\nVL  - 19\nSN  - 1867-8548\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:12.573315Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:14.212368Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.atmosenv.2025.121365",
+        "title": "Enhanced continuous aerosol optical depth (AOD) estimation using geostationary satellite data: focusing on nighttime AOD over East Asia",
+        "authors": [
+          "Sanghyeon Song",
+          "Yoojin Kang",
+          "Jungho Im",
+          "Sang Seo Park"
+        ],
+        "year": 2025,
+        "journal_title": "Atmospheric Environment",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.atmosenv.2025.121365",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.atmosenv.2025.121365",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.atmosenv.2025.121365",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S1352231025003401",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:16.905910Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.atmosenv.2025.121365",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.atmosenv.2025.121365/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.atmosenv.2025.121365",
+          "title": "Enhanced continuous aerosol optical depth (AOD) estimation using geostationary satellite data: focusing on nighttime AOD over East Asia",
+          "authors": [
+            "Song, Sanghyeon",
+            "Kang, Yoojin",
+            "Im, Jungho",
+            "Park, Sang Seo"
+          ],
+          "year": 2025,
+          "journal_title": "Atmospheric Environment",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.atmosenv.2025.121365",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.atmosenv.2025.121365\nUR  - http://dx.doi.org/10.1016/j.atmosenv.2025.121365\nTI  - Enhanced continuous aerosol optical depth (AOD) estimation using geostationary satellite data: focusing on nighttime AOD over East Asia\nT2  - Atmospheric Environment\nAU  - Song, Sanghyeon\nAU  - Kang, Yoojin\nAU  - Im, Jungho\nAU  - Park, Sang Seo\nPY  - 2025\nDA  - 2025/10\nPB  - Elsevier BV\nSP  - 121365\nVL  - 358\nSN  - 1352-2310\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:15.530676Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:16.905937Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1038/s44407-024-00003-4",
+        "title": "Nitrogen dioxide (NO2) Meteorology and predictability for air quality management using TROPOMI",
+        "authors": [
+          "Prince Junior Asilevi",
+          "Enock Nyameasem Dzidzorm",
+          "Patrick Boakye",
+          "Emmanuel Quansah"
+        ],
+        "year": 2025,
+        "journal_title": "npj Clean Air",
+        "publisher": "Springer Science and Business Media LLC",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1038/s44407-024-00003-4",
+        "abstract": "Abstract Nitrogen dioxide (NO₂) is a critical air pollutant and key indicator for air quality. Due to limited monitoring, we leveraged TROPOMI NO₂ and NASA POWER meteorological datasets to evaluate the meteorological drivers on NO₂ tropospheric column concentrations and to develop predictive models for NO₂ levels over Ghana. Employing an 8:2 ratio for model training and testing, NO₂ and meteorology relationships were assessed by seasonality indices and correlation analyses. Results indicate marked seasonal variability in NO₂ columns, prominent during the dry season. Wind speed, relative humidity, and precipitation significantly reduce NO₂, whereas temperature correlated positively in the southern forested zone. Predictive models demonstrate varying efficacy across climatic zones, with mean percentage differences ranging 9.87 to 37.76% and agreement index up to 0.96. The Random Forest and XGBoost models showed outstanding performance, with correlation reaching 0.92. This results presents a scalable methodology for NO₂ monitoring providing insights for air quality management."
+      },
+      "resolution": {
+        "doi": "10.1038/s44407-024-00003-4",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1038/s44407-024-00003-4",
+        "final_url": "https://www.nature.com/articles/s44407-024-00003-4",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:18.765087Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1038/s44407-024-00003-4",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1038%2Fs44407-024-00003-4/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1038/s44407-024-00003-4",
+          "title": "Nitrogen dioxide (NO2) Meteorology and predictability for air quality management using TROPOMI",
+          "authors": [
+            "Asilevi, Prince Junior",
+            "Dzidzorm, Enock Nyameasem",
+            "Boakye, Patrick",
+            "Quansah, Emmanuel"
+          ],
+          "year": 2025,
+          "journal_title": "npj Clean Air",
+          "publisher": "Springer Science and Business Media LLC",
+          "url": "http://dx.doi.org/10.1038/s44407-024-00003-4",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1038/s44407-024-00003-4\nUR  - http://dx.doi.org/10.1038/s44407-024-00003-4\nTI  - Nitrogen dioxide (NO2) Meteorology and predictability for air quality management using TROPOMI\nT2  - npj Clean Air\nAU  - Asilevi, Prince Junior\nAU  - Dzidzorm, Enock Nyameasem\nAU  - Boakye, Patrick\nAU  - Quansah, Emmanuel\nPY  - 2025\nDA  - 2025/03/12\nPB  - Springer Science and Business Media LLC\nIS  - 1\nVL  - 1\nSN  - 3059-2240\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:18.052032Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:18.765166Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs15225293",
+        "title": "The Impact of Meteorological Conditions and Emissions on Tropospheric Column Ozone Trends in Recent Years",
+        "authors": [
+          "Xuewei Hou",
+          "Yifan Zhang",
+          "Xin Lv",
+          "James Lee"
+        ],
+        "year": 2023,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs15225293",
+        "abstract": "Based on OMI/MLS data (2005–2020) and Community Earth System Model (CESM2) simulated results (2001–2020), annual variation trends of tropospheric column ozone (TCO) in the recent two decades are explored, and the separate impacts of meteorological conditions and emissions on TCO are quantified. The stratospheric ozone tracer (O3S) is used to quantify the contribution of stratospheric ozone to the trend of TCO. The evaluation shows that the simulated results capture the spatial-temporal distributions and the trends of tropospheric column ozone well. Over the East Asia and Southeast Asia regions, TCO is increasing, with a rate of ~0.2 DU/yr, which is primarily attributed to the emission changes in ozone precursors, nitrogen oxide (NOx) and volatile organic chemicals (VOCs). But the changes in meteorological conditions weaken the increase in TCO, even leading to a decrease in East Asia in spring and summer. TCO is decreasing in the middle and high latitudes of the southern hemisphere, which is mainly attributed to the changes in meteorological conditions. The increasing rates are the highest in autumn, especially over North America, East Asia, Europe and South of East Asia, with rate values of 0.20, 0.31, 0.17, and 0.32 DU/yr, respectively. Over the equatorial region, the contribution of stratospheric ozone to TCO is below 10 DU, and shows a weak positive trend of ~0.2 DU/yr. In the latitude of ~30°N/S, the stratospheric contribution is high, ~25 DU, and is affected by the sinking branch of the Brewer–Dobson circulation and stratosphere–troposphere exchange in the vicinity of tropical jet stream. The stratospheric contribution to TCO in the north of 30°N is significantly decreasing (~0.6 DU/yr) under the influence of meteorological conditions. Changes in emissions weaken the decrease in stratospheric contributions in the north of 30°N and enhance the increase in 30°S–30°N significantly. The trends of stratospheric contributions on TCO partly explain the trends of TCO which are mostly affected by the change in emissions. To control the increasing TCO, actions to reduce emissions are urgently needed."
+      },
+      "resolution": {
+        "doi": "10.3390/rs15225293",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs15225293",
+        "final_url": "https://www.mdpi.com/2072-4292/15/22/5293",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:20.649303Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs15225293",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs15225293/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs15225293",
+          "title": "The Impact of Meteorological Conditions and Emissions on Tropospheric Column Ozone Trends in Recent Years",
+          "authors": [
+            "Hou, Xuewei",
+            "Zhang, Yifan",
+            "Lv, Xin",
+            "Lee, James"
+          ],
+          "year": 2023,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs15225293",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs15225293\nUR  - http://dx.doi.org/10.3390/rs15225293\nTI  - The Impact of Meteorological Conditions and Emissions on Tropospheric Column Ozone Trends in Recent Years\nT2  - Remote Sensing\nAU  - Hou, Xuewei\nAU  - Zhang, Yifan\nAU  - Lv, Xin\nAU  - Lee, James\nPY  - 2023\nDA  - 2023/11/09\nPB  - MDPI AG\nSP  - 5293\nIS  - 22\nVL  - 15\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:20.077827Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:20.649382Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.rsase.2024.101292",
+        "title": "Respiratory health assessment of outdoor workers exposed to urban air pollution based on satellite observations",
+        "authors": [
+          "Naglaa Zanaty",
+          "Asmaa Eldesouky Mohamed",
+          "Nashwa Nabil"
+        ],
+        "year": 2024,
+        "journal_title": "Remote Sensing Applications: Society and Environment",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.rsase.2024.101292",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.rsase.2024.101292",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.rsase.2024.101292",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S2352938524001563",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:23.145759Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.rsase.2024.101292",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.rsase.2024.101292/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.rsase.2024.101292",
+          "title": "Respiratory health assessment of outdoor workers exposed to urban air pollution based on satellite observations",
+          "authors": [
+            "Zanaty, Naglaa",
+            "Eldesouky Mohamed, Asmaa",
+            "Nabil, Nashwa"
+          ],
+          "year": 2024,
+          "journal_title": "Remote Sensing Applications: Society and Environment",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.rsase.2024.101292",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.rsase.2024.101292\nUR  - http://dx.doi.org/10.1016/j.rsase.2024.101292\nTI  - Respiratory health assessment of outdoor workers exposed to urban air pollution based on satellite observations\nT2  - Remote Sensing Applications: Society and Environment\nAU  - Zanaty, Naglaa\nAU  - Eldesouky Mohamed, Asmaa\nAU  - Nabil, Nashwa\nPY  - 2024\nDA  - 2024/11\nPB  - Elsevier BV\nSP  - 101292\nVL  - 36\nSN  - 2352-9385\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:21.786406Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:23.145870Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1016/j.scitotenv.2022.161055",
+        "title": "Impact of satellite AOD data on top-down estimation of biomass burning particulate matter emission",
+        "authors": [
+          "Xiaotong Ye",
+          "Tianhai Cheng",
+          "Xiaoyang Li",
+          "Hao Zhu"
+        ],
+        "year": 2023,
+        "journal_title": "Science of The Total Environment",
+        "publisher": "Elsevier BV",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1016/j.scitotenv.2022.161055",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1016/j.scitotenv.2022.161055",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1016/j.scitotenv.2022.161055",
+        "final_url": "https://linkinghub.elsevier.com/retrieve/pii/S004896972208158X",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:25.440865Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1016/j.scitotenv.2022.161055",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1016%2Fj.scitotenv.2022.161055/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1016/j.scitotenv.2022.161055",
+          "title": "Impact of satellite AOD data on top-down estimation of biomass burning particulate matter emission",
+          "authors": [
+            "Ye, Xiaotong",
+            "Cheng, Tianhai",
+            "Li, Xiaoyang",
+            "Zhu, Hao"
+          ],
+          "year": 2023,
+          "journal_title": "Science of The Total Environment",
+          "publisher": "Elsevier BV",
+          "url": "http://dx.doi.org/10.1016/j.scitotenv.2022.161055",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1016/j.scitotenv.2022.161055\nUR  - http://dx.doi.org/10.1016/j.scitotenv.2022.161055\nTI  - Impact of satellite AOD data on top-down estimation of biomass burning particulate matter emission\nT2  - Science of The Total Environment\nAU  - Ye, Xiaotong\nAU  - Cheng, Tianhai\nAU  - Li, Xiaoyang\nAU  - Zhu, Hao\nPY  - 2023\nDA  - 2023/03\nPB  - Elsevier BV\nSP  - 161055\nVL  - 864\nSN  - 0048-9697\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:24.275472Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:25.440966Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1007/s11869-023-01450-w",
+        "title": "Investigation of the spatiotemporal patterns of air quality over the metropolitan area of Tehran, using TROPOMI and OMI data",
+        "authors": [
+          "Ayoub Moradi",
+          "Dirk Zeuss"
+        ],
+        "year": 2023,
+        "journal_title": "Air Quality, Atmosphere &amp; Health",
+        "publisher": "Springer Science and Business Media LLC",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1007/s11869-023-01450-w",
+        "abstract": "Abstract Air quality has been one of the main concerns among Tehran residents for at least two decades. In this study, we investigated air quality in the metropolitan area of Tehran utilizing TROPOMI and OMI data based on the Google Earth Engine platform. Long-term analysis indicated slight negative trends in NO 2 , SO 2 , and HCHO over the last two decades, which are due to the development of urban transportation systems. Air quality parameters were classified based on spatiotemporal similarities. Urban pollutants include CO 1 , NO 2 , and HCHO, which were concentrated over the eastern part of Tehran and decreased radially towards the city border. Among the pollutants, CO 1 showed a dependency with altitude. SO 2 was controlled by both urban vehicles and nonurban industrial activities. SO 2 was thus classified as an urban-industrial pollutant. The exterior parameters almost entirely controlled by external factors include O 3 , aerosols, and clouds. The spatial variations of the pollutants highly differed from a fraction to several times. All pollutants exhibited seasonality associated with fuel consumption and air conditions. However, the seasonality in the exterior parameters was associated with regional air masses. The Iranian New Year holiday significantly impacts air pollution. NO 2 , CO 1 , and SO 2 experienced their annual minimum levels during this holiday period. COVID-19–related closures also led to negative trends in NO 2 , CO 1 , and SO 2 after March 2020. However, the exterior parameters were not affected by these events. The results agreed with in situ measurements. As the final objective, we aimed to support urban management to reduce atmospheric pollution in Tehran."
+      },
+      "resolution": {
+        "doi": "10.1007/s11869-023-01450-w",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1007/s11869-023-01450-w",
+        "final_url": "https://link.springer.com/10.1007/s11869-023-01450-w",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:27.265801Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1007/s11869-023-01450-w",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1007%2Fs11869-023-01450-w/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1007/s11869-023-01450-w",
+          "title": "Investigation of the spatiotemporal patterns of air quality over the metropolitan area of Tehran, using TROPOMI and OMI data",
+          "authors": [
+            "Moradi, Ayoub",
+            "Zeuss, Dirk"
+          ],
+          "year": 2023,
+          "journal_title": "Air Quality, Atmosphere &amp; Health",
+          "publisher": "Springer Science and Business Media LLC",
+          "url": "http://dx.doi.org/10.1007/s11869-023-01450-w",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1007/s11869-023-01450-w\nUR  - http://dx.doi.org/10.1007/s11869-023-01450-w\nTI  - Investigation of the spatiotemporal patterns of air quality over the metropolitan area of Tehran, using TROPOMI and OMI data\nT2  - Air Quality, Atmosphere &amp; Health\nAU  - Moradi, Ayoub\nAU  - Zeuss, Dirk\nPY  - 2023\nDA  - 2023/11/01\nPB  - Springer Science and Business Media LLC\nSP  - 371-387\nIS  - 2\nVL  - 17\nSN  - 1873-9318\nSN  - 1873-9326\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:26.574349Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:27.265878Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1109/tgrs.2025.3643189",
+        "title": "Retrieval of CrIS Tropospheric Ozone Profiles Constrained by OMPS Total Column Measurements",
+        "authors": [
+          "Xinxin Zhang",
+          "Ying Zhang",
+          "Yapeng Wang",
+          "Meng Fan",
+          "Hongmei Wang",
+          "Jinhua Tao",
+          "Liangfu Chen"
+        ],
+        "year": 2025,
+        "journal_title": "IEEE Transactions on Geoscience and Remote Sensing",
+        "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1109/tgrs.2025.3643189",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1109/tgrs.2025.3643189",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1109/tgrs.2025.3643189",
+        "final_url": "https://ieeexplore.ieee.org/document/11298326/",
+        "http_status": 202,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:29.144221Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1109/tgrs.2025.3643189",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1109%2Ftgrs.2025.3643189/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1109/tgrs.2025.3643189",
+          "title": "Retrieval of CrIS Tropospheric Ozone Profiles Constrained by OMPS Total Column Measurements",
+          "authors": [
+            "Zhang, Xinxin",
+            "Zhang, Ying",
+            "Wang, Yapeng",
+            "Fan, Meng",
+            "Wang, Hongmei",
+            "Tao, Jinhua",
+            "Chen, Liangfu"
+          ],
+          "year": 2025,
+          "journal_title": "IEEE Transactions on Geoscience and Remote Sensing",
+          "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+          "url": "http://dx.doi.org/10.1109/tgrs.2025.3643189",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1109/tgrs.2025.3643189\nUR  - http://dx.doi.org/10.1109/tgrs.2025.3643189\nTI  - Retrieval of CrIS Tropospheric Ozone Profiles Constrained by OMPS Total Column Measurements\nT2  - IEEE Transactions on Geoscience and Remote Sensing\nAU  - Zhang, Xinxin\nAU  - Zhang, Ying\nAU  - Wang, Yapeng\nAU  - Fan, Meng\nAU  - Wang, Hongmei\nAU  - Tao, Jinhua\nAU  - Chen, Liangfu\nPY  - 2025\nPB  - Institute of Electrical and Electronics Engineers (IEEE)\nSP  - 1-16\nVL  - 63\nSN  - 0196-2892\nSN  - 1558-0644\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:28.614036Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:29.144246Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.3390/rs16162932",
+        "title": "Recent Developments in Satellite Remote Sensing for Air Pollution Surveillance in Support of Sustainable Development Goals",
+        "authors": [
+          "Dimitris Stratoulias",
+          "Narissara Nuthammachot",
+          "Racha Dejchanchaiwong",
+          "Perapong Tekasakul",
+          "Gregory R. Carmichael"
+        ],
+        "year": 2024,
+        "journal_title": "Remote Sensing",
+        "publisher": "MDPI AG",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.3390/rs16162932",
+        "abstract": "Air pollution is an integral part of climatic, environmental, and socioeconomic current affairs and a cross-cutting component of certain United Nations Sustainable Development Goals (SDGs). Hence, reliable information on air pollution and human exposure is a crucial element in policy recommendations and decisions. At the same time, Earth Observation is steadily gaining confidence as a data input in the calculation of various SDG indicators. The current paper focuses on the usability of modern satellite remote sensing in the context of SDGs relevant to air quality. We introduce the socioeconomic importance of air quality and discuss the current uptake of geospatial information. The latest developments in Earth Observation provide measurements of finer spatial, temporal, and radiometric resolution products with increased global coverage, long-term continuation, and coherence in measurements. Leveraging on the two latest operational satellite technologies available, namely the Sentinel-5P and the Geostationary Environment Monitoring Spectrometer (GEMS) missions, we demonstrate two potential operational applications for quantifying air pollution at city and regional scales. Based on the two examples and by discussing the near-future anticipated geospatial capabilities, we showcase and advocate that the potential of satellite remote sensing as a, complementary to ground station networks, source of air pollution information is gaining confidence. As such, it can be an invaluable tool for quantifying global air pollution and deriving robust population exposure estimates."
+      },
+      "resolution": {
+        "doi": "10.3390/rs16162932",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.3390/rs16162932",
+        "final_url": "https://www.mdpi.com/2072-4292/16/16/2932",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:30.805169Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.3390/rs16162932",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.3390%2Frs16162932/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.3390/rs16162932",
+          "title": "Recent Developments in Satellite Remote Sensing for Air Pollution Surveillance in Support of Sustainable Development Goals",
+          "authors": [
+            "Stratoulias, Dimitris",
+            "Nuthammachot, Narissara",
+            "Dejchanchaiwong, Racha",
+            "Tekasakul, Perapong",
+            "Carmichael, Gregory R."
+          ],
+          "year": 2024,
+          "journal_title": "Remote Sensing",
+          "publisher": "MDPI AG",
+          "url": "http://dx.doi.org/10.3390/rs16162932",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.3390/rs16162932\nUR  - http://dx.doi.org/10.3390/rs16162932\nTI  - Recent Developments in Satellite Remote Sensing for Air Pollution Surveillance in Support of Sustainable Development Goals\nT2  - Remote Sensing\nAU  - Stratoulias, Dimitris\nAU  - Nuthammachot, Narissara\nAU  - Dejchanchaiwong, Racha\nAU  - Tekasakul, Perapong\nAU  - Carmichael, Gregory R.\nPY  - 2024\nDA  - 2024/08/09\nPB  - MDPI AG\nSP  - 2932\nIS  - 16\nVL  - 16\nSN  - 2072-4292\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:30.251497Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:30.805198Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.1007/s00477-023-02459-4",
+        "title": "Estimation of particulate matter concentrations in Türkiye using a random forest model based on satellite AOD retrievals",
+        "authors": [
+          "Gizem Tuna Tuygun",
+          "Tolga Elbir"
+        ],
+        "year": 2023,
+        "journal_title": "Stochastic Environmental Research and Risk Assessment",
+        "publisher": "Springer Science and Business Media LLC",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.1007/s00477-023-02459-4",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.1007/s00477-023-02459-4",
+        "status": "resolved",
+        "resolver_url": "https://doi.org/10.1007/s00477-023-02459-4",
+        "final_url": "https://link.springer.com/10.1007/s00477-023-02459-4",
+        "http_status": 200,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:32.651501Z",
+        "reason": "doi.org resolved the DOI to a reachable landing page."
+      },
+      "authority": {
+        "doi": "10.1007/s00477-023-02459-4",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.1007%2Fs00477-023-02459-4/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.1007/s00477-023-02459-4",
+          "title": "Estimation of particulate matter concentrations in Türkiye using a random forest model based on satellite AOD retrievals",
+          "authors": [
+            "Tuna Tuygun, Gizem",
+            "Elbir, Tolga"
+          ],
+          "year": 2023,
+          "journal_title": "Stochastic Environmental Research and Risk Assessment",
+          "publisher": "Springer Science and Business Media LLC",
+          "url": "http://dx.doi.org/10.1007/s00477-023-02459-4",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.1007/s00477-023-02459-4\nUR  - http://dx.doi.org/10.1007/s00477-023-02459-4\nTI  - Estimation of particulate matter concentrations in Türkiye using a random forest model based on satellite AOD retrievals\nT2  - Stochastic Environmental Research and Risk Assessment\nAU  - Tuna Tuygun, Gizem\nAU  - Elbir, Tolga\nPY  - 2023\nDA  - 2023/05/08\nPB  - Springer Science and Business Media LLC\nSP  - 3469-3491\nIS  - 9\nVL  - 37\nSN  - 1436-3240\nSN  - 1436-3259\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:31.939163Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [],
+      "decided_at": "2026-07-30T02:18:32.651576Z"
+    },
+    {
+      "schema_version": "0.2.1",
+      "status": "verified",
+      "candidate": {
+        "doi": "10.4209/aaqr.210398",
+        "title": "Retrieval of NO2 Columns by Exploiting MAX-DOAS Observations and Comparison with OMI and TROPOMI Data during the Time Period of 2015–2019",
+        "authors": [
+          "Ahmad Iqbal",
+          "Naveed Ahmad",
+          "Hassan Mohy ud Din",
+          "Michel Van Roozendael",
+          "Muhammad Shehzaib Anjum",
+          "Muhammad Zeeshan Ali Khan",
+          "Muhammad Fahim Khokhar"
+        ],
+        "year": 2022,
+        "journal_title": "Aerosol and Air Quality Research",
+        "publisher": "Springer Science and Business Media LLC",
+        "source_type": "journal-article",
+        "source_provider": "crossref",
+        "source_url": "https://doi.org/10.4209/aaqr.210398",
+        "abstract": null
+      },
+      "resolution": {
+        "doi": "10.4209/aaqr.210398",
+        "status": "landing_unavailable",
+        "resolver_url": "https://doi.org/10.4209/aaqr.210398",
+        "final_url": "https://aaqr.org/articles/aaqr-21-12-ssea-0398",
+        "http_status": 403,
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:34.747556Z",
+        "reason": "doi.org redirected successfully, but the landing page returned HTTP 403."
+      },
+      "authority": {
+        "doi": "10.4209/aaqr.210398",
+        "status": "available",
+        "source_url": "https://api.crossref.org/v1/works/10.4209%2Faaqr.210398/transform",
+        "media_type": "application/x-research-info-systems",
+        "metadata": {
+          "doi": "10.4209/aaqr.210398",
+          "title": "Retrieval of NO2 Columns by Exploiting MAX-DOAS Observations and Comparison with OMI and TROPOMI Data during the Time Period of 2015–2019",
+          "authors": [
+            "Iqbal, Ahmad",
+            "Ahmad, Naveed",
+            "Mohy ud Din, Hassan",
+            "Van Roozendael, Michel",
+            "Anjum, Muhammad Shehzaib",
+            "Zeeshan Ali Khan, Muhammad",
+            "Khokhar, Muhammad Fahim"
+          ],
+          "year": 2022,
+          "journal_title": "Aerosol and Air Quality Research",
+          "publisher": "Springer Science and Business Media LLC",
+          "url": "http://dx.doi.org/10.4209/aaqr.210398",
+          "ris_type": "JOUR"
+        },
+        "raw_ris": "TY  - JOUR\nDO  - 10.4209/aaqr.210398\nUR  - http://dx.doi.org/10.4209/aaqr.210398\nTI  - Retrieval of NO2 Columns by Exploiting MAX-DOAS Observations and Comparison with OMI and TROPOMI Data during the Time Period of 2015–2019\nT2  - Aerosol and Air Quality Research\nAU  - Iqbal, Ahmad\nAU  - Ahmad, Naveed\nAU  - Mohy ud Din, Hassan\nAU  - Van Roozendael, Michel\nAU  - Anjum, Muhammad Shehzaib\nAU  - Zeeshan Ali Khan, Muhammad\nAU  - Khokhar, Muhammad Fahim\nPY  - 2022\nPB  - Springer Science and Business Media LLC\nSP  - 210398\nIS  - 6\nVL  - 22\nSN  - 1680-8584\nSN  - 2071-1409\nER  - \n",
+        "attempts": 1,
+        "checked_at": "2026-07-30T02:18:33.957985Z",
+        "reason": "RIS was returned by the DOI registration authority."
+      },
+      "reason_codes": [],
+      "warning_codes": [
+        "landing_page_unavailable"
+      ],
+      "decided_at": "2026-07-30T02:18:34.747581Z"
+    }
+  ]
+}

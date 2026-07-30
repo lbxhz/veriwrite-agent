@@ -1,0 +1,145 @@
+{
+  "schema_version": "0.2.2",
+  "outline_status": "provisional_search_blueprint",
+  "topic": "大气遥感：利用卫星、激光雷达和光谱遥感研究气溶胶、云、温室气体与空气质量",
+  "discipline": "大气科学",
+  "writing_through_line": "综合卫星、激光雷达和光谱遥感技术，系统评估气溶胶、云、温室气体和空气质量的观测方法与反演算法，揭示其在大气环境与气候变化研究中的协同作用。",
+  "target_total": 20,
+  "themes": [
+    {
+      "theme_id": "aerosol_remote_sensing",
+      "section_title": "气溶胶遥感反演与特性研究",
+      "section_purpose": "综述卫星和激光雷达气溶胶反演算法、光学特性及辐射强迫估算。",
+      "research_questions": [
+        "主被动遥感如何协同反演气溶胶光学厚度与垂直分布？",
+        "不同反演算法对气溶胶类型识别的适用性如何？"
+      ],
+      "primary_keywords": [
+        "aerosol remote sensing",
+        "aerosol optical depth",
+        "lidar",
+        "satellite retrieval"
+      ],
+      "related_keywords": [
+        "MODIS",
+        "CALIPSO",
+        "AERONET",
+        "radiative forcing",
+        "aerosol type"
+      ],
+      "search_queries": [
+        "aerosol optical depth retrieval satellite lidar",
+        "aerosol vertical distribution CALIPSO",
+        "aerosol radiative forcing satellite observations",
+        "aerosol type classification remote sensing"
+      ],
+      "target_count": 5,
+      "priority": 5
+    },
+    {
+      "theme_id": "cloud_remote_sensing",
+      "section_title": "云遥感观测与微物理参数反演",
+      "section_purpose": "总结云相态、云光学厚度、云顶高度等参数的遥感反演方法及不确定性。",
+      "research_questions": [
+        "如何利用多光谱和激光雷达反演云微物理参数？",
+        "云检测算法对辐射平衡评估的影响如何？"
+      ],
+      "primary_keywords": [
+        "cloud remote sensing",
+        "cloud microphysics",
+        "lidar",
+        "satellite"
+      ],
+      "related_keywords": [
+        "cloud optical thickness",
+        "cloud phase",
+        "MODIS",
+        "CloudSat",
+        "CALIPSO"
+      ],
+      "search_queries": [
+        "cloud microphysics retrieval satellite lidar",
+        "cloud phase classification MODIS",
+        "cloud optical depth remote sensing",
+        "cloud top height lidar satellite"
+      ],
+      "target_count": 5,
+      "priority": 5
+    },
+    {
+      "theme_id": "ghg_remote_sensing",
+      "section_title": "温室气体遥感监测与排放估算",
+      "section_purpose": "评述CO2和CH4的卫星光谱反演方法、柱浓度产品及同化系统。",
+      "research_questions": [
+        "近红外与热红外遥感反演温室气体的精度对比如何？",
+        "卫星观测如何约束全球碳源汇估算？"
+      ],
+      "primary_keywords": [
+        "greenhouse gas remote sensing",
+        "CO2",
+        "CH4",
+        "satellite spectroscopy"
+      ],
+      "related_keywords": [
+        "GOSAT",
+        "OCO-2",
+        "TROPOMI",
+        "XCO2",
+        "XCH4",
+        "carbon flux inversion"
+      ],
+      "search_queries": [
+        "satellite CO2 retrieval XCO2 OCO-2",
+        "methane CH4 TROPOMI retrieval",
+        "greenhouse gas flux inversion satellite",
+        "near infrared thermal infrared GHG comparison"
+      ],
+      "target_count": 5,
+      "priority": 5
+    },
+    {
+      "theme_id": "air_quality_remote_sensing",
+      "section_title": "空气质量遥感：污染物监测与健康影响",
+      "section_purpose": "综述卫星和激光雷达反演PM2.5、O3、NO2等污染物，及其在空气质量评估中的应用。",
+      "research_questions": [
+        "卫星气溶胶产品如何与地面观测结合估算近地面PM2.5？",
+        "遥感数据在空气污染健康效应研究中的角色如何？"
+      ],
+      "primary_keywords": [
+        "air quality remote sensing",
+        "PM2.5",
+        "NO2",
+        "O3",
+        "satellite"
+      ],
+      "related_keywords": [
+        "MODIS AOD",
+        "TROPOMI NO2",
+        "OMI",
+        "ground-level PM2.5 estimation",
+        "health impact"
+      ],
+      "search_queries": [
+        "satellite PM2.5 estimation AOD",
+        "NO2 column TROPOMI OMI air quality",
+        "ozone remote sensing Tropospheric column",
+        "air pollution health satellite remote sensing"
+      ],
+      "target_count": 5,
+      "priority": 5
+    }
+  ],
+  "accepted_tiers": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+  ],
+  "journal_ranking_policy": "preferred",
+  "year_from": 2022,
+  "year_to": 2026,
+  "max_candidates": 300,
+  "relevance_threshold": 0.6
+}

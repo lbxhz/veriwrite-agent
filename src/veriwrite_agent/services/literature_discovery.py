@@ -83,11 +83,20 @@ class LiteratureDiscoveryService:
             and (candidate.year is None or candidate.year > plan.year_to)
         ):
             reasons.append("publication_year_above_requirement")
-        if ranking.status == "not_found":
+        if (
+            ranking.status == "not_found"
+            and plan.journal_ranking_policy == "required"
+        ):
             reasons.append("journal_not_in_cug_2023_catalog")
-        elif ranking.status == "ambiguous":
+        elif (
+            ranking.status == "ambiguous"
+            and plan.journal_ranking_policy == "required"
+        ):
             reasons.append("cug_2023_catalog_conflict")
-        elif ranking.resolved_tier not in plan.accepted_tiers:
+        elif (
+            ranking.status == "matched"
+            and ranking.resolved_tier not in plan.accepted_tiers
+        ):
             reasons.append("journal_tier_not_accepted")
 
         return CandidateDecision(

@@ -6,7 +6,9 @@ import json
 import math
 import re
 import time
+from collections import deque
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field as dataclass_field
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -21,6 +23,17 @@ from veriwrite_agent.models.literature_discovery import (
 )
 
 HttpOpener = Callable[..., Any]
+
+
+@dataclass
+class _QueryState:
+    query: str
+    raw_limit: int
+    cursor: str = "*"
+    raw_seen: int = 0
+    finished: bool = False
+    seen_cursors: set[str] = dataclass_field(default_factory=set)
+    buffer: deque[LiteratureCandidate] = dataclass_field(default_factory=deque)
 
 
 class CrossrefSearchProvider:
@@ -66,58 +79,78 @@ class CrossrefSearchProvider:
     def search(self, plan: LiteratureSearchPlan) -> Iterable[LiteratureCandidate]:
         queries = plan.search_queries
         per_query_limit = math.ceil(plan.max_candidates / len(queries))
+        states = [
+            _QueryState(query=query, raw_limit=per_query_limit)
+            for query in queries
+        ]
         total_yielded = 0
 
-        for query in queries:
-            cursor = "*"
-            yielded_for_query = 0
-            seen_cursors: set[str] = set()
+        for state in states:
+            self._fill_buffer(plan, state)
 
-            while (
-                yielded_for_query < per_query_limit
-                and total_yielded < plan.max_candidates
-            ):
-                rows = min(
-                    self._rows_per_request,
-                    per_query_limit - yielded_for_query,
-                    plan.max_candidates - total_yielded,
-                )
-                payload = self._request_page(plan, query, cursor, rows)
-                message = payload.get("message")
-                if not isinstance(message, dict):
-                    raise LiteratureSearchError(
-                        "Crossref response does not contain a message object"
-                    )
-                items = message.get("items")
-                if not isinstance(items, list):
-                    raise LiteratureSearchError(
-                        "Crossref response does not contain an items list"
-                    )
-
-                for item in items:
-                    candidate = self._candidate_from_item(item)
-                    if candidate is None:
-                        continue
-                    yield candidate
-                    yielded_for_query += 1
-                    total_yielded += 1
-                    if (
-                        yielded_for_query >= per_query_limit
-                        or total_yielded >= plan.max_candidates
-                    ):
-                        break
-
-                if len(items) < rows:
+        while total_yielded < plan.max_candidates:
+            progressed = False
+            for state in states:
+                if not state.buffer and not state.finished:
+                    self._fill_buffer(plan, state)
+                if not state.buffer:
+                    continue
+                yield state.buffer.popleft()
+                total_yielded += 1
+                progressed = True
+                if total_yielded >= plan.max_candidates:
                     break
-                next_cursor = message.get("next-cursor")
-                if (
-                    not isinstance(next_cursor, str)
-                    or not next_cursor
-                    or next_cursor in seen_cursors
-                ):
-                    break
-                seen_cursors.add(next_cursor)
-                cursor = next_cursor
+            if not progressed:
+                break
+
+    def _fill_buffer(
+        self,
+        plan: LiteratureSearchPlan,
+        state: _QueryState,
+    ) -> None:
+        if state.finished or state.raw_seen >= state.raw_limit:
+            state.finished = True
+            return
+        rows = min(
+            self._rows_per_request,
+            state.raw_limit - state.raw_seen,
+        )
+        payload = self._request_page(
+            plan,
+            state.query,
+            state.cursor,
+            rows,
+        )
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            raise LiteratureSearchError(
+                "Crossref response does not contain a message object"
+            )
+        items = message.get("items")
+        if not isinstance(items, list):
+            raise LiteratureSearchError(
+                "Crossref response does not contain an items list"
+            )
+
+        state.raw_seen += len(items)
+        for item in items:
+            candidate = self._candidate_from_item(item)
+            if candidate is not None:
+                state.buffer.append(candidate)
+
+        if len(items) < rows or state.raw_seen >= state.raw_limit:
+            state.finished = True
+            return
+        next_cursor = message.get("next-cursor")
+        if (
+            not isinstance(next_cursor, str)
+            or not next_cursor
+            or next_cursor in state.seen_cursors
+        ):
+            state.finished = True
+            return
+        state.seen_cursors.add(next_cursor)
+        state.cursor = next_cursor
 
     def _request_page(
         self,

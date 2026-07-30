@@ -1,5 +1,6 @@
 import json
 from urllib.error import URLError
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from pydantic import ValidationError
@@ -154,3 +155,63 @@ def test_throttles_public_list_requests_to_one_per_second() -> None:
     assert len(candidates) == 1
     assert calls == 2
     assert sleeps == [1.0]
+
+
+def test_interleaves_candidates_from_all_queries_before_consumer_stops() -> None:
+    def item(doi: str, title: str) -> dict[str, object]:
+        return {
+            "DOI": doi,
+            "title": [title],
+            "published": {"date-parts": [[2025]]},
+            "container-title": ["Remote Sensing of Environment"],
+            "type": "journal-article",
+        }
+
+    pages = {
+        "aerosol remote sensing": [
+            item("10.1000/aerosol.1", "Aerosol One"),
+            item("10.1000/aerosol.2", "Aerosol Two"),
+        ],
+        "methane remote sensing": [
+            item("10.1000/methane.1", "Methane One"),
+            item("10.1000/methane.2", "Methane Two"),
+        ],
+    }
+
+    def opener(request: object, *, timeout: float) -> FakeResponse:
+        assert timeout == 20
+        query = parse_qs(urlparse(request.full_url).query)["query.bibliographic"][0]
+        return FakeResponse(
+            {
+                "message": {
+                    "items": pages[query],
+                    "next-cursor": "unused",
+                }
+            }
+        )
+
+    plan = LiteratureSearchPlan(
+        topic="Atmospheric remote sensing",
+        discipline="大气科学",
+        primary_keywords=["atmospheric remote sensing"],
+        search_queries=[
+            "aerosol remote sensing",
+            "methane remote sensing",
+        ],
+        target_eligible_count=2,
+        max_candidates=4,
+    )
+    provider = CrossrefSearchProvider(
+        opener=opener,
+        rows_per_request=2,
+        minimum_request_interval_seconds=0,
+    )
+
+    dois = [candidate.doi for candidate in provider.search(plan)]
+
+    assert dois == [
+        "10.1000/aerosol.1",
+        "10.1000/methane.1",
+        "10.1000/aerosol.2",
+        "10.1000/methane.2",
+    ]

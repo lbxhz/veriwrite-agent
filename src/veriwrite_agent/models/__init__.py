@@ -8,6 +8,17 @@ from veriwrite_agent.models.literature_discovery import (
     LiteratureDiscoveryResult,
     LiteratureSearchPlan,
 )
+from veriwrite_agent.models.literature_selection import (
+    BalancedLiteratureSelection,
+    LiteratureRelevanceAssessment,
+    LiteratureRelevanceAssessmentBatch,
+    LiteratureSearchBlueprint,
+    LiteratureSelectionCandidate,
+    LiteratureThemePlan,
+    SelectedLiteratureRecord,
+    ThemedLiteratureSearchPlan,
+    ThemeRelevanceScore,
+)
 from veriwrite_agent.models.literature_verification import (
     AuthoritativeMetadataEvidence,
     DoiResolutionEvidence,
@@ -42,6 +53,7 @@ from veriwrite_agent.models.requirements import (
 __all__ = [
     "AIUsagePolicy",
     "AuthoritativeMetadataEvidence",
+    "BalancedLiteratureSelection",
     "CandidateDecision",
     "CompletenessIssue",
     "CompletenessReport",
@@ -53,7 +65,12 @@ __all__ = [
     "LengthRequirement",
     "LiteratureCandidate",
     "LiteratureDiscoveryResult",
+    "LiteratureRelevanceAssessment",
+    "LiteratureRelevanceAssessmentBatch",
+    "LiteratureSearchBlueprint",
     "LiteratureSearchPlan",
+    "LiteratureSelectionCandidate",
+    "LiteratureThemePlan",
     "LiteratureVerificationBatch",
     "LiteratureVerificationResult",
     "PolicyRule",
@@ -67,7 +84,10 @@ __all__ = [
     "RequirementSpec",
     "RisBibliographicMetadata",
     "SelectionPolicy",
+    "SelectedLiteratureRecord",
     "SourceEvidence",
     "StructureRequirement",
     "SubmissionRequirement",
+    "ThemedLiteratureSearchPlan",
+    "ThemeRelevanceScore",
 ]

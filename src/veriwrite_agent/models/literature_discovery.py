@@ -44,8 +44,9 @@ class LiteratureSearchPlan(StrictModel):
     year_from: int | None = Field(default=None, ge=1900, le=2100)
     year_to: int | None = Field(default=None, ge=1900, le=2100)
     work_type: Literal["journal-article"] = "journal-article"
-    target_eligible_count: Literal[50] = 50
-    max_candidates: Literal[300] = 300
+    journal_ranking_policy: Literal["required", "preferred"] = "required"
+    target_eligible_count: int = Field(default=50, ge=1, le=100)
+    max_candidates: int = Field(default=300, ge=1, le=1000)
 
     @field_validator(
         "primary_keywords",
@@ -202,8 +203,6 @@ class CandidateDecision(StrictModel):
     @model_validator(mode="after")
     def eligible_records_need_a_resolved_ranking(self) -> CandidateDecision:
         if self.status == "eligible":
-            if self.ranking.status != "matched":
-                raise ValueError("eligible candidates need a matched journal ranking")
             if self.reason_codes:
                 raise ValueError("eligible candidates cannot contain exclusion reasons")
         elif not self.reason_codes:
