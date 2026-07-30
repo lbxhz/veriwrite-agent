@@ -35,7 +35,7 @@ python -m pip install -e ".[dev,ui,ocr]"
 pytest
 ```
 
-启动本地验证工作台：
+启动 V0.1 + V0.2 本地控制台：
 
 ```powershell
 streamlit run streamlit_app.py
@@ -49,6 +49,12 @@ RapidOCR + ONNX Runtime 在本地识别。图片不会直接发送给 DeepSeek�
 系统会清除常见手机界面噪声并合并重叠段落；OCR 文本可在界面中人工校正后重跑。
 界面会显示规则与 DeepSeek 的字段级对照、实质冲突、完整性问题和原文证据，
 并允许用户逐项裁决后下载最终数据合同。
+
+V0.1 最终需求确认后，同一个控制台会继续生成临时检索蓝图。蓝图经用户集中检查和确认后，
+才能执行 Crossref 分主题检索、RIS/DOI 验证、DeepSeek 受限相关性评分与均衡选文。
+真实运行按蓝图指纹缓存在 `runtime/literature_console/`，中断后可以继续，并可下载最终
+文献 JSON、RIS 与逐篇真实性证据。完整操作说明见
+[`docs/integrated_v0.1_v0.2_console.md`](docs/integrated_v0.1_v0.2_console.md)。
 
 旧版规则解析命令仍然可用：
 

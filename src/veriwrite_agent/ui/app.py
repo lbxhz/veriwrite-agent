@@ -1,4 +1,4 @@
-"""Streamlit entry point for the local V0.1 evaluation workbench."""
+"""Streamlit entry point for the integrated V0.1 and V0.2 console."""
 
 from __future__ import annotations
 
@@ -19,6 +19,10 @@ from veriwrite_agent.services.requirement_confirmation import (
 from veriwrite_agent.services.requirement_review_renderer import (
     RequirementReviewRenderer,
 )
+from veriwrite_agent.ui.literature_console import (
+    clear_literature_state,
+    render_literature_console,
+)
 from veriwrite_agent.ui.workbench import (
     WorkbenchResult,
     built_in_samples,
@@ -32,13 +36,15 @@ from veriwrite_agent.ui.workbench import (
 
 def run() -> None:
     st.set_page_config(
-        page_title="VeriWrite V0.1 验证工作台",
+        page_title="VeriWrite Agent 本地控制台",
         page_icon="✓",
         layout="wide",
     )
     _inject_styles()
-    st.title("VeriWrite V0.1 验证工作台")
-    st.caption("把课程要求变成可比较、可确认、可交接的数据合同")
+    st.title("VeriWrite Agent 本地控制台")
+    st.caption(
+        "V0.1 获取并确认真实需求，V0.2 按确认蓝图检索、验证和选择真实文献"
+    )
 
     source_kind, selected_sample, uploaded_files, mode = _render_input_panel()
     if st.button("开始分析", type="primary", width="stretch"):
@@ -65,10 +71,12 @@ def run() -> None:
         else:
             _store_result(result, mode=mode)
             st.session_state.pop("confirmed_json", None)
+            clear_literature_state()
 
     if "review_json" in st.session_state:
         result = _restore_result()
         _render_result(result)
+        render_literature_console()
 
 
 def _render_input_panel() -> tuple[str, Any, Any, str]:
@@ -227,6 +235,7 @@ def _render_result(result: WorkbenchResult) -> None:
                     reset_editable_text=False,
                 )
                 st.session_state.pop("confirmed_json", None)
+                clear_literature_state()
                 st.rerun()
         with st.expander("查看完整审查 JSON"):
             st.json(json.loads(review.model_dump_json()))
@@ -487,6 +496,7 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
         except (RequirementConfirmationError, ValueError, json.JSONDecodeError) as exc:
             st.error(f"确认失败：{exc}")
         else:
+            clear_literature_state()
             st.session_state["confirmed_json"] = confirmed.model_dump_json(indent=2)
             st.success("最终需求版本已通过数据合同和完整性检查。")
             st.json(json.loads(st.session_state["confirmed_json"]))

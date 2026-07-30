@@ -90,7 +90,7 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
     app = AppTest.from_file(str(app_path)).run(timeout=30)
 
     assert not app.exception
-    assert app.title[0].value == "VeriWrite V0.1 验证工作台"
+    assert app.title[0].value == "VeriWrite Agent 本地控制台"
 
     app.button[0].click().run(timeout=30)
 
@@ -116,4 +116,11 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
     )
     assert "下载最终需求版本" in [
         button.label for button in app.download_button
+    ]
+    assert any(
+        header.value == "V0.2 文献检索与验证控制台"
+        for header in app.header
+    )
+    assert "根据 V0.1 最终需求生成临时检索蓝图" in [
+        button.label for button in app.button
     ]
