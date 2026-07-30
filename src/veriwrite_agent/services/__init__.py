@@ -11,8 +11,12 @@ from veriwrite_agent.services.literature_blueprint_planner import (
     BlueprintPlanningError,
     LiteratureBlueprintPlanner,
 )
+from veriwrite_agent.services.literature_blueprint_confirmation import (
+    LiteratureBlueprintConfirmationService,
+)
 from veriwrite_agent.services.literature_blueprint_search import (
     LiteratureBlueprintSearchExpander,
+    UnconfirmedLiteratureBlueprintError,
 )
 from veriwrite_agent.services.literature_keyword_planner import (
     KeywordPlanningError,
@@ -58,6 +62,7 @@ __all__ = [
     "KeywordPlanningError",
     "LLMLiteratureRelevanceScorer",
     "LiteratureBlueprintPlanner",
+    "LiteratureBlueprintConfirmationService",
     "LiteratureBlueprintSearchExpander",
     "LiteratureDiscoveryService",
     "LiteratureIdentityVerificationService",
@@ -72,6 +77,7 @@ __all__ = [
     "RequirementTextResult",
     "RequirementTextExtractionError",
     "RuleBasedRequirementParser",
+    "UnconfirmedLiteratureBlueprintError",
     "UnsupportedRequirementFileError",
     "extract_requirement_text",
     "extract_requirement_texts",

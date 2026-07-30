@@ -12,6 +12,7 @@ from veriwrite_agent.literature.doi import DoiOrgResolver, DoiRisMetadataProvide
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.models.literature_discovery import CandidateDecision
 from veriwrite_agent.models.literature_selection import (
+    ConfirmedLiteratureSearchBlueprint,
     LiteratureRelevanceAssessmentBatch,
     LiteratureSearchBlueprint,
     LiteratureSelectionCandidate,
@@ -23,6 +24,9 @@ from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
 from veriwrite_agent.models.requirements import ReferenceRequirement, RequirementSpec
 from veriwrite_agent.services.literature_blueprint_planner import (
     LiteratureBlueprintPlanner,
+)
+from veriwrite_agent.services.literature_blueprint_confirmation import (
+    LiteratureBlueprintConfirmationService,
 )
 from veriwrite_agent.services.literature_blueprint_search import (
     LiteratureBlueprintSearchExpander,
@@ -48,7 +52,7 @@ def main() -> None:
     settings = LLMSettings()
     llm = DeepSeekClient(settings)
     ranking_provider = CugJournalRankingProvider.from_default_catalog()
-    confirmed = ConfirmedRequirementSpec(
+    confirmed_requirement = ConfirmedRequirementSpec(
         confirmed_by="v0.2.2-regression",
         requirement=RequirementSpec(
             document_type="research_direction_literature_review",
@@ -78,10 +82,28 @@ def main() -> None:
             llm,
             ranking_provider.available_disciplines,
             current_year=YEAR_TO,
-        ).plan(confirmed)
+        ).plan(confirmed_requirement)
         _write_json("v022_search_blueprint.json", blueprint.model_dump(mode="json"))
+
+    confirmed_blueprint_path = OUTPUT_DIR / "v022_confirmed_blueprint.json"
+    if confirmed_blueprint_path.is_file():
+        confirmed_blueprint = (
+            ConfirmedLiteratureSearchBlueprint.model_validate_json(
+                confirmed_blueprint_path.read_text(encoding="utf-8")
+            )
+        )
+    else:
+        confirmed_blueprint = LiteratureBlueprintConfirmationService().confirm(
+            blueprint,
+            confirmed_by="controlled-regression-fixture",
+            note="回归测试中固定确认；生产流程必须由真实用户在界面确认。",
+        )
+        _write_json(
+            "v022_confirmed_blueprint.json",
+            confirmed_blueprint.model_dump(mode="json"),
+        )
     themed_plans = LiteratureBlueprintSearchExpander(pool_multiplier=2).expand(
-        blueprint
+        confirmed_blueprint
     )
 
     prefilter_path = OUTPUT_DIR / "v022_prefiltered_candidates.json"

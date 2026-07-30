@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -105,6 +106,19 @@ class LiteratureSearchBlueprint(StrictModel):
         ):
             raise ValueError("year_to cannot be before year_from")
         return self
+
+
+class ConfirmedLiteratureSearchBlueprint(StrictModel):
+    """Exact search blueprint approved by a user before external retrieval."""
+
+    schema_version: Literal["0.2.2"] = "0.2.2"
+    status: Literal["confirmed"] = "confirmed"
+    confirmed_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    confirmed_by: str = Field(min_length=1)
+    confirmation_note: str | None = None
+    blueprint: LiteratureSearchBlueprint
 
 
 class ThemedLiteratureSearchPlan(StrictModel):

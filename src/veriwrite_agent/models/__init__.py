@@ -10,6 +10,7 @@ from veriwrite_agent.models.literature_discovery import (
 )
 from veriwrite_agent.models.literature_selection import (
     BalancedLiteratureSelection,
+    ConfirmedLiteratureSearchBlueprint,
     LiteratureRelevanceAssessment,
     LiteratureRelevanceAssessmentBatch,
     LiteratureSearchBlueprint,
@@ -57,6 +58,7 @@ __all__ = [
     "CandidateDecision",
     "CompletenessIssue",
     "CompletenessReport",
+    "ConfirmedLiteratureSearchBlueprint",
     "ConfirmedRequirementSpec",
     "DoiResolutionEvidence",
     "FormattingRequirement",

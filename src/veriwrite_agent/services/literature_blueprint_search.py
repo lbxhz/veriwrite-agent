@@ -6,9 +6,13 @@ import math
 
 from veriwrite_agent.models.literature_discovery import LiteratureSearchPlan
 from veriwrite_agent.models.literature_selection import (
-    LiteratureSearchBlueprint,
+    ConfirmedLiteratureSearchBlueprint,
     ThemedLiteratureSearchPlan,
 )
+
+
+class UnconfirmedLiteratureBlueprintError(ValueError):
+    """Raised when retrieval is attempted with an unconfirmed draft."""
 
 
 class LiteratureBlueprintSearchExpander:
@@ -21,8 +25,13 @@ class LiteratureBlueprintSearchExpander:
 
     def expand(
         self,
-        blueprint: LiteratureSearchBlueprint,
+        confirmed: ConfirmedLiteratureSearchBlueprint,
     ) -> list[ThemedLiteratureSearchPlan]:
+        if not isinstance(confirmed, ConfirmedLiteratureSearchBlueprint):
+            raise UnconfirmedLiteratureBlueprintError(
+                "literature retrieval requires a user-confirmed search blueprint"
+            )
+        blueprint = confirmed.blueprint
         per_theme_max = max(
             1,
             math.ceil(blueprint.max_candidates / len(blueprint.themes)),

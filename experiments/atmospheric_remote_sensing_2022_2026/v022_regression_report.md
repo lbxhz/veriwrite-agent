@@ -36,6 +36,8 @@ Crossref RIS 与 DOI 验证，只是地大 2023 版“大气科学”目录没�
 ## 产物
 
 - `v022_search_blueprint.json`：四主题临时检索蓝图；
+- `v022_confirmed_blueprint.json`：确认后的检索蓝图；本回归使用固定测试确认，生产环境必须
+  由真实用户确认；
 - `v022_prefiltered_candidates.json`：分主题 Crossref 候选和地大目录查询结果；
 - `v022_verification_cache.json`：40 篇 RIS/DOI 验证证据；
 - `v022_relevance_cache.json`：受限 LLM 的跨主题相关性评分；

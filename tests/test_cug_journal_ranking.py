@@ -54,6 +54,14 @@ def test_title_normalization_handles_formatting_not_semantic_aliases() -> None:
     )
 
 
+def test_title_normalization_ignores_repeated_and_non_breaking_spaces() -> None:
+    canonical = normalize_journal_title("Remote Sensing of Environment")
+
+    assert normalize_journal_title(
+        "  Remote\u00a0  Sensing   of  Environment  "
+    ) == canonical
+
+
 def test_invalid_catalog_columns_fail_early(tmp_path: Path) -> None:
     catalog = tmp_path / "invalid.csv"
     catalog.write_text("journal,level\nExample,T1\n", encoding="utf-8")
