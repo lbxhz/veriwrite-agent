@@ -1,0 +1,259 @@
+"""V0.4 contracts for evidence-constrained, section-by-section writing."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Literal
+
+from pydantic import Field, field_validator, model_validator
+
+from veriwrite_agent.models.evidence import EvidenceQuote
+from veriwrite_agent.models.literature_discovery import canonicalize_doi
+from veriwrite_agent.models.requirements import StrictModel
+from veriwrite_agent.models.writing_handoff import V04WritingHandoff
+
+ParagraphRole = Literal[
+    "detailed_evidence",
+    "section_support",
+    "background",
+    "synthesis",
+]
+
+
+class SectionEvidenceItem(StrictModel):
+    """One confirmed V0.3 evidence card exposed to a single section."""
+
+    evidence_id: str = Field(pattern=r"^ev_[a-z0-9_]{3,80}$")
+    doi: str
+    normalized_claim: str = Field(min_length=1)
+    evidence_type: str = Field(min_length=1)
+    support_strength: Literal["direct", "partial"]
+    supporting_quotes: list[EvidenceQuote] = Field(min_length=1, max_length=3)
+
+    @field_validator("doi")
+    @classmethod
+    def normalize_doi(cls, value: str) -> str:
+        return canonicalize_doi(value)
+
+
+class SectionSourceRecord(StrictModel):
+    """Bibliographic context with an explicit permission boundary."""
+
+    doi: str
+    citation_key: str = Field(pattern=r"^[a-z0-9][a-z0-9_]{2,79}$")
+    title: str = Field(min_length=1)
+    authors: list[str] = Field(default_factory=list)
+    year: int = Field(ge=1000, le=2100)
+    journal: str | None = None
+    abstract: str | None = None
+    evidence_tier: Literal["A_core", "B_supporting", "C_background"]
+    permitted_use: Literal[
+        "detailed_claims",
+        "section_support",
+        "background_only",
+    ]
+
+    @field_validator("doi")
+    @classmethod
+    def normalize_doi(cls, value: str) -> str:
+        return canonicalize_doi(value)
+
+
+class SectionEvidencePacket(StrictModel):
+    """Deterministic section context sent to an LLM."""
+
+    schema_version: Literal["0.4.0"] = "0.4.0"
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    title: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    target_words: int = Field(ge=100)
+    research_questions: list[str] = Field(default_factory=list)
+    evidence_items: list[SectionEvidenceItem] = Field(min_length=1)
+    sources: list[SectionSourceRecord] = Field(min_length=1)
+    ai_writing_mode: Literal["generation_allowed", "generation_blocked"] = (
+        "generation_allowed"
+    )
+    ai_policy_reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def evidence_must_resolve_to_section_sources(self) -> SectionEvidencePacket:
+        evidence_ids = [item.evidence_id for item in self.evidence_items]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("section evidence_id values must be unique")
+        source_dois = [source.doi for source in self.sources]
+        if len(source_dois) != len(set(source_dois)):
+            raise ValueError("section source DOI values must be unique")
+        if any(item.doi not in source_dois for item in self.evidence_items):
+            raise ValueError("every section evidence item needs a source record")
+        if (
+            self.ai_writing_mode == "generation_blocked"
+            and not self.ai_policy_reasons
+        ):
+            raise ValueError("blocked AI writing requires policy reasons")
+        return self
+
+
+class DraftParagraphProposal(StrictModel):
+    """LLM prose proposal without authority to create citations."""
+
+    role: ParagraphRole
+    text: str = Field(min_length=1)
+    evidence_card_ids: list[str] = Field(default_factory=list)
+    source_dois: list[str] = Field(default_factory=list)
+
+    @field_validator("evidence_card_ids", "source_dois", mode="after")
+    @classmethod
+    def values_must_be_unique(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("paragraph support identifiers must be unique")
+        return values
+
+    @field_validator("source_dois")
+    @classmethod
+    def normalize_dois(cls, values: list[str]) -> list[str]:
+        return [canonicalize_doi(value) for value in values]
+
+    @model_validator(mode="after")
+    def paragraph_needs_declared_support(self) -> DraftParagraphProposal:
+        if not self.evidence_card_ids and not self.source_dois:
+            raise ValueError("every paragraph requires declared source support")
+        if self.role == "detailed_evidence" and not self.evidence_card_ids:
+            raise ValueError("detailed_evidence paragraphs require evidence cards")
+        return self
+
+
+class SectionDraftProposal(StrictModel):
+    """Structured LLM response later rendered and audited by code."""
+
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    paragraphs: list[DraftParagraphProposal] = Field(min_length=1, max_length=20)
+
+
+class CitationBinding(StrictModel):
+    """One deterministic link from rendered prose to source evidence."""
+
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    paragraph_number: int = Field(ge=1)
+    citation_key: str = Field(pattern=r"^[a-z0-9][a-z0-9_]{2,79}$")
+    doi: str
+    evidence_card_ids: list[str] = Field(default_factory=list)
+    page_numbers: list[int] = Field(default_factory=list)
+
+    @field_validator("doi")
+    @classmethod
+    def normalize_doi(cls, value: str) -> str:
+        return canonicalize_doi(value)
+
+
+class SectionDraftIssue(StrictModel):
+    """A deterministic writing or citation gate result."""
+
+    code: Literal[
+        "unknown_evidence_card",
+        "unknown_source_doi",
+        "evidence_source_mismatch",
+        "source_permission_exceeded",
+        "unconfirmed_evidence",
+        "llm_authored_citation",
+        "partial_support",
+        "word_count_low",
+        "word_count_high",
+    ]
+    severity: Literal["warning", "blocking"]
+    detail: str = Field(min_length=1)
+    paragraph_number: int | None = Field(default=None, ge=1)
+
+
+class SectionDraft(StrictModel):
+    """Auditable section draft with code-generated citation bindings."""
+
+    schema_version: Literal["0.4.0"] = "0.4.0"
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    title: str = Field(min_length=1)
+    status: Literal["needs_review", "draft", "confirmed"]
+    target_words: int = Field(ge=100)
+    counted_words: int = Field(ge=0)
+    paragraphs: list[DraftParagraphProposal] = Field(min_length=1)
+    markdown: str = Field(min_length=1)
+    citations: list[CitationBinding] = Field(default_factory=list)
+    issues: list[SectionDraftIssue] = Field(default_factory=list)
+    generated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    confirmed_by: str | None = None
+    confirmed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def status_must_match_issues_and_confirmation(self) -> SectionDraft:
+        blocking = any(issue.severity == "blocking" for issue in self.issues)
+        if self.status == "needs_review" and not blocking:
+            raise ValueError("needs_review drafts require a blocking issue")
+        if self.status == "draft" and blocking:
+            raise ValueError("draft sections cannot contain blocking issues")
+        if self.status == "confirmed":
+            if blocking:
+                raise ValueError("confirmed sections cannot contain blocking issues")
+            if not self.confirmed_by or self.confirmed_at is None:
+                raise ValueError("confirmed sections need confirmation audit fields")
+        elif self.confirmed_by is not None or self.confirmed_at is not None:
+            raise ValueError("unconfirmed sections cannot claim confirmation")
+        return self
+
+
+class WritingSectionState(StrictModel):
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    status: Literal["pending", "draft", "needs_review", "confirmed"] = "pending"
+    draft: SectionDraft | None = None
+
+    @model_validator(mode="after")
+    def state_must_match_draft(self) -> WritingSectionState:
+        if self.status == "pending" and self.draft is not None:
+            raise ValueError("pending sections cannot contain a draft")
+        if self.status != "pending":
+            if self.draft is None or self.draft.status != self.status:
+                raise ValueError("section state must match its draft status")
+        return self
+
+
+class V04WritingProject(StrictModel):
+    """Durable state for staged body writing."""
+
+    schema_version: Literal["0.4.0"] = "0.4.0"
+    status: Literal["drafting", "body_complete"] = "drafting"
+    handoff: V04WritingHandoff
+    sections: list[WritingSectionState] = Field(min_length=1)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    @model_validator(mode="after")
+    def section_states_must_match_confirmed_outline(self) -> V04WritingProject:
+        expected_ids = [
+            section.section_id
+            for section in self.handoff.outline.outline.sections
+        ]
+        actual_ids = [section.section_id for section in self.sections]
+        if actual_ids != expected_ids:
+            raise ValueError("writing project sections must match outline order")
+        all_confirmed = all(
+            section.status == "confirmed" for section in self.sections
+        )
+        if (self.status == "body_complete") != all_confirmed:
+            raise ValueError(
+                "body_complete is valid exactly when every section is confirmed"
+            )
+        return self
+
+
+class BodyDraftPackage(StrictModel):
+    """Confirmed body Markdown plus its complete evidence trace."""
+
+    schema_version: Literal["0.4.0"] = "0.4.0"
+    topic: str = Field(min_length=1)
+    markdown: str = Field(min_length=1)
+    counted_words: int = Field(ge=1)
+    citations: list[CitationBinding] = Field(min_length=1)
+    source_dois: list[str] = Field(min_length=1)

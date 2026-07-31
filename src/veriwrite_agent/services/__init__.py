@@ -69,6 +69,14 @@ from veriwrite_agent.services.writing_handoff import (
     WritingHandoffService,
     WritingOutlineBuilder,
 )
+from veriwrite_agent.services.grounded_writing import (
+    GroundedSectionDraftService,
+    GroundedWritingError,
+    LLMGroundedSectionWriter,
+    SectionEvidencePacketBuilder,
+    WritingProjectService,
+    count_writing_units,
+)
 
 __all__ = [
     "LLMOutputValidationError",
@@ -108,4 +116,10 @@ __all__ = [
     "load_requirement_text",
     "WritingHandoffService",
     "WritingOutlineBuilder",
+    "GroundedSectionDraftService",
+    "GroundedWritingError",
+    "LLMGroundedSectionWriter",
+    "SectionEvidencePacketBuilder",
+    "WritingProjectService",
+    "count_writing_units",
 ]

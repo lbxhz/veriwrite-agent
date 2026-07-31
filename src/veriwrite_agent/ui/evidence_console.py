@@ -37,6 +37,9 @@ from veriwrite_agent.services.writing_handoff import (
     WritingHandoffService,
     WritingOutlineBuilder,
 )
+from veriwrite_agent.ui.writing_console import (
+    render_grounded_writing_console,
+)
 
 PDF_STATE_KEYS = (
     "v03_core_dois",
@@ -44,6 +47,7 @@ PDF_STATE_KEYS = (
     "v03_pdf_inspection_json",
     "v03_evidence_library_json",
     "v03_writing_handoff_json",
+    "v04_writing_project_json",
 )
 
 
@@ -338,6 +342,7 @@ def _render_evidence_pipeline(
             type="primary",
             width="stretch",
         )
+        render_grounded_writing_console(handoff)
 
 
 def _build_evidence_library(

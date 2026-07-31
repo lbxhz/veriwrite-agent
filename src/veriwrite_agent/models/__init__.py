@@ -26,6 +26,19 @@ from veriwrite_agent.models.writing_handoff import (
     WritingOutlineDraft,
     WritingOutlineSection,
 )
+from veriwrite_agent.models.writing import (
+    BodyDraftPackage,
+    CitationBinding,
+    DraftParagraphProposal,
+    SectionDraft,
+    SectionDraftIssue,
+    SectionDraftProposal,
+    SectionEvidenceItem,
+    SectionEvidencePacket,
+    SectionSourceRecord,
+    V04WritingProject,
+    WritingSectionState,
+)
 from veriwrite_agent.models.literature_discovery import (
     CandidateDecision,
     JournalRankingLookup,
@@ -144,4 +157,15 @@ __all__ = [
     "V04WritingHandoff",
     "WritingOutlineDraft",
     "WritingOutlineSection",
+    "BodyDraftPackage",
+    "CitationBinding",
+    "DraftParagraphProposal",
+    "SectionDraft",
+    "SectionDraftIssue",
+    "SectionDraftProposal",
+    "SectionEvidenceItem",
+    "SectionEvidencePacket",
+    "SectionSourceRecord",
+    "V04WritingProject",
+    "WritingSectionState",
 ]
