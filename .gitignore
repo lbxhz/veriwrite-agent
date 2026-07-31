@@ -11,3 +11,5 @@ build/
 *.egg-info/
 runtime/
 .playwright-cli/
+output/
+tmp/

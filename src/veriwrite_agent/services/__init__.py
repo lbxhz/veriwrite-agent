@@ -1,5 +1,17 @@
 """Business services used by VeriWrite entry points."""
 
+from veriwrite_agent.services.evidence_grounding import EvidenceGroundingValidator
+from veriwrite_agent.services.evidence_card_extraction import (
+    EvidenceCardExtractionError,
+    LLMEvidenceCardExtractor,
+)
+from veriwrite_agent.services.evidence_library import (
+    EvidenceLibraryBuilder,
+    EvidenceLibraryConfirmationService,
+)
+from veriwrite_agent.services.literature_matrix import LiteratureMatrixBuilder
+from veriwrite_agent.services.pdf_acquisition import PdfAcquisitionInspector
+from veriwrite_agent.services.pdf_text_extraction import PdfPageExtractor
 from veriwrite_agent.services.llm_requirement_parser import (
     LLMOutputValidationError,
     LLMRequirementParser,
@@ -53,12 +65,24 @@ from veriwrite_agent.services.requirement_reconciler import RequirementReconcile
 from veriwrite_agent.services.requirement_review_renderer import (
     RequirementReviewRenderer,
 )
+from veriwrite_agent.services.writing_handoff import (
+    WritingHandoffService,
+    WritingOutlineBuilder,
+)
 
 __all__ = [
     "LLMOutputValidationError",
     "LLMRequirementParser",
     "BlueprintPlanningError",
     "BalancedLiteratureSelector",
+    "EvidenceGroundingValidator",
+    "EvidenceCardExtractionError",
+    "EvidenceLibraryBuilder",
+    "EvidenceLibraryConfirmationService",
+    "LLMEvidenceCardExtractor",
+    "LiteratureMatrixBuilder",
+    "PdfAcquisitionInspector",
+    "PdfPageExtractor",
     "KeywordPlanningError",
     "LLMLiteratureRelevanceScorer",
     "LiteratureBlueprintPlanner",
@@ -82,4 +106,6 @@ __all__ = [
     "extract_requirement_text",
     "extract_requirement_texts",
     "load_requirement_text",
+    "WritingHandoffService",
+    "WritingOutlineBuilder",
 ]

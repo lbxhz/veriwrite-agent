@@ -17,6 +17,10 @@ from veriwrite_agent.services.literature_blueprint_confirmation import (
     LiteratureBlueprintConfirmationService,
 )
 from veriwrite_agent.ui.literature_workbench import LiteratureWorkbench
+from veriwrite_agent.ui.evidence_console import (
+    PDF_STATE_KEYS,
+    render_pdf_acquisition_console,
+)
 from veriwrite_agent.ui.workbench import project_root
 
 LITERATURE_STATE_KEYS = (
@@ -27,6 +31,7 @@ LITERATURE_STATE_KEYS = (
     "literature_ris",
     "literature_verification_json",
     "literature_run_dir",
+    *PDF_STATE_KEYS,
 )
 
 
@@ -429,3 +434,4 @@ def _render_literature_result() -> None:
         mime="application/json",
         width="stretch",
     )
+    render_pdf_acquisition_console(selection)

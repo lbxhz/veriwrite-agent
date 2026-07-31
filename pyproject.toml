@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "openai>=2.0,<3",
+    "pypdf>=6.14,<7",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.6,<3",
 ]
@@ -20,7 +21,6 @@ dev = [
     "ruff>=0.8",
 ]
 ui = [
-    "pypdf>=6.14,<7",
     "streamlit>=1.59,<2",
     "pywin32==312; sys_platform == 'win32'",
 ]
