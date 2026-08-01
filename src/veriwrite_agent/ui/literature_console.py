@@ -155,7 +155,6 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
                 st.error(f"检索方案无效：{exc}")
             else:
                 st.session_state["literature_blueprint_json"] = edited.model_dump_json(indent=2)
-                st.session_state["literature_blueprint_editor"] = edited.model_dump_json(indent=2)
                 st.session_state["literature_confirmed_blueprint_json"] = (
                     confirmed_blueprint.model_dump_json(indent=2)
                 )
