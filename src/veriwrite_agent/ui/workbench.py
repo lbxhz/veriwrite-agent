@@ -26,6 +26,7 @@ class SampleCase:
     label: str
     path: Path
     focus: str
+    smoke_test: bool = False
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,12 @@ def project_root() -> Path:
 def built_in_samples() -> list[SampleCase]:
     fixture_dir = project_root() / "tests" / "fixtures"
     return [
+        SampleCase(
+            "快速全链路联通测试（推荐）",
+            fixture_dir / "mvp_golden_requirement.txt",
+            "2 篇真实文献、1 篇核心 PDF、600–800 英文词；用于快速验证 V0.1–最终交付是否联通",
+            smoke_test=True,
+        ),
         SampleCase(
             "完整课程要求",
             fixture_dir / "course_requirement.txt",

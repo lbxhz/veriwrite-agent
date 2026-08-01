@@ -11,6 +11,8 @@ from veriwrite_agent.models.writing_handoff import (
     WritingOutlineDraft,
     WritingOutlineSection,
 )
+from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
+from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 
 
 class WritingOutlineBuilder:
@@ -21,8 +23,28 @@ class WritingOutlineBuilder:
         blueprint: LiteratureSearchBlueprint,
         library: EvidenceLibrary,
         *,
-        target_words: int,
+        target_words: int | None = None,
+        policy: ExecutableRequirementPolicy | None = None,
+        smoke_test: bool = False,
     ) -> WritingOutlineDraft:
+        active_policy = policy or blueprint.requirement_policy
+        if active_policy is not None:
+            target_words = active_policy.length.target_units
+            counting_policy = active_policy.length.counting_policy
+            policy_fingerprint = active_policy.requirement_fingerprint
+        else:
+            counting_policy = "chinese_chars_and_english_words"
+            policy_fingerprint = None
+        if target_words is None:
+            raise ValueError("target_words or an executable policy is required")
+        if smoke_test:
+            return self._build_smoke_outline(
+                blueprint,
+                library,
+                target_words=target_words,
+                counting_policy=counting_policy,
+                policy_fingerprint=policy_fingerprint,
+            )
         if target_words < 200 * len(blueprint.themes):
             raise ValueError("target_words is too small for the confirmed themes")
         budgets = _allocate_words(
@@ -33,16 +55,13 @@ class WritingOutlineBuilder:
             theme.theme_id: [
                 card
                 for card in library.evidence_cards
-                if card.theme_id == theme.theme_id
-                and card.review_status != "rejected"
+                if card.theme_id == theme.theme_id and card.review_status != "rejected"
             ]
             for theme in blueprint.themes
         }
         records_by_theme = {
             theme.theme_id: [
-                record
-                for record in library.records
-                if theme.theme_id in record.theme_ids
+                record for record in library.records if theme.theme_id in record.theme_ids
             ]
             for theme in blueprint.themes
         }
@@ -51,27 +70,22 @@ class WritingOutlineBuilder:
         for theme, budget in zip(blueprint.themes, budgets, strict=True):
             records = records_by_theme[theme.theme_id]
             core_dois = [
-                record.doi
-                for record in records
-                if record.evidence_status == "full_text_verified"
+                record.doi for record in records if record.evidence_status == "full_text_verified"
             ]
             supporting_dois = [
-                record.doi
-                for record in records
-                if record.evidence_status == "metadata_verified"
+                record.doi for record in records if record.evidence_status == "metadata_verified"
             ]
             cards = cards_by_theme[theme.theme_id]
             evidence_gap = not core_dois or not cards
             if evidence_gap:
-                gaps.append(
-                    f"{theme.section_title}缺少已验证全文或可追溯证据卡。"
-                )
+                gaps.append(f"{theme.section_title}缺少已验证全文或可追溯证据卡。")
             sections.append(
                 WritingOutlineSection(
                     section_id=theme.theme_id,
                     title=theme.section_title,
                     purpose=theme.section_purpose,
                     target_words=budget,
+                    counting_policy=counting_policy,
                     research_questions=theme.research_questions,
                     core_dois=core_dois,
                     supporting_dois=supporting_dois,
@@ -83,7 +97,78 @@ class WritingOutlineBuilder:
             topic=blueprint.topic,
             writing_through_line=blueprint.writing_through_line,
             target_words=target_words,
+            counting_policy=counting_policy,
+            requirement_policy_fingerprint=policy_fingerprint,
             sections=sections,
+            unresolved_gaps=gaps,
+        )
+
+    @staticmethod
+    def _build_smoke_outline(
+        blueprint: LiteratureSearchBlueprint,
+        library: EvidenceLibrary,
+        *,
+        target_words: int,
+        counting_policy: str,
+        policy_fingerprint: str | None,
+    ) -> WritingOutlineDraft:
+        """Build one evidence-backed section for a minimal connectivity test.
+
+        Production mode keeps the strict per-theme evidence gate. The smoke test
+        intentionally uses one core PDF, so its provisional search themes are
+        consolidated into one body-writing unit instead of pretending that the
+        single PDF independently supports every theme.
+        """
+
+        accepted_cards = [
+            card for card in library.evidence_cards if card.review_status != "rejected"
+        ]
+        core_dois = [
+            record.doi
+            for record in library.records
+            if record.evidence_status == "full_text_verified"
+        ]
+        supporting_dois = [
+            record.doi
+            for record in library.records
+            if record.evidence_status == "metadata_verified"
+        ]
+        evidence_gap = not core_dois or not accepted_cards
+        first_theme = blueprint.themes[0]
+        section_title = "；".join(theme.section_title for theme in blueprint.themes)
+        section_purpose = " ".join(theme.section_purpose for theme in blueprint.themes)
+        research_questions = list(
+            dict.fromkeys(
+                question
+                for theme in blueprint.themes
+                for question in theme.research_questions
+            )
+        )
+        gaps = (
+            ["快速联通测试缺少已验证核心全文或可追溯证据卡。"]
+            if evidence_gap
+            else []
+        )
+        return WritingOutlineDraft(
+            topic=blueprint.topic,
+            writing_through_line=blueprint.writing_through_line,
+            target_words=target_words,
+            counting_policy=counting_policy,
+            requirement_policy_fingerprint=policy_fingerprint,
+            sections=[
+                WritingOutlineSection(
+                    section_id=first_theme.theme_id,
+                    title=section_title,
+                    purpose=section_purpose,
+                    target_words=target_words,
+                    counting_policy=counting_policy,
+                    research_questions=research_questions,
+                    core_dois=list(dict.fromkeys(core_dois)),
+                    supporting_dois=list(dict.fromkeys(supporting_dois)),
+                    evidence_card_ids=[card.evidence_id for card in accepted_cards],
+                    evidence_gap=evidence_gap,
+                )
+            ],
             unresolved_gaps=gaps,
         )
 
@@ -108,9 +193,18 @@ class WritingHandoffService:
         requirement: ConfirmedRequirementSpec,
         outline: ConfirmedWritingOutline,
         evidence_library: EvidenceLibrary,
+        policy: ExecutableRequirementPolicy | None = None,
     ) -> V04WritingHandoff:
+        active_policy = policy or RequirementPolicyCompiler().compile(requirement)
+        if (
+            evidence_library.requirement_policy_fingerprint
+            and evidence_library.requirement_policy_fingerprint
+            != active_policy.requirement_fingerprint
+        ):
+            raise ValueError("evidence library was built from a different requirement policy")
         return V04WritingHandoff(
             requirement=requirement,
+            requirement_policy=active_policy,
             outline=outline,
             evidence_library=evidence_library,
         )

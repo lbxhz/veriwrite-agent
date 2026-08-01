@@ -1,0 +1,339 @@
+[
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_2c758876fe",
+    "doi": "10.1016/j.atmosres.2025.108411",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "background",
+    "normalized_claim": "Aerosols significantly influence climate, environmental quality, and human health, and aerosol mapping is essential but limited by spatial coverage and resolution.",
+    "supporting_quotes": [
+      {
+        "page_number": 1,
+        "exact_text": ", China ARTICLE INFO Keywords: Aerosol Optical Depth (AOD) MCD19A2 MERRA-2 Downscaling Ensemble Machine Learning (EML) UNet model ABSTRACT Aerosols, which envelop the entire Earth, significantly influence climate, environmental quality, and human health.",
+        "section_title": null
+      },
+      {
+        "page_number": 1,
+        "exact_text": "Aerosol mapping is essential for understanding their interactions with meteorological and epidemio - logical factors, especially in regions with sparse ground stations. However, existing aerosol products face limi - tations in spatial coverage and resolution.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "5f6089953b720999548688bba2096e6e9576d39de6293fd861cc63b2d4b6fb82",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_892e18e76b",
+    "doi": "10.1016/j.atmosres.2025.108411",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "The Downscale-UNet model achieved high accuracy on unseen data, with R2 of 0.93, MAE of 0.04, and RMSE of 0.06, and over 95% of predictions within the EE range with negligible bias.",
+    "supporting_quotes": [
+      {
+        "page_number": 6,
+        "exact_text": "drawn from pixel-wise validation pairs), the model maintained robust performance on unseen data, achieving an R 2 of 0.93, MAE of 0.04, and RMSE of 0.06 ( Fig. 3 b).",
+        "section_title": null
+      },
+      {
+        "page_number": 6,
+        "exact_text": "Over 95 % of predictions conformed to the EE range, with negligible bias (0.01), confirming the model ’ s generalization ability and absence of overfitting.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "5f6089953b720999548688bba2096e6e9576d39de6293fd861cc63b2d4b6fb82",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_f69b893651",
+    "doi": "10.1016/j.atmosres.2025.108411",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "method",
+    "normalized_claim": "An ablation experiment was conducted to evaluate the contributions of CBAM and DSC modules, comparing the original UNet, CBAM model, DSC model, and the developed Downscale-UNet.",
+    "supporting_quotes": [
+      {
+        "page_number": 6,
+        "exact_text": "Given that our model is an enhanced version of the traditional UNet model, incorporating the CBAM and DSC modules, conducting an ablation experiment is essential to determine the specific contributions of these components.",
+        "section_title": null
+      },
+      {
+        "page_number": 6,
+        "exact_text": "In this study, four models were constructed: the original UNet, UNet with the CBAM module (CBAM model), UNet with the DSC module (DSC model), and the developed Downscale-UNet model. Each model was trained using 80 % of the constructed samples and tested on the remaining 20 %.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "5f6089953b720999548688bba2096e6e9576d39de6293fd861cc63b2d4b6fb82",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_dd772d45ab",
+    "doi": "10.1016/j.atmosres.2025.108411",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "limitation",
+    "normalized_claim": "Current satellite retrievals and model reanalyses suffer from data gaps and coarse spatial resolution.",
+    "supporting_quotes": [
+      {
+        "page_number": 10,
+        "exact_text": "Conclusion Currently, widely used aerosol datasets for large-scale studies — pri - marily satellite retrievals and model reanalyses — suffer from significant data gaps and coarse spatial resolution.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "5f6089953b720999548688bba2096e6e9576d39de6293fd861cc63b2d4b6fb82",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_a8176f6661",
+    "doi": "10.1016/j.atmosres.2025.108411",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "method",
+    "normalized_claim": "The study develops a two-stage hybrid downscaling algorithm using ensemble learning and an enhanced UNet model to generate high-resolution seamless AOD maps.",
+    "supporting_quotes": [
+      {
+        "page_number": 10,
+        "exact_text": "To address these limitations, this study develops a two-stage hybrid downscaling algorithm to generate high-resolution, seamless aerosol optical depth (AOD) maps for China: (1) Ensemble learning models are employed to simultaneously fill gaps in MODIS AOD and correct MERRA-2 AOD at the pixel level, ",
+        "section_title": null
+      },
+      {
+        "page_number": 10,
+        "exact_text": "creating reliable training labels and spatially consistent input features, while (2) the downscaling stage utilizes an enhanced Downscale-UNet model incorporating Convolutional Block Attention Module (CBAM) and Depthwise Separable Convolution (DSC) to automatically extract spatial features and gener",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "5f6089953b720999548688bba2096e6e9576d39de6293fd861cc63b2d4b6fb82",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_a28c616d85",
+    "doi": "10.1016/j.atmosenv.2025.121365",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "Geostationary satellite-based nighttime AOD was estimated using machine learning, and IR channels have the potential to be utilized for estimating nighttime AOD.",
+    "supporting_quotes": [
+      {
+        "page_number": 1,
+        "exact_text": "tificial Intelligence, Ulsan National Institute of Science and Technology, Ulsan, 44919, Republic of Korea HIGHLIGHTS • Geostationary satellite-based nighttime AOD was estimated using machine learning. • IR channels have the potential to be utilized for estimating nighttime AOD. • Total precipitable",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "034526a8a03c4e0a1c78e36d7bba3c3428fefa3701427f0c8f59f56782350e4c",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_cbef094edd",
+    "doi": "10.1016/j.atmosenv.2025.121365",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "Total precipitable water and seasonality contributed to nighttime AOD modeling, and the spatial distribution of estimated AOD showed good agreement with other AOD products.",
+    "supporting_quotes": [
+      {
+        "page_number": 1,
+        "exact_text": " water and seasonality contributed to nighttime AOD modeling. • Spatial distribution of estimated AOD showed good agreement with other AOD products. • The time series of estimated AOD demonstrated the diurnal variability of AOD.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "034526a8a03c4e0a1c78e36d7bba3c3428fefa3701427f0c8f59f56782350e4c",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_1919db99f3",
+    "doi": "10.1016/j.atmosenv.2025.121365",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "The LGBM model outperforms the RF model for AOD estimation based on all-day RDCV results, with a slope closer to 1 and higher fractions within expected error.",
+    "supporting_quotes": [
+      {
+        "page_number": 6,
+        "exact_text": "environment ( Lundberg et al., 2020 ). 4. Results 4.1. Model performance Overall, the LGBM model performed better than the RF model based on the all-day RDCV results ( Table 2 ; Fig. 3 a).",
+        "section_title": null
+      },
+      {
+        "page_number": 6,
+        "exact_text": "The slope of the line of best fit for the LGBM model was closer to 1 than that of the RF model for both daytime and nighttime, indicating that the LGBM model had a better estimated AOD for a higher range compared to the RF model, which was generally underestimated.",
+        "section_title": null
+      },
+      {
+        "page_number": 6,
+        "exact_text": "In addition, the larger fractions of samples within EE for the LGBM model than the RF model support the LGBM’s better performance over the RF model. The difference in per - formances between RF and LGBM was based on their ability to address different aspects of error.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "034526a8a03c4e0a1c78e36d7bba3c3428fefa3701427f0c8f59f56782350e4c",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_8c23e82a63",
+    "doi": "10.1016/j.atmosenv.2025.121365",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "LGBM reduces bias while RF reduces variance, leading to LGBM's better performance in high AOD ranges and RF's underestimation.",
+    "supporting_quotes": [
+      {
+        "page_number": 6,
+        "exact_text": "LGBM is a boosting algorithm that aims to reduce the bias, whereas RF is a bagging algorithm that focuses on decreasing the variance ( Fan et al., 2022 ). Fig.",
+        "section_title": null
+      },
+      {
+        "page_number": 6,
+        "exact_text": "3 shows that the LGBM model estimated AOD matching more closely with the reference AOD throughout all ranges of AOD due to its characteristics of reducing bias.",
+        "section_title": null
+      },
+      {
+        "page_number": 6,
+        "exact_text": "The RF model, on the other hand, caused higher errors in high AOD values due to the small sample size for high AOD and its characteristic of reducing varia",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "034526a8a03c4e0a1c78e36d7bba3c3428fefa3701427f0c8f59f56782350e4c",
+    "support_strength": "partial",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_1d479ba2f5",
+    "doi": "10.1016/j.atmosenv.2025.121365",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "method",
+    "normalized_claim": "IR channels can be used to estimate nighttime AOD because they observe both day and night, and machine learning methods have been proposed for this purpose.",
+    "supporting_quotes": [
+      {
+        "page_number": 12,
+        "exact_text": "As the long-wave radiances from the IR range are observed during both daytime and nighttime, the IR channels have the potential to be utilized for estimating AOD during the nighttime.",
+        "section_title": null
+      },
+      {
+        "page_number": 12,
+        "exact_text": "This has led to the proposal of various methods, particularly based on machine learning, to estimate AOD at night using IR radiation data ( Lee and Sohn, 2012; Liu et al., 2024; Zhang et al., 2024 ). By employing the radiative transfer model, Liu et al. (2024) demonstrated the negative relat",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "034526a8a03c4e0a1c78e36d7bba3c3428fefa3701427f0c8f59f56782350e4c",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_ce5a50a41e",
+    "doi": "10.1016/j.atmosenv.2025.121365",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "The proposed satellite-based nighttime AOD product has better spatial resolution compared to existing products that rely on reanalysis or forecast models.",
+    "supporting_quotes": [
+      {
+        "page_number": 12,
+        "exact_text": "with better spatial resolution compared to all currently available nighttime AOD products covering a large area. Existing nighttime AOD products mainly rely on reanalysis or forecast models, which often have coarser spatial resolution compared to the proposed satellite-based approach.",
+        "section_title": null
+      },
+      {
+        "page_number": 12,
+        "exact_text": "For example, CAMS global atmospheric composition fore - casts (0.4 ◦ × 0.4 ◦ , approximately 40 km), CAMS global reanalysis (0.75 ◦ × 0.75 ◦ , approximately 75 km), and the second Modern-Era Retro - spective analysis for Research and Applications (MERRA-2; 0.5 ◦ × 0.625 ◦ , approximately 50 km in th",
+        "section_title": null
+      },
+      {
+        "page_number": 12,
+        "exact_text": "e direction of latitude) provide AOD with coarser spatial resolutions than the proposed models ( ECMWF, 2021 ; Gueymard and Yang, 2020 ).",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "034526a8a03c4e0a1c78e36d7bba3c3428fefa3701427f0c8f59f56782350e4c",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_482968f6bf",
+    "doi": "10.1016/j.atmosres.2021.105938",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "卫星估计的20-40°N区域平均气溶胶直接辐射强迫在表面和大气层顶为负（冷却效应），在大气中为正（增温效应）。",
+    "supporting_quotes": [
+      {
+        "page_number": 1,
+        "exact_text": "The regional averaged ADRFs are negative (cooling effect) at the surface (SUR) and the top of atmosphere (TOA) and positive (warming effect) in the atmosphere (ATM). The spatial and temporal distributions of ADRF are closely linked to",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "b6657060932fe550162f5328ff74f360ef206b8e87bbdd1873529dd1b960ca4f",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_8532a9a668",
+    "doi": "10.1016/j.atmosres.2021.105938",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "Aerosol direct radiative forcing (ADRF) shows higher values from February to May, with regional differences in surface and TOA cooling effects.",
+    "supporting_quotes": [
+      {
+        "page_number": 9,
+        "exact_text": "10 shows the monthly change of ADRF during the period from 2000 to 2019. Higher ADRFs appear from February to May, due to the larger AOD in spring and summer than that in winter and autumn.",
+        "section_title": null
+      },
+      {
+        "page_number": 9,
+        "exact_text": "It should be noted that in all seasons, these regions including the Eastern China, the Northern India, and the North Africa with higher concentration of aerosol have stronger cooling effect at the surface and TOA, and stronger warming effec",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "b6657060932fe550162f5328ff74f360ef206b8e87bbdd1873529dd1b960ca4f",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_3e7f5c982b",
+    "doi": "10.1016/j.atmosres.2021.105938",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "background",
+    "normalized_claim": "Increased aerosol emissions in South Asia reduced surface sunlight by about 0.05 W/m² per year.",
+    "supporting_quotes": [
+      {
+        "page_number": 9,
+        "exact_text": "Atmospheric Research 266 (2022) 105938 9 recent period ( Ramachandran et al., 2012 ; Babu et al., 2013 ; Mehta, 2015 ). Kambezidis et al. (2012) found that the increased aerosol emis - sions contributed to the reduction of sunlight at surface by about 0.05 W/m 2 /year over the south Asia. Fig.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "b6657060932fe550162f5328ff74f360ef206b8e87bbdd1873529dd1b960ca4f",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_427712e02f",
+    "doi": "10.1016/j.atmosres.2021.105938",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "基于CERES和MODIS卫星数据，分析表明AOD和ADRF的空间分布紧密相关，气溶胶冷却地表并加热大气，在顶层大气产生冷却效应。",
+    "supporting_quotes": [
+      {
+        "page_number": 10,
+        "exact_text": "Atmospheric Research 266 (2022) 105938 10 covariated with each other. 5. Discussion and conclusions Utilizing datasets form CERES and MODIS satellites, we analyzed the spatial distribution and temporal trends of AOD and ADRF in the zonal region between 20 ◦ N and 40 ◦ N.",
+        "section_title": null
+      },
+      {
+        "page_number": 10,
+        "exact_text": "The results show that the spatial dis - tributions of ADRF and AOD are closely related. Aerosols cool the sur - face and heat the atmosphere, imposing a cooling effect at the top of the atmosphere.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "b6657060932fe550162f5328ff74f360ef206b8e87bbdd1873529dd1b960ca4f",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  },
+  {
+    "evidence_id": "ev_aerosol_remote_sensing_b39ead1c6e",
+    "doi": "10.1016/j.atmosres.2021.105938",
+    "theme_id": "aerosol_remote_sensing",
+    "evidence_type": "result",
+    "normalized_claim": "最强的ADRF位于东亚、北印度和北非等沙尘或人为气溶胶源区，最弱的ADRF出现在AOD最低的海洋和高原地区。",
+    "supporting_quotes": [
+      {
+        "page_number": 10,
+        "exact_text": "The strongest ADRFs are located in the Eastern China, Northern India and North Africa where dust or anthropogenic aerosols are originated. The areas with the weakest ADRFs are located in areas where AOD is the lowest such as the oceans and the plateaus.",
+        "section_title": null
+      }
+    ],
+    "source_document_sha256": "b6657060932fe550162f5328ff74f360ef206b8e87bbdd1873529dd1b960ca4f",
+    "support_strength": "direct",
+    "review_status": "confirmed"
+  }
+]

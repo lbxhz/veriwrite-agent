@@ -19,6 +19,7 @@ class LLMSettings(BaseSettings):
     api_key: SecretStr
     base_url: AnyHttpUrl = "https://api.deepseek.com"
     model: str = Field(default="deepseek-v4-flash", min_length=1)
+    structured_model: str | None = Field(default="deepseek-chat", min_length=1)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_retries: int = Field(default=2, ge=0, le=10)
 
@@ -36,7 +37,12 @@ class LLMSettings(BaseSettings):
             "api_key_configured": bool(self.api_key.get_secret_value()),
             "base_url": str(self.base_url),
             "model": self.model,
+            "structured_model": self.structured_model or self.model,
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
         }
 
+    def for_structured_output(self) -> LLMSettings:
+        """Use the configured stable JSON model for contract-heavy stages."""
+
+        return self.model_copy(update={"model": self.structured_model or self.model})

@@ -383,11 +383,18 @@ class RuleBasedRequirementParser:
                 )
             )
 
-        recent_window = self._extract_int(
+        recent_match = re.search(r"近\s*(\d+)\s*年", compact)
+        recent_window = int(recent_match.group(1)) if recent_match else None
+        if recent_match:
+            evidence.append(
+                SourceEvidence(
+                    field="references.recent_year_window",
+                    source_text=recent_match.group(0),
+                )
+            )
+        recent_rule_strength = self._recency_rule_strength(
             compact,
-            r"近\s*(\d+)\s*年",
-            "references.recent_year_window",
-            evidence,
+            recent_match,
         )
         max_cluster = self._extract_int(
             compact,
@@ -442,9 +449,7 @@ class RuleBasedRequirementParser:
             target_is_approximate=target_total is not None,
             minimum_foreign_ratio=foreign_ratio,
             recent_year_window=recent_window,
-            recent_year_rule_strength=(
-                "soft_preference" if recent_window and "尽量" in compact else "unspecified"
-            ),
+            recent_year_rule_strength=recent_rule_strength,
             preferred_source_types=self._present_items(
                 compact,
                 ("重要学术期刊论文", "专著", "硕博学位论文"),
@@ -717,6 +722,32 @@ class RuleBasedRequirementParser:
             return None
         evidence.append(SourceEvidence(field=field, source_text=match.group(0)))
         return int(match.group(1))
+
+    @staticmethod
+    def _recency_rule_strength(
+        text: str,
+        match: re.Match[str] | None,
+    ) -> str:
+        if match is None:
+            return "unspecified"
+        clause_start = max(
+            text.rfind("。", 0, match.start()),
+            text.rfind("；", 0, match.start()),
+            text.rfind(";", 0, match.start()),
+            text.rfind("\n", 0, match.start()),
+        )
+        following_boundaries = [
+            position
+            for delimiter in ("。", "；", ";", "\n")
+            if (position := text.find(delimiter, match.end())) >= 0
+        ]
+        clause_end = min(following_boundaries, default=len(text))
+        clause = text[clause_start + 1 : clause_end]
+        if any(marker in clause for marker in ("尽量", "优先", "建议")):
+            return "soft_preference"
+        if any(marker in clause for marker in ("限定", "必须", "仅限", "只限", "不得早于")):
+            return "hard"
+        return "unspecified"
 
     @staticmethod
     def _append_unique(values: list[str], value: str) -> None:

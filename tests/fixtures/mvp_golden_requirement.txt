@@ -1,0 +1,8 @@
+课程论文要求
+
+研究主题：Atmospheric remote sensing retrieval methods。
+撰写一篇英文综述，正文 600-800 个英文单词。
+参考文献至少 2 篇，外文文献至少三分之一，文献限定为近 5 年。
+正文必须包括摘要、关键词、研究背景、方法比较、结论和参考文献。
+参考文献格式参考 Remote Sensing of Environment。
+采用 A4 纸，Times New Roman 11 pt，1.5 倍行距。

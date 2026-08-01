@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -13,6 +15,8 @@ from veriwrite_agent.models.requirement_workflow import (
     RequirementConflict,
     RequirementReviewPackage,
 )
+from veriwrite_agent.models.literature_selection import BalancedLiteratureSelection
+from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.services.requirement_confirmation import (
     RequirementConfirmationError,
     RequirementConfirmationService,
@@ -20,9 +24,27 @@ from veriwrite_agent.services.requirement_confirmation import (
 from veriwrite_agent.services.requirement_review_renderer import (
     RequirementReviewRenderer,
 )
+from veriwrite_agent.services.literature_run_recovery import (
+    LiteratureRunRecoveryService,
+)
+from veriwrite_agent.services.local_project_store import LocalProjectStore
 from veriwrite_agent.ui.literature_console import (
     clear_literature_state,
     render_literature_console,
+)
+from veriwrite_agent.ui.evidence_console import render_pdf_acquisition_console
+from veriwrite_agent.ui.mvp_console import (
+    apply_pending_project_actions,
+    autosave_local_project,
+    inspect_mvp_status,
+    render_locked_stage,
+    render_mvp_overview,
+    render_project_sidebar,
+    restore_local_project_if_needed,
+)
+from veriwrite_agent.ui.writing_console import (
+    render_final_delivery_console,
+    render_grounded_writing_console,
 )
 from veriwrite_agent.ui.workbench import (
     WorkbenchResult,
@@ -32,20 +54,121 @@ from veriwrite_agent.ui.workbench import (
     prepare_review_from_path,
     prepare_review_from_text,
     prepare_review_from_uploads,
+    project_root,
 )
 
 
 def run() -> None:
     st.set_page_config(
-        page_title="VeriWrite Agent 本地控制台",
+        page_title="VeriWrite Agent MVP 工作台",
         page_icon="✓",
         layout="wide",
     )
     _inject_styles()
-    st.title("VeriWrite Agent 本地控制台")
-    st.caption(
-        "V0.1 获取并确认真实需求，V0.2 按确认蓝图检索、验证和选择真实文献"
+    autosave_override = os.getenv("VERIWRITE_AUTOSAVE_PATH")
+    local_store = LocalProjectStore(
+        Path(autosave_override)
+        if autosave_override
+        else project_root() / "runtime" / "mvp_projects" / "active_project.json"
     )
+    apply_pending_project_actions(local_store=local_store)
+    autosave_error = None
+    restored_from_autosave = False
+    try:
+        restored_from_autosave = restore_local_project_if_needed(
+            st.session_state,
+            local_store,
+        )
+        autosave_local_project(st.session_state, local_store)
+    except (OSError, ValueError) as exc:
+        autosave_error = str(exc)
+    status = inspect_mvp_status(st.session_state)
+    selected_stage = render_project_sidebar(status)
+
+    st.title("VeriWrite Agent MVP 工作台")
+    st.caption(
+        "从课程要求到最终 DOCX 的可恢复 Agent 工作流 · "
+        "LLM 负责语义任务，确定性代码负责合同、身份、引用与审计"
+    )
+    if st.session_state.get("mvp_smoke_test"):
+        st.info(
+            "当前是快速全链路联通测试：目标仅为验证 V0.1→V0.4→最终交付能否跑通。"
+            "该模式使用 2 篇真实文献、1 篇核心 PDF 和 600–800 英文词，"
+            "并将检索主题合并为一个最小正文单元；不能代表真实课程论文的质量或性能。"
+        )
+    if restored_from_autosave:
+        st.success("已从本地自动存档恢复刷新前的项目进度。")
+    if autosave_error:
+        st.warning(f"本地项目自动存档暂不可用：{autosave_error}")
+    _render_runtime_recovery_offer()
+
+    stages = {stage.stage_id: stage for stage in status.stages}
+    if selected_stage == "overview":
+        render_mvp_overview(status)
+    elif selected_stage == "requirements":
+        render_requirement_console()
+    elif selected_stage == "literature":
+        if stages["literature"].state == "locked":
+            render_locked_stage(stages["literature"], "requirements")
+        else:
+            render_literature_console(include_downstream=False)
+    elif selected_stage == "evidence":
+        if stages["evidence"].state == "locked":
+            render_locked_stage(stages["evidence"], "literature")
+        else:
+            selection = _restore_literature_selection()
+            render_pdf_acquisition_console(selection, include_writing=False)
+    elif selected_stage == "writing":
+        if stages["writing"].state == "locked":
+            render_locked_stage(stages["writing"], "evidence")
+        else:
+            handoff = V04WritingHandoff.model_validate_json(
+                st.session_state["v03_writing_handoff_json"]
+            )
+            render_grounded_writing_console(handoff, include_final_delivery=False)
+    elif selected_stage == "delivery":
+        if stages["delivery"].state == "locked":
+            render_locked_stage(stages["delivery"], "writing")
+        else:
+            handoff = V04WritingHandoff.model_validate_json(
+                st.session_state["v03_writing_handoff_json"]
+            )
+            render_final_delivery_console(handoff)
+
+
+def _render_runtime_recovery_offer() -> None:
+    """Offer disaster recovery when old sessions predate local autosave support."""
+
+    if st.session_state.get("confirmed_json") or st.session_state.get("review_json"):
+        return
+    recovery = LiteratureRunRecoveryService().latest(
+        project_root() / "runtime" / "literature_console"
+    )
+    if recovery is None:
+        return
+    topic = recovery.confirmed_requirement.requirement.topic or "未命名主题"
+    st.warning(
+        "检测到刷新前保存在本地的V0.2运行结果："
+        f"{topic}，已选 {recovery.selected_count}/{recovery.target_total} 篇。"
+        "可以恢复，无需重新执行V0.1或重新验证已有论文。"
+    )
+    if st.button(
+        "恢复最近一次本地项目进度",
+        type="primary",
+        width="stretch",
+    ):
+        for key, value in recovery.session_state().items():
+            st.session_state[key] = value
+        st.session_state["mvp_restore_meta"] = {
+            "project_id": st.session_state["mvp_project_id"],
+            "project_name": f"{topic}（已恢复）",
+            "active_stage": "literature",
+        }
+        st.rerun()
+
+
+def render_requirement_console() -> None:
+    """Render V0.1 as one independently navigable MVP stage."""
 
     source_kind, selected_sample, uploaded_files, mode = _render_input_panel()
     if st.button("开始分析", type="primary", width="stretch"):
@@ -71,13 +194,20 @@ def run() -> None:
             st.error(f"分析失败：{exc}")
         else:
             _store_result(result, mode=mode)
+            st.session_state["mvp_smoke_test"] = bool(
+                source_kind == "内置样例" and selected_sample.smoke_test
+            )
             st.session_state.pop("confirmed_json", None)
             clear_literature_state()
 
     if "review_json" in st.session_state:
         result = _restore_result()
         _render_result(result)
-        render_literature_console()
+
+
+def _restore_literature_selection() -> BalancedLiteratureSelection:
+    payload = json.loads(st.session_state["literature_result_json"])
+    return BalancedLiteratureSelection.model_validate(payload["selection"])
 
 
 def _render_input_panel() -> tuple[str, Any, Any, str]:
@@ -208,9 +338,9 @@ def _render_result(result: WorkbenchResult) -> None:
     with tab_raw:
         st.markdown("#### 可校对的提取文本")
         st.caption("OCR 置信度高也可能漏字符。可直接修正文字，再按修正版重新执行规则与 LLM。")
+        st.session_state.setdefault("editable_extracted_text", result.extracted_text)
         edited_text = st.text_area(
             "文本",
-            result.extracted_text,
             height=360,
             key="editable_extracted_text",
             label_visibility="collapsed",

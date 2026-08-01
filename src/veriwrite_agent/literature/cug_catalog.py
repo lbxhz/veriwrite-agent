@@ -76,6 +76,17 @@ class CugJournalRankingProvider:
         query_title = " ".join(journal_title.split())
         normalized = normalize_journal_title(query_title)
         clean_discipline = " ".join(discipline.split())
+        if not normalized:
+            return JournalRankingLookup(
+                status="not_found",
+                query_title=query_title,
+                normalized_title="",
+                discipline=clean_discipline,
+                reason=(
+                    "候选记录的期刊名称只包含空白或标点，"
+                    "无法与中国地质大学（武汉）2023版目录匹配。"
+                ),
+            )
         records = list(self._index.get((clean_discipline, normalized), []))
         if not records:
             return JournalRankingLookup(

@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
 from veriwrite_agent.models.evidence import EvidenceLibrary
 from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
 from veriwrite_agent.models.requirements import StrictModel
@@ -17,6 +18,9 @@ class WritingOutlineSection(StrictModel):
     title: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
     target_words: int = Field(ge=100)
+    counting_policy: Literal["chinese_chars_and_english_words", "words"] = (
+        "chinese_chars_and_english_words"
+    )
     research_questions: list[str] = Field(default_factory=list)
     core_dois: list[str] = Field(default_factory=list)
     supporting_dois: list[str] = Field(default_factory=list)
@@ -29,6 +33,13 @@ class WritingOutlineDraft(StrictModel):
     topic: str = Field(min_length=1)
     writing_through_line: str = Field(min_length=1)
     target_words: int = Field(ge=200)
+    counting_policy: Literal["chinese_chars_and_english_words", "words"] = (
+        "chinese_chars_and_english_words"
+    )
+    requirement_policy_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     sections: list[WritingOutlineSection] = Field(min_length=1)
     unresolved_gaps: list[str] = Field(default_factory=list)
 
@@ -44,9 +55,7 @@ class ConfirmedWritingOutline(StrictModel):
     status: Literal["confirmed"] = "confirmed"
     outline: WritingOutlineDraft
     confirmed_by: str = Field(min_length=1)
-    confirmed_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    confirmed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confirmation_note: str | None = None
 
     @model_validator(mode="after")
@@ -64,30 +73,36 @@ class V04WritingHandoff(StrictModel):
     schema_version: Literal["0.4-handoff.0"] = "0.4-handoff.0"
     status: Literal["ready_for_writing"] = "ready_for_writing"
     requirement: ConfirmedRequirementSpec
+    requirement_policy: ExecutableRequirementPolicy | None = None
     outline: ConfirmedWritingOutline
     evidence_library: EvidenceLibrary
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
     def all_inputs_must_be_confirmed_and_connected(self) -> V04WritingHandoff:
         if self.evidence_library.status != "confirmed":
             raise ValueError("V0.4 requires a confirmed evidence library")
+        if self.requirement_policy is not None:
+            fingerprint = self.requirement_policy.requirement_fingerprint
+            if (
+                self.evidence_library.requirement_policy_fingerprint
+                and self.evidence_library.requirement_policy_fingerprint != fingerprint
+            ):
+                raise ValueError("evidence library policy does not match V0.1")
+            if (
+                self.outline.outline.requirement_policy_fingerprint
+                and self.outline.outline.requirement_policy_fingerprint != fingerprint
+            ):
+                raise ValueError("writing outline policy does not match V0.1")
         library_dois = {record.doi for record in self.evidence_library.records}
-        library_card_ids = {
-            card.evidence_id for card in self.evidence_library.evidence_cards
-        }
+        library_card_ids = {card.evidence_id for card in self.evidence_library.evidence_cards}
         for section in self.outline.outline.sections:
             if any(doi not in library_dois for doi in section.core_dois):
                 raise ValueError("outline core_dois must exist in the library")
             if any(doi not in library_dois for doi in section.supporting_dois):
                 raise ValueError("outline supporting_dois must exist in the library")
             if any(
-                evidence_id not in library_card_ids
-                for evidence_id in section.evidence_card_ids
+                evidence_id not in library_card_ids for evidence_id in section.evidence_card_ids
             ):
-                raise ValueError(
-                    "outline evidence_card_ids must exist in the library"
-                )
+                raise ValueError("outline evidence_card_ids must exist in the library")
         return self

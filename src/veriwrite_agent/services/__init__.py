@@ -9,6 +9,16 @@ from veriwrite_agent.services.evidence_library import (
     EvidenceLibraryBuilder,
     EvidenceLibraryConfirmationService,
 )
+from veriwrite_agent.services.evidence_runtime import (
+    EvidencePageRetriever,
+    EvidenceRuntimeCache,
+)
+from veriwrite_agent.services.final_delivery import (
+    FinalDeliveryError,
+    FinalPaperAssembler,
+    FinalPaperDocxExporter,
+    LLMFinalMatterWriter,
+)
 from veriwrite_agent.services.literature_matrix import LiteratureMatrixBuilder
 from veriwrite_agent.services.pdf_acquisition import PdfAcquisitionInspector
 from veriwrite_agent.services.pdf_text_extraction import PdfPageExtractor
@@ -65,6 +75,14 @@ from veriwrite_agent.services.requirement_reconciler import RequirementReconcile
 from veriwrite_agent.services.requirement_review_renderer import (
     RequirementReviewRenderer,
 )
+from veriwrite_agent.services.requirement_policy import (
+    RequirementPolicyCompilationError,
+    RequirementPolicyCompiler,
+    ai_generation_prohibitions,
+    candidate_source_restriction_reasons,
+    is_foreign_literature,
+    source_restriction_reasons,
+)
 from veriwrite_agent.services.writing_handoff import (
     WritingHandoffService,
     WritingOutlineBuilder,
@@ -87,7 +105,13 @@ __all__ = [
     "EvidenceCardExtractionError",
     "EvidenceLibraryBuilder",
     "EvidenceLibraryConfirmationService",
+    "EvidencePageRetriever",
+    "EvidenceRuntimeCache",
+    "FinalDeliveryError",
+    "FinalPaperAssembler",
+    "FinalPaperDocxExporter",
     "LLMEvidenceCardExtractor",
+    "LLMFinalMatterWriter",
     "LiteratureMatrixBuilder",
     "PdfAcquisitionInspector",
     "PdfPageExtractor",
@@ -101,6 +125,8 @@ __all__ = [
     "LiteratureKeywordPlanner",
     "RelevanceScoringError",
     "RequirementCompletenessChecker",
+    "RequirementPolicyCompilationError",
+    "RequirementPolicyCompiler",
     "RequirementConfirmationError",
     "RequirementConfirmationService",
     "RequirementReconciler",
@@ -122,4 +148,8 @@ __all__ = [
     "SectionEvidencePacketBuilder",
     "WritingProjectService",
     "count_writing_units",
+    "ai_generation_prohibitions",
+    "candidate_source_restriction_reasons",
+    "is_foreign_literature",
+    "source_restriction_reasons",
 ]

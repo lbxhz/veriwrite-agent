@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -131,11 +132,13 @@ class LLMLiteratureRelevanceScorer:
             response_format={"type": "json_object"},
         )
         try:
-            return LiteratureRelevanceAssessmentBatch.model_validate_json(raw)
-        except ValidationError as exc:
+            payload = json.loads(raw)
+            _repair_redundant_best_theme_ids(payload)
+            return LiteratureRelevanceAssessmentBatch.model_validate(payload)
+        except (json.JSONDecodeError, ValidationError) as exc:
             raise RelevanceScoringError(
                 "LLM relevance output violates the data contract: "
-                f"{exc.errors(include_url=False)[:10]}"
+                f"{_validation_details(exc)}"
             ) from exc
 
     @staticmethod
@@ -158,3 +161,44 @@ class LLMLiteratureRelevanceScorer:
                 raise RelevanceScoringError(
                     f"relevance output has wrong themes for DOI {assessment.doi}"
                 )
+
+
+def _repair_redundant_best_theme_ids(payload: Any) -> None:
+    """Derive best_theme_id from scores instead of failing on an LLM arithmetic slip."""
+
+    if not isinstance(payload, dict):
+        return
+    assessments = payload.get("assessments")
+    if not isinstance(assessments, list):
+        return
+    for assessment in assessments:
+        if not isinstance(assessment, dict):
+            continue
+        theme_scores = assessment.get("theme_scores")
+        if not isinstance(theme_scores, list) or not theme_scores:
+            continue
+        scored_themes: list[tuple[str, float]] = []
+        for item in theme_scores:
+            if not isinstance(item, dict):
+                continue
+            theme_id = item.get("theme_id")
+            score = item.get("score")
+            if (
+                isinstance(theme_id, str)
+                and theme_id
+                and isinstance(score, (int, float))
+                and not isinstance(score, bool)
+            ):
+                scored_themes.append((theme_id, float(score)))
+        if not scored_themes:
+            continue
+        maximum = max(score for _, score in scored_themes)
+        highest = [theme_id for theme_id, score in scored_themes if score == maximum]
+        if assessment.get("best_theme_id") not in highest:
+            assessment["best_theme_id"] = highest[0]
+
+
+def _validation_details(exc: json.JSONDecodeError | ValidationError) -> object:
+    if isinstance(exc, ValidationError):
+        return exc.errors(include_url=False)[:10]
+    return str(exc)

@@ -13,6 +13,7 @@ from veriwrite_agent.models.literature_selection import (
     LiteratureSearchBlueprint,
 )
 from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
+from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 
 
 class BlueprintPlanningError(ValueError):
@@ -42,15 +43,14 @@ class LiteratureBlueprintPlanner:
     ) -> LiteratureSearchBlueprint:
         requirement = confirmed.requirement
         if not requirement.topic:
+            raise BlueprintPlanningError("confirmed requirements do not contain a research topic")
+        policy = RequirementPolicyCompiler(current_year=self._current_year).compile(confirmed)
+        target_total = policy.references.target_total
+        if not 2 <= target_total <= 100:
             raise BlueprintPlanningError(
-                "confirmed requirements do not contain a research topic"
+                "confirmed reference target is outside the supported range 2-100: "
+                f"{target_total}"
             )
-        target_total = (
-            requirement.references.target_total
-            or requirement.references.minimum_total
-            or 50
-        )
-        target_total = min(max(target_total, 2), 100)
         schema = json.dumps(
             LiteratureSearchBlueprint.model_json_schema(),
             ensure_ascii=False,
@@ -61,17 +61,10 @@ class LiteratureBlueprintPlanner:
                 "topic": requirement.topic,
                 "document_type": requirement.document_type,
                 "required_theme_elements": requirement.required_theme_elements,
-                "required_sections": (
-                    requirement.structure.required_or_recommended_sections
-                ),
+                "required_sections": (requirement.structure.required_or_recommended_sections),
                 "length": requirement.length.model_dump(mode="json"),
-                "reference_requirements": requirement.references.model_dump(
-                    mode="json"
-                ),
-                "policy_rules": [
-                    rule.model_dump(mode="json")
-                    for rule in requirement.policy_rules
-                ],
+                "reference_requirements": requirement.references.model_dump(mode="json"),
+                "policy_rules": [rule.model_dump(mode="json") for rule in requirement.policy_rules],
                 "available_disciplines": self._available_disciplines,
                 "target_total": target_total,
             },
@@ -102,17 +95,6 @@ class LiteratureBlueprintPlanner:
                 f"LLM selected unsupported discipline: {blueprint.discipline}"
             )
 
-        references = requirement.references
-        year_from: int | None = None
-        year_to: int | None = None
-        if (
-            references.recent_year_window is not None
-            and references.recent_year_rule_strength == "hard"
-        ):
-            year_from = (
-                self._current_year - references.recent_year_window + 1
-            )
-            year_to = self._current_year
         try:
             return LiteratureSearchBlueprint.model_validate(
                 {
@@ -120,9 +102,10 @@ class LiteratureBlueprintPlanner:
                     "topic": requirement.topic,
                     "target_total": target_total,
                     "accepted_tiers": ["T1", "T2", "T3", "T4", "T5", "T6"],
-                    "year_from": year_from,
-                    "year_to": year_to,
+                    "year_from": policy.references.year_from,
+                    "year_to": policy.references.year_to,
                     "max_candidates": 300,
+                    "requirement_policy": policy,
                 }
             )
         except ValidationError as exc:

@@ -24,6 +24,10 @@ from veriwrite_agent.models.writing import (
     WritingSectionState,
 )
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
+from veriwrite_agent.services.requirement_policy import (
+    RequirementPolicyCompiler,
+    ai_generation_prohibitions,
+)
 
 
 class GroundedWritingError(ValueError):
@@ -96,6 +100,7 @@ class SectionEvidencePacketBuilder:
             title=section.title,
             purpose=section.purpose,
             target_words=section.target_words,
+            counting_policy=section.counting_policy,
             research_questions=section.research_questions,
             evidence_items=evidence_items,
             sources=sources,
@@ -202,7 +207,10 @@ class GroundedSectionDraftService:
             rendered_paragraphs
         )
         counted_words = sum(
-            count_writing_units(paragraph.text)
+            count_writing_units(
+                paragraph.text,
+                counting_policy=packet.counting_policy,
+            )
             for paragraph in proposal.paragraphs
         )
         if counted_words < int(packet.target_words * 0.6):
@@ -528,9 +536,17 @@ def _page_locator(page_numbers: list[int]) -> str:
     return f"{label} {', '.join(str(page) for page in page_numbers)}"
 
 
-def count_writing_units(value: str) -> int:
+def count_writing_units(
+    value: str,
+    *,
+    counting_policy: str = "chinese_chars_and_english_words",
+) -> int:
     """Count Chinese characters plus English-like words for stable UI guidance."""
 
+    if counting_policy == "words":
+        return len(re.findall(r"\b[\w]+(?:[-'][\w]+)*\b", value, re.UNICODE))
+    if counting_policy != "chinese_chars_and_english_words":
+        raise ValueError(f"unsupported counting policy: {counting_policy}")
     chinese = re.findall(r"[\u4e00-\u9fff]", value)
     without_chinese = re.sub(r"[\u4e00-\u9fff]", " ", value)
     words = re.findall(r"\b[\w]+(?:[-'][\w]+)*\b", without_chinese, re.UNICODE)
@@ -540,23 +556,8 @@ def count_writing_units(value: str) -> int:
 def _ai_generation_prohibitions(
     handoff: V04WritingHandoff,
 ) -> list[str]:
-    requirement = handoff.requirement.requirement
-    statements = list(requirement.ai_policy.prohibited_uses)
-    statements.extend(
-        rule.description
-        for rule in requirement.policy_rules
-        if rule.category in {"ai_usage", "academic_integrity"}
+    policy = (
+        handoff.requirement_policy
+        or RequirementPolicyCompiler().compile(handoff.requirement)
     )
-    generation_pattern = re.compile(
-        r"AI.*(?:生成|撰写|写作|代写|句子|段落|正文|洗稿)"
-        r"|(?:禁止|不允许)[^。；]{0,40}(?:AI|人工智能)"
-        r"[^。；]{0,40}(?:生成|撰写|写作|代写|句子|段落|正文|洗稿)"
-        r"|(?:generate|draft|write|compose).*(?:AI|artificial intelligence)"
-        r"|(?:AI|artificial intelligence).*(?:generate|draft|write|compose)",
-        re.IGNORECASE,
-    )
-    return [
-        statement.strip()
-        for statement in statements
-        if statement.strip() and generation_pattern.search(statement)
-    ]
+    return ai_generation_prohibitions(policy)

@@ -48,6 +48,17 @@ def test_unknown_journal_is_not_silently_classified() -> None:
     assert result.resolved_tier is None
 
 
+def test_punctuation_only_title_is_an_explainable_unranked_result() -> None:
+    provider = CugJournalRankingProvider.from_default_catalog()
+
+    result = provider.lookup("—", "测绘科学与技术")
+
+    assert result.status == "not_found"
+    assert result.normalized_title == ""
+    assert result.resolved_tier is None
+    assert "只包含空白或标点" in result.reason
+
+
 def test_title_normalization_handles_formatting_not_semantic_aliases() -> None:
     assert normalize_journal_title("Energy & Environment") == (
         normalize_journal_title("  ENERGY and ENVIRONMENT ")

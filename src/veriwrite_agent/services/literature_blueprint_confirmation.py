@@ -6,6 +6,7 @@ from veriwrite_agent.models.literature_selection import (
     ConfirmedLiteratureSearchBlueprint,
     LiteratureSearchBlueprint,
 )
+from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
 
 
 class LiteratureBlueprintConfirmationService:
@@ -17,7 +18,10 @@ class LiteratureBlueprintConfirmationService:
         *,
         confirmed_by: str,
         note: str | None = None,
+        expected_policy: ExecutableRequirementPolicy | None = None,
     ) -> ConfirmedLiteratureSearchBlueprint:
+        if expected_policy is not None and blueprint.requirement_policy != expected_policy:
+            raise ValueError("the V0.1 executable policy is immutable during blueprint editing")
         return ConfirmedLiteratureSearchBlueprint(
             confirmed_by=confirmed_by,
             confirmation_note=note,

@@ -13,6 +13,9 @@ from veriwrite_agent.models.literature_discovery import (
     LiteratureDiscoveryResult,
     LiteratureSearchPlan,
 )
+from veriwrite_agent.services.requirement_policy import (
+    candidate_source_restriction_reasons,
+)
 
 
 class LiteratureDiscoveryService:
@@ -84,31 +87,25 @@ class LiteratureDiscoveryService:
         reasons: list[str] = []
         if candidate.source_type != plan.work_type:
             reasons.append("source_type_not_journal_article")
-        if (
-            plan.year_from is not None
-            and (candidate.year is None or candidate.year < plan.year_from)
+        if plan.year_from is not None and (
+            candidate.year is None or candidate.year < plan.year_from
         ):
             reasons.append("publication_year_below_requirement")
-        if (
-            plan.year_to is not None
-            and (candidate.year is None or candidate.year > plan.year_to)
-        ):
+        if plan.year_to is not None and (candidate.year is None or candidate.year > plan.year_to):
             reasons.append("publication_year_above_requirement")
-        if (
-            ranking.status == "not_found"
-            and plan.journal_ranking_policy == "required"
-        ):
+        if ranking.status == "not_found" and plan.journal_ranking_policy == "required":
             reasons.append("journal_not_in_cug_2023_catalog")
-        elif (
-            ranking.status == "ambiguous"
-            and plan.journal_ranking_policy == "required"
-        ):
+        elif ranking.status == "ambiguous" and plan.journal_ranking_policy == "required":
             reasons.append("cug_2023_catalog_conflict")
-        elif (
-            ranking.status == "matched"
-            and ranking.resolved_tier not in plan.accepted_tiers
-        ):
+        elif ranking.status == "matched" and ranking.resolved_tier not in plan.accepted_tiers:
             reasons.append("journal_tier_not_accepted")
+        if plan.requirement_policy is not None:
+            reasons.extend(
+                candidate_source_restriction_reasons(
+                    plan.requirement_policy,
+                    candidate,
+                )
+            )
 
         return CandidateDecision(
             status="excluded" if reasons else "eligible",

@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
 from veriwrite_agent.models.requirements import StrictModel
 
 CugTier = Literal["T1", "T2", "T3", "T4", "T5", "T6"]
@@ -61,6 +62,7 @@ class LiteratureSearchPlan(StrictModel):
     journal_ranking_policy: Literal["required", "preferred"] = "required"
     target_eligible_count: int = Field(default=50, ge=1, le=100)
     max_candidates: int = Field(default=300, ge=1, le=1000)
+    requirement_policy: ExecutableRequirementPolicy | None = None
 
     @field_validator(
         "primary_keywords",
@@ -124,6 +126,7 @@ class LiteratureCandidate(StrictModel):
     journal_title: str = Field(min_length=1)
     issns: list[str] = Field(default_factory=list)
     publisher: str | None = None
+    language: str | None = None
     source_type: str = "journal-article"
     source_provider: str = Field(min_length=1)
     source_url: str | None = None
@@ -138,6 +141,7 @@ class LiteratureCandidate(StrictModel):
         "title",
         "journal_title",
         "publisher",
+        "language",
         "source_type",
         "source_provider",
         "source_url",
@@ -196,7 +200,7 @@ class JournalRankingLookup(StrictModel):
 
     status: RankingLookupStatus
     query_title: str = Field(min_length=1)
-    normalized_title: str = Field(min_length=1)
+    normalized_title: str
     discipline: str = Field(min_length=1)
     records: list[JournalRankingRecord] = Field(default_factory=list)
     reason: str = Field(min_length=1)
@@ -213,6 +217,8 @@ class JournalRankingLookup(StrictModel):
             raise ValueError("not_found lookups cannot contain records")
         if self.status in {"matched", "ambiguous"} and not self.records:
             raise ValueError("matched or ambiguous lookups need source records")
+        if self.status in {"matched", "ambiguous"} and not self.normalized_title:
+            raise ValueError("matched or ambiguous lookups need a normalized title")
         if self.status == "matched" and len({record.tier for record in self.records}) != 1:
             raise ValueError("matched lookups must resolve to one tier")
         if self.status == "ambiguous" and len({record.tier for record in self.records}) < 2:

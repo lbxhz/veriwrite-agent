@@ -67,6 +67,9 @@ class SectionEvidencePacket(StrictModel):
     title: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
     target_words: int = Field(ge=100)
+    counting_policy: Literal[
+        "chinese_chars_and_english_words", "words"
+    ] = "chinese_chars_and_english_words"
     research_questions: list[str] = Field(default_factory=list)
     evidence_items: list[SectionEvidenceItem] = Field(min_length=1)
     sources: list[SectionSourceRecord] = Field(min_length=1)

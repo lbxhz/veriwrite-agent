@@ -116,6 +116,26 @@ def test_preferred_ranking_policy_keeps_unranked_real_candidates() -> None:
     assert result.eligible_records[0].ranking.status == "not_found"
 
 
+def test_preferred_ranking_does_not_crash_on_punctuation_only_journal_title() -> None:
+    search = FakeLiteratureSearchProvider([candidate(1, journal="—")])
+    service = LiteratureDiscoveryService(
+        search,
+        CugJournalRankingProvider.from_default_catalog(),
+    )
+    preferred_plan = plan().model_copy(
+        update={
+            "journal_ranking_policy": "preferred",
+            "target_eligible_count": 1,
+        }
+    )
+
+    result = service.discover(preferred_plan)
+
+    assert result.target_reached is True
+    assert result.eligible_records[0].ranking.status == "not_found"
+    assert result.eligible_records[0].ranking.normalized_title == ""
+
+
 def test_discovery_preserves_independent_norwegian_ranking_evidence() -> None:
     paper = candidate(1).model_copy(update={"issns": ["0034-4257"]})
     service = LiteratureDiscoveryService(

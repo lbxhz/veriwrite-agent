@@ -170,3 +170,17 @@ def test_rejects_invented_doi_even_after_one_scope_repair() -> None:
         )
 
     assert len(client.calls) == 2
+
+
+def test_repairs_best_theme_id_from_the_supplied_scores() -> None:
+    response = json.loads(assessment_response(["10.1000/aerosol"]))
+    response["assessments"][0]["best_theme_id"] = "methane"
+    client = SequenceLLMClient([json.dumps(response)])
+
+    assessments = LLMLiteratureRelevanceScorer(client).score(
+        blueprint(),
+        [verified("10.1000/aerosol", "Satellite aerosol retrieval")],
+    )
+
+    assert assessments[0].best_theme_id == "aerosol"
+    assert len(client.calls) == 1

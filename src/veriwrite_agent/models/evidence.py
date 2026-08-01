@@ -116,18 +116,14 @@ class PdfInspectionReport(StrictModel):
     identity_score: float = Field(default=0, ge=0, le=1)
     identity_basis: list[PdfIdentityBasis] = Field(default_factory=list)
     issues: list[PdfInspectionIssue] = Field(default_factory=list)
-    inspected_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    inspected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
     def status_must_match_inspection(self) -> PdfInspectionReport:
         blocking = any(issue.severity == "blocking" for issue in self.issues)
         if self.status == "verified":
             if blocking or self.identity_score < 0.8:
-                raise ValueError(
-                    "verified PDFs require confirmed identity and no blocking issues"
-                )
+                raise ValueError("verified PDFs require confirmed identity and no blocking issues")
             if not all(
                 (
                     self.local_path,
@@ -153,9 +149,7 @@ class PdfInspectionBatch(StrictModel):
     inspected_file_count: int = Field(ge=0)
     reports: list[PdfInspectionReport] = Field(default_factory=list)
     unmatched_files: list[str] = Field(default_factory=list)
-    inspected_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    inspected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
     def each_expected_doi_must_appear_once(self) -> PdfInspectionBatch:
@@ -221,21 +215,43 @@ class DocumentExtractionResult(StrictModel):
     def status_must_match_pages_and_issues(self) -> DocumentExtractionResult:
         if any(page.doi != self.doi for page in self.pages):
             raise ValueError("all extracted pages must belong to the result DOI")
-        if any(
-            page.document_sha256 != self.document_sha256 for page in self.pages
-        ):
+        if any(page.document_sha256 != self.document_sha256 for page in self.pages):
             raise ValueError("all extracted pages must use the result PDF hash")
         if self.status == "complete":
             if len(self.pages) != self.page_count or any(
                 issue.severity == "blocking" for issue in self.issues
             ):
-                raise ValueError(
-                    "complete extraction requires text for every page and no blockers"
-                )
+                raise ValueError("complete extraction requires text for every page and no blockers")
         if self.status == "failed" and not any(
             issue.severity == "blocking" for issue in self.issues
         ):
             raise ValueError("failed extraction requires a blocking issue")
+        return self
+
+
+class EvidencePageSelection(StrictModel):
+    """Auditable code-owned page subset sent to semantic evidence extraction."""
+
+    doi: str
+    theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    query_text: str = Field(min_length=1)
+    total_extracted_pages: int = Field(ge=1)
+    selected_page_numbers: list[int] = Field(min_length=1)
+    page_scores: dict[int, float] = Field(default_factory=dict)
+
+    @field_validator("doi")
+    @classmethod
+    def normalize_doi(cls, value: str) -> str:
+        return canonicalize_doi(value)
+
+    @model_validator(mode="after")
+    def selection_must_be_bounded(self) -> EvidencePageSelection:
+        if len(self.selected_page_numbers) != len(set(self.selected_page_numbers)):
+            raise ValueError("selected page numbers must be unique")
+        if any(
+            page < 1 or page > self.total_extracted_pages for page in self.selected_page_numbers
+        ):
+            raise ValueError("selected page number is outside the extracted document")
         return self
 
 
@@ -277,6 +293,31 @@ class EvidenceCardProposal(StrictModel):
 
 class EvidenceCardProposalBatch(StrictModel):
     proposals: list[EvidenceCardProposal] = Field(default_factory=list, max_length=12)
+
+
+class EvidencePassageSelection(StrictModel):
+    """LLM interpretation that may select only code-owned PDF passages."""
+
+    evidence_type: EvidenceType
+    normalized_claim: str = Field(min_length=1)
+    passage_ids: list[str] = Field(min_length=1, max_length=3)
+    support_strength: Literal["direct", "partial"]
+
+    @field_validator("passage_ids", mode="after")
+    @classmethod
+    def passage_ids_must_be_unique(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("passage_ids must be unique")
+        return values
+
+
+class EvidencePassageSelectionBatch(StrictModel):
+    """Provider-output contract for passage selection and claim normalization."""
+
+    selections: list[EvidencePassageSelection] = Field(
+        default_factory=list,
+        max_length=12,
+    )
 
 
 class EvidenceBackedValue(StrictModel):
@@ -346,6 +387,10 @@ class LiteratureLibraryRecord(StrictModel):
     authors: list[str] = Field(default_factory=list)
     year: int = Field(ge=1000, le=2100)
     journal: str | None = None
+    publisher: str | None = None
+    language: str | None = None
+    source_type: str = "journal-article"
+    is_foreign: bool = False
     abstract: str | None = None
     source_url: str
     theme_ids: list[str] = Field(min_length=1)
@@ -379,10 +424,16 @@ class LiteratureLibraryRecord(StrictModel):
 class EvidenceLibrary(StrictModel):
     """V0.3 hand-off consumed later by outline and writing modules."""
 
-    schema_version: Literal["0.3.0"] = "0.3.0"
+    schema_version: Literal["0.3.0", "0.3.1"] = "0.3.1"
     status: Literal["draft", "confirmed"] = "draft"
+    requirement_policy_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     records: list[LiteratureLibraryRecord] = Field(default_factory=list)
     documents: list[DocumentAcquisition] = Field(default_factory=list)
+    extractions: list[DocumentExtractionResult] = Field(default_factory=list)
+    page_selections: list[EvidencePageSelection] = Field(default_factory=list)
     pages: list[DocumentPage] = Field(default_factory=list)
     evidence_cards: list[EvidenceCard] = Field(default_factory=list)
     literature_matrix: list[LiteratureMatrixRow] = Field(default_factory=list)
@@ -393,9 +444,7 @@ class EvidenceLibrary(StrictModel):
     @model_validator(mode="after")
     def validate_evidence_graph(self) -> EvidenceLibrary:
         document_dois = {
-            document.doi
-            for document in self.documents
-            if document.status == "available"
+            document.doi for document in self.documents if document.status == "available"
         }
         card_by_id = {card.evidence_id: card for card in self.evidence_cards}
         record_by_doi = {record.doi: record for record in self.records}
@@ -412,25 +461,42 @@ class EvidenceLibrary(StrictModel):
             for document in self.documents
             if document.status == "available"
         }
-        if any(
-            page.document_sha256 != document_hashes.get(page.doi)
-            for page in self.pages
-        ):
+        extraction_by_doi = {item.doi: item for item in self.extractions}
+        if len(extraction_by_doi) != len(self.extractions):
+            raise ValueError("document extractions must be unique by DOI")
+        if any(doi not in document_dois for doi in extraction_by_doi):
+            raise ValueError("document extractions require an available PDF")
+        for doi, extraction in extraction_by_doi.items():
+            if extraction.document_sha256 != document_hashes.get(doi):
+                raise ValueError("document extraction hash must match the PDF artifact")
+            library_pages = sorted(page.page_number for page in self.pages if page.doi == doi)
+            extraction_pages = sorted(page.page_number for page in extraction.pages)
+            if library_pages != extraction_pages:
+                raise ValueError("library pages must preserve the complete extraction result")
+        available_page_numbers = {
+            doi: {page.page_number for page in self.pages if page.doi == doi}
+            for doi in document_dois
+        }
+        for selection in self.page_selections:
+            if selection.doi not in document_dois:
+                raise ValueError("page selection requires an available PDF")
+            if any(
+                page not in available_page_numbers[selection.doi]
+                for page in selection.selected_page_numbers
+            ):
+                raise ValueError("page selection must reference extracted pages")
+        if any(page.document_sha256 != document_hashes.get(page.doi) for page in self.pages):
             raise ValueError("extracted pages must match the available PDF hash")
         if any(
-            record.evidence_status == "full_text_verified"
-            and record.doi not in document_dois
+            record.evidence_status == "full_text_verified" and record.doi not in document_dois
             for record in self.records
         ):
             raise ValueError("full-text records require an available document")
         if any(
-            record.evidence_status == "metadata_verified"
-            and record.doi in document_dois
+            record.evidence_status == "metadata_verified" and record.doi in document_dois
             for record in self.records
         ):
-            raise ValueError(
-                "available PDFs must be represented as full-text records"
-            )
+            raise ValueError("available PDFs must be represented as full-text records")
 
         for row in self.literature_matrix:
             if row.doi not in document_dois:
@@ -459,13 +525,17 @@ class EvidenceLibrary(StrictModel):
                 raise ValueError("confirmed libraries cannot have unresolved issues")
             if not self.confirmed_by or self.confirmed_at is None:
                 raise ValueError("confirmed libraries need confirmation audit fields")
-            if any(
-                card.review_status != "confirmed" for card in self.evidence_cards
-            ):
+            if any(card.review_status != "confirmed" for card in self.evidence_cards):
                 raise ValueError("confirmed libraries require confirmed evidence cards")
+            if self.requirement_policy_fingerprint and (
+                set(extraction_by_doi) != document_dois
+                or any(extraction.status != "complete" for extraction in self.extractions)
+            ):
+                raise ValueError(
+                    "policy-bound confirmed libraries require complete PDF extraction manifests"
+                )
             if self.records and any(
-                not any(page.doi == card.doi for page in self.pages)
-                for card in self.evidence_cards
+                not any(page.doi == card.doi for page in self.pages) for card in self.evidence_cards
             ):
                 raise ValueError("confirmed evidence cards require extracted pages")
         elif self.confirmed_by is not None or self.confirmed_at is not None:

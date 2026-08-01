@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 
 from veriwrite_agent.models.evidence import (
     DocumentAcquisition,
+    DocumentExtractionResult,
     DocumentPage,
+    EvidencePageSelection,
     EvidenceCard,
     EvidenceLibrary,
     LiteratureLibraryRecord,
@@ -21,9 +23,12 @@ class EvidenceLibraryBuilder:
         *,
         records: list[LiteratureLibraryRecord],
         documents: list[DocumentAcquisition],
+        extractions: list[DocumentExtractionResult] | None = None,
+        page_selections: list[EvidencePageSelection] | None = None,
         pages: list[DocumentPage] | None = None,
         evidence_cards: list[EvidenceCard],
         unresolved_issues: list[str] | None = None,
+        requirement_policy_fingerprint: str | None = None,
     ) -> EvidenceLibrary:
         active_pages = pages or []
         issues = list(unresolved_issues or [])
@@ -32,17 +37,19 @@ class EvidenceLibraryBuilder:
             evidence_cards,
         )
         issues.extend(
-            f"{issue.code}:{issue.evidence_id}:{issue.detail}"
-            for issue in grounding.issues
+            f"{issue.code}:{issue.evidence_id}:{issue.detail}" for issue in grounding.issues
         )
         matrix = LiteratureMatrixBuilder().build(records, evidence_cards)
         return EvidenceLibrary(
             records=records,
             documents=documents,
+            extractions=extractions or [],
+            page_selections=page_selections or [],
             pages=active_pages,
             evidence_cards=evidence_cards,
             literature_matrix=matrix,
             unresolved_issues=issues,
+            requirement_policy_fingerprint=requirement_policy_fingerprint,
         )
 
 

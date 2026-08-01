@@ -42,6 +42,18 @@ def test_five_built_in_samples_run_through_workbench(
     assert result.source_format == ".txt"
 
 
+def test_recommended_smoke_sample_is_small_enough_for_full_chain_review() -> None:
+    sample = built_in_samples()[0]
+
+    result = prepare_review_from_path(sample.path, mode="rule")
+    requirement = result.review.reconciliation.merged_spec
+
+    assert sample.smoke_test is True
+    assert requirement.references.minimum_total == 2
+    assert requirement.length.minimum_words == 600
+    assert requirement.length.maximum_words == 800
+
+
 def test_uploaded_plain_text_keeps_original_filename() -> None:
     result = prepare_review_from_upload(
         "teacher-requirements.txt",
@@ -55,7 +67,11 @@ def test_uploaded_plain_text_keeps_original_filename() -> None:
 
 def test_comparison_and_diagnostics_explain_rule_only_baseline() -> None:
     result = prepare_review_from_path(
-        built_in_samples()[0].path,
+        next(
+            sample.path
+            for sample in built_in_samples()
+            if sample.path.name == "course_requirement.txt"
+        ),
         mode="rule",
     )
 
@@ -119,14 +135,37 @@ def test_list_conflict_can_offer_stable_union_operation() -> None:
     assert "采用两边并集" in options
 
 
-def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
+def test_streamlit_workbench_starts_and_analyzes_default_sample(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("VERIWRITE_AUTOSAVE_PATH", str(tmp_path / "active_project.json"))
     app_path = Path(__file__).parents[1] / "streamlit_app.py"
     app = AppTest.from_file(str(app_path)).run(timeout=30)
 
     assert not app.exception
-    assert app.title[0].value == "VeriWrite Agent 本地控制台"
+    assert app.title[0].value == "VeriWrite Agent MVP 工作台"
+    assert [metric.label for metric in app.metric] == [
+        "总体进度",
+        "完成阶段",
+        "当前阻塞",
+        "最终交付",
+    ]
+    assert "导出项目检查点" in [
+        button.label for button in app.download_button
+    ]
 
-    app.button[0].click().run(timeout=30)
+    # The dashboard sends the user to the first incomplete stage.
+    next(button for button in app.button if button.label == "继续：V0.1 需求确认").click().run(
+        timeout=30
+    )
+    assert not app.exception
+    assert any(
+        subheader.value == "1. 选择输入与解析方式"
+        for subheader in app.subheader
+    )
+
+    next(button for button in app.button if button.label == "开始分析").click().run(timeout=30)
 
     assert not app.exception
     assert [metric.label for metric in app.metric] == [
@@ -141,7 +180,9 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
     app.text_input[1].input("遥感数据智能处理")
     for checkbox in app.checkbox:
         checkbox.check()
-    app.button[1].click().run(timeout=30)
+    next(
+        button for button in app.button if button.label == "验证并生成最终版本"
+    ).click().run(timeout=30)
 
     assert not app.exception
     assert any(
@@ -150,11 +191,4 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample() -> None:
     )
     assert "下载最终需求版本" in [
         button.label for button in app.download_button
-    ]
-    assert any(
-        header.value == "V0.2 文献检索与验证控制台"
-        for header in app.header
-    )
-    assert "根据 V0.1 最终需求生成临时检索蓝图" in [
-        button.label for button in app.button
     ]

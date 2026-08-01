@@ -124,7 +124,7 @@ class LiteratureWorkbench:
         doi_max_attempts: int = 3,
     ) -> LiteratureWorkbench:
         settings = LLMSettings()
-        llm = DeepSeekClient(settings)
+        llm = DeepSeekClient(settings.for_structured_output())
         ranking = CugJournalRankingProvider.from_default_catalog()
         norwegian_ranking = NorwegianRegisterRankingProvider.from_default_catalog()
         return cls(
@@ -162,7 +162,10 @@ class LiteratureWorkbench:
         cache_root: Path,
         progress: ProgressCallback | None = None,
     ) -> LiteratureWorkbenchResult:
-        run_id = blueprint_run_id(confirmed)
+        run_id = blueprint_run_id(
+            confirmed,
+            pool_multiplier=self._search_expander.pool_multiplier,
+        )
         run_dir = cache_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         _write_json(
@@ -405,13 +408,16 @@ class LiteratureWorkbench:
 
 def blueprint_run_id(
     confirmed: ConfirmedLiteratureSearchBlueprint,
+    *,
+    pool_multiplier: int = 2,
 ) -> str:
-    """Stable cache identity for the exact blueprint, excluding audit timestamps."""
+    """Stable cache identity for the exact blueprint and retrieval scale."""
 
     canonical = json.dumps(
         {
             "pipeline_version": "0.2.3-norwegian-register-2025",
             "blueprint": confirmed.blueprint.model_dump(mode="json"),
+            "pool_multiplier": pool_multiplier,
         },
         ensure_ascii=False,
         sort_keys=True,

@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
 from veriwrite_agent.models.literature_discovery import (
     CugTier,
     JournalRankingLookup,
@@ -59,9 +60,7 @@ class LiteratureThemePlan(StrictModel):
     @classmethod
     def reject_boolean_query_syntax(cls, values: list[str]) -> list[str]:
         if any(re.search(r"\b(?:AND|OR|NOT)\b", value) for value in values):
-            raise ValueError(
-                "Crossref search phrases cannot use uppercase Boolean operators"
-            )
+            raise ValueError("Crossref search phrases cannot use uppercase Boolean operators")
         return values
 
 
@@ -69,9 +68,7 @@ class LiteratureSearchBlueprint(StrictModel):
     """A provisional outline that controls literature discovery, not final writing."""
 
     schema_version: Literal["0.2.2"] = "0.2.2"
-    outline_status: Literal["provisional_search_blueprint"] = (
-        "provisional_search_blueprint"
-    )
+    outline_status: Literal["provisional_search_blueprint"] = "provisional_search_blueprint"
     topic: str = Field(min_length=1)
     discipline: str = Field(min_length=1)
     writing_through_line: str = Field(min_length=1)
@@ -85,6 +82,7 @@ class LiteratureSearchBlueprint(StrictModel):
     year_to: int | None = Field(default=None, ge=1900, le=2100)
     max_candidates: int = Field(default=300, ge=20, le=1000)
     relevance_threshold: float = Field(default=0.6, ge=0, le=1)
+    requirement_policy: ExecutableRequirementPolicy | None = None
 
     @field_validator("accepted_tiers", mode="after")
     @classmethod
@@ -115,9 +113,7 @@ class ConfirmedLiteratureSearchBlueprint(StrictModel):
 
     schema_version: Literal["0.2.2"] = "0.2.2"
     status: Literal["confirmed"] = "confirmed"
-    confirmed_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    confirmed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confirmed_by: str = Field(min_length=1)
     confirmation_note: str | None = None
     blueprint: LiteratureSearchBlueprint
@@ -194,6 +190,12 @@ class SelectedLiteratureRecord(StrictModel):
 
     doi: str
     title: str = Field(min_length=1)
+    authors: list[str] = Field(default_factory=list)
+    journal: str | None = None
+    publisher: str | None = None
+    language: str | None = None
+    source_type: str = "journal-article"
+    is_foreign: bool
     theme_id: str = Field(min_length=1)
     relevance_score: float = Field(ge=0, le=1)
     cug_tier: CugTier | None = None
@@ -217,6 +219,7 @@ class BalancedLiteratureSelection(StrictModel):
     blueprint: LiteratureSearchBlueprint
     selected: list[SelectedLiteratureRecord] = Field(default_factory=list)
     shortages: dict[str, int] = Field(default_factory=dict)
+    policy_issues: list[str] = Field(default_factory=list)
     target_reached: bool
 
     @model_validator(mode="after")
@@ -224,13 +227,9 @@ class BalancedLiteratureSelection(StrictModel):
         dois = [record.doi for record in self.selected]
         if len(dois) != len(set(dois)):
             raise ValueError("a DOI can only be selected once")
-        targets = {
-            theme.theme_id: theme.target_count for theme in self.blueprint.themes
-        }
+        targets = {theme.theme_id: theme.target_count for theme in self.blueprint.themes}
         counts = {
-            theme_id: sum(
-                record.theme_id == theme_id for record in self.selected
-            )
+            theme_id: sum(record.theme_id == theme_id for record in self.selected)
             for theme_id in targets
         }
         if any(counts[theme_id] > targets[theme_id] for theme_id in targets):
@@ -242,6 +241,9 @@ class BalancedLiteratureSelection(StrictModel):
         }
         if self.shortages != expected_shortages:
             raise ValueError("shortages must match the selected theme counts")
-        if self.target_reached != (len(self.selected) == self.blueprint.target_total):
+        expected_reached = (
+            len(self.selected) == self.blueprint.target_total and not self.policy_issues
+        )
+        if self.target_reached != expected_reached:
             raise ValueError("target_reached does not match the selected count")
         return self

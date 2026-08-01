@@ -196,3 +196,37 @@ def test_outline_with_missing_full_text_cannot_be_confirmed() -> None:
             outline,
             confirmed_by="student",
         )
+
+
+def test_smoke_outline_consolidates_themes_around_one_verified_pdf() -> None:
+    metadata = LiteratureLibraryRecord(
+        doi="10.1000/support.1",
+        title="Metadata-only supporting paper",
+        year=2025,
+        source_url="https://doi.org/10.1000/support.1",
+        theme_ids=["method"],
+        evidence_tier="B_supporting",
+        evidence_status="metadata_verified",
+        permitted_use="section_support",
+    )
+    library = EvidenceLibraryBuilder().build(
+        records=[record(), metadata],
+        documents=[document()],
+        pages=[page()],
+        evidence_cards=[card("background", "background")],
+    )
+
+    outline = WritingOutlineBuilder().build(
+        blueprint(),
+        library,
+        target_words=800,
+        smoke_test=True,
+    )
+
+    assert len(outline.sections) == 1
+    assert outline.sections[0].core_dois == [DOI]
+    assert outline.sections[0].supporting_dois == ["10.1000/support.1"]
+    assert len(outline.sections[0].evidence_card_ids) == 1
+    assert outline.sections[0].evidence_gap is False
+    assert outline.unresolved_gaps == []
+    WritingHandoffService().confirm_outline(outline, confirmed_by="student")

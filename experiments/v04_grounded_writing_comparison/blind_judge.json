@@ -1,0 +1,35 @@
+{
+  "coherence": {
+    "score_a": 4,
+    "score_b": 5,
+    "reason": "Draft A is well-structured with clear logical flow, but Draft B is more coherent in integrating evidence and maintaining consistent narrative."
+  },
+  "source_fidelity": {
+    "score_a": 3,
+    "score_b": 5,
+    "reason": "Draft A includes specific numeric results not fully supported by the provided evidence, while Draft B sticks closely to the verified claims and quotes."
+  },
+  "citation_authenticity": {
+    "score_a": 5,
+    "score_b": 5,
+    "reason": "Both drafts provide plausible citations, but Draft B's citations are explicitly linked to evidence IDs and page numbers, enhancing authenticity."
+  },
+  "traceability": {
+    "score_a": 2,
+    "score_b": 5,
+    "reason": "Draft A lacks explicit page numbers and evidence IDs, making it harder to trace claims, whereas Draft B includes page numbers and evidence IDs."
+  },
+  "thematic_synthesis": {
+    "score_a": 4,
+    "score_b": 5,
+    "reason": "Both synthesize well, but Draft B more clearly integrates the three studies into a cohesive narrative on advancing aerosol remote sensing."
+  },
+  "unsupported_claim_risk": {
+    "score_a": 3,
+    "score_b": 5,
+    "reason": "Draft A contains several unsupported numeric details (e.g., specific R2 values for radiative fitting, AOD trends), while Draft B only uses numbers from verified evidence."
+  },
+  "winner": "draft_b",
+  "confidence": 0.9,
+  "summary": "Draft B is superior in source fidelity, traceability, and low unsupported claim risk, as it closely adheres to the provided evidence with proper citations and page numbers. Draft A makes some claims not verifiable from the given evidence. Both are coherent, but B is more traceable and faithful."
+}

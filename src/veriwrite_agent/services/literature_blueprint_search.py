@@ -23,6 +23,12 @@ class LiteratureBlueprintSearchExpander:
             raise ValueError("pool_multiplier must be between 1 and 10")
         self._pool_multiplier = pool_multiplier
 
+    @property
+    def pool_multiplier(self) -> int:
+        """Candidate-pool scale that participates in cache identity."""
+
+        return self._pool_multiplier
+
     def expand(
         self,
         confirmed: ConfirmedLiteratureSearchBlueprint,
@@ -55,6 +61,7 @@ class LiteratureBlueprintSearchExpander:
                 journal_ranking_policy=blueprint.journal_ranking_policy,
                 target_eligible_count=pool_target,
                 max_candidates=per_theme_max,
+                requirement_policy=blueprint.requirement_policy,
             )
             results.append(
                 ThemedLiteratureSearchPlan(

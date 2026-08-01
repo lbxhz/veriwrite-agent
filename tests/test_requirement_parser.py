@@ -27,6 +27,15 @@ def test_parses_citation_and_recency_rules(parsed_spec) -> None:
     assert parsed_spec.references.max_references_per_citation_cluster == 4
 
 
+def test_parses_explicit_recency_limit_as_hard() -> None:
+    result = RuleBasedRequirementParser().parse(
+        "参考文献至少2篇，文献限定为近5年。"
+    )
+
+    assert result.references.recent_year_window == 5
+    assert result.references.recent_year_rule_strength == "hard"
+
+
 def test_detects_ambiguity_and_conditional_requirement(parsed_spec) -> None:
     assert parsed_spec.ambiguities
     assert "学院审核未通过后再次提交时必须提供修改说明" in (

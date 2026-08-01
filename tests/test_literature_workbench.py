@@ -33,7 +33,7 @@ from veriwrite_agent.services.literature_identity_verification import (
 from veriwrite_agent.services.literature_relevance_scorer import (
     LLMLiteratureRelevanceScorer,
 )
-from veriwrite_agent.ui.literature_workbench import LiteratureWorkbench
+from veriwrite_agent.ui.literature_workbench import LiteratureWorkbench, blueprint_run_id
 
 
 @dataclass
@@ -242,3 +242,12 @@ def test_runs_full_v02_flow_and_resumes_from_stage_caches(
     assert resolver.calls == ["10.1000/aerosol", "10.1000/methane"]
     assert len(llm.calls) == 1
     assert any(stage == "complete" for stage, *_ in progress)
+
+
+def test_candidate_pool_multiplier_participates_in_run_cache_identity() -> None:
+    confirmed = confirmed_blueprint()
+
+    assert blueprint_run_id(confirmed, pool_multiplier=2) != blueprint_run_id(
+        confirmed,
+        pool_multiplier=4,
+    )

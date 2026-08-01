@@ -272,6 +272,11 @@ class CrossrefSearchProvider:
                     if isinstance(item.get("publisher"), str)
                     else None
                 ),
+                language=(
+                    item.get("language")
+                    if isinstance(item.get("language"), str)
+                    else None
+                ),
                 source_type=(
                     item.get("type")
                     if isinstance(item.get("type"), str)
