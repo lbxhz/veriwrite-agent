@@ -140,6 +140,7 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("VERIWRITE_AUTOSAVE_PATH", str(tmp_path / "active_project.json"))
+    monkeypatch.setenv("LLM_API_KEY", "")
     app_path = Path(__file__).parents[1] / "streamlit_app.py"
     app = AppTest.from_file(str(app_path)).run(timeout=30)
 
@@ -149,9 +150,8 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample(
         "总体进度",
         "完成阶段",
         "当前阻塞",
-        "最终交付",
     ]
-    assert "导出项目检查点" in [
+    assert "导出检查点" in [
         button.label for button in app.download_button
     ]
 
@@ -161,34 +161,33 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample(
     )
     assert not app.exception
     assert any(
-        subheader.value == "1. 选择输入与解析方式"
+        subheader.value == "提供课程要求"
         for subheader in app.subheader
     )
+    next(radio for radio in app.radio if radio.label == "要求来源").set_value(
+        "试用示例"
+    ).run(timeout=30)
 
-    next(button for button in app.button if button.label == "开始分析").click().run(timeout=30)
+    next(button for button in app.button if button.label == "分析课程要求").click().run(
+        timeout=30
+    )
 
     assert not app.exception
-    assert [metric.label for metric in app.metric] == [
-        "输入格式",
-        "提取方式",
-        "提取字符",
-        "LLM 路径",
-        "冲突",
-        "阻塞项",
-    ]
+    assert any(
+        subheader.value == "核对需要执行的要求"
+        for subheader in app.subheader
+    )
+    assert "确认人" not in [field.label for field in app.text_input]
+    assert not any(checkbox.label.startswith("我已知悉") for checkbox in app.checkbox)
 
     app.text_input[1].input("遥感数据智能处理")
-    for checkbox in app.checkbox:
-        checkbox.check()
     next(
-        button for button in app.button if button.label == "验证并生成最终版本"
+        button for button in app.button if button.label == "确认要求并进入文献检索"
     ).click().run(timeout=30)
 
     assert not app.exception
     assert any(
-        message.value == "最终需求版本已通过数据合同和完整性检查。"
+        message.value == "课程要求已确认，正在准备检索方案。"
         for message in app.success
     )
-    assert "下载最终需求版本" in [
-        button.label for button in app.download_button
-    ]
+    assert any(header.value == "V0.2 查找并验证真实文献" for header in app.header)

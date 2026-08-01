@@ -75,21 +75,32 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
     )
 
     st.divider()
-    st.header("V0.2 文献检索与验证控制台")
+    st.header("V0.2 查找并验证真实文献")
     st.caption(
-        "确认需求 → 生成临时检索蓝图 → 用户确认蓝图 → "
-        "Crossref 检索 → RIS/DOI 验证 → 相关性与均衡选择"
+        "先看检索方案，再一次完成 Crossref 检索、DOI/RIS 真实性验证和均衡选择。"
     )
     _render_requirement_handoff(confirmed_requirement)
 
+    completed_payload = st.session_state.get("literature_result_json")
+    if completed_payload:
+        payload = json.loads(completed_payload)
+        completed_selection = BalancedLiteratureSelection.model_validate(payload["selection"])
+        if completed_selection.target_reached and not completed_selection.policy_issues:
+            _render_completed_literature_result(
+                completed_selection,
+                payload,
+                include_downstream=include_downstream,
+            )
+            return
+
     if "literature_blueprint_json" not in st.session_state:
-        st.subheader("4. 生成临时检索蓝图")
+        st.subheader("生成检索方案")
         st.info(
-            "DeepSeek 只负责把已确认需求拆成主题、研究问题、英文检索词和文献配额；"
-            "此操作不会搜索或生成任何论文。"
+            "DeepSeek 会把课程要求拆成主题、研究问题、英文检索词和文献配额；"
+            "这一步不会联网搜索论文。"
         )
         if st.button(
-            "根据 V0.1 最终需求生成临时检索蓝图",
+            "生成检索方案",
             type="primary",
             width="stretch",
         ):
@@ -108,95 +119,79 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
     draft = LiteratureSearchBlueprint.model_validate_json(
         st.session_state["literature_blueprint_json"]
     )
-    st.subheader("4. 检查并确认临时检索蓝图")
+    st.subheader("检索方案")
     _render_blueprint_summary(draft)
 
     if "literature_confirmed_blueprint_json" not in st.session_state:
-        with st.form("literature_blueprint_confirmation"):
+        st.caption("如果主题和配额合理，直接开始；只有确实需要时才编辑底层 JSON。")
+        st.session_state.setdefault(
+            "literature_blueprint_editor",
+            draft.model_dump_json(indent=2),
+        )
+        with st.expander("高级：编辑检索 JSON"):
             edited_json = st.text_area(
                 "可编辑蓝图 JSON",
-                value=st.session_state.get(
-                    "literature_blueprint_editor",
-                    draft.model_dump_json(indent=2),
-                ),
+                key="literature_blueprint_editor",
                 height=440,
                 help=(
                     "重点检查主题、研究问题、search_queries、target_count、"
                     "年份和 max_candidates。各主题 target_count 之和必须等于 target_total。"
                 ),
             )
-            confirmed_by = st.text_input(
-                "蓝图确认人",
-                value=confirmed_requirement.confirmed_by,
-            )
-            note = st.text_area("蓝图确认说明（可选）")
-            accepted = st.checkbox("我已检查主题范围和各主题文献配额，同意开始外部检索。")
-            submitted = st.form_submit_button(
-                "确认检索蓝图",
-                type="primary",
-                width="stretch",
-            )
+        submitted = st.button(
+            "采用此方案并开始检索",
+            type="primary",
+            width="stretch",
+        )
         if submitted:
-            if not accepted:
-                st.error("请先明确确认主题范围和文献配额。")
+            try:
+                edited = LiteratureSearchBlueprint.model_validate_json(edited_json)
+                confirmed_blueprint = LiteratureBlueprintConfirmationService().confirm(
+                    edited,
+                    confirmed_by=confirmed_requirement.confirmed_by,
+                    expected_policy=draft.requirement_policy,
+                )
+            except (ValidationError, ValueError) as exc:
+                st.error(f"检索方案无效：{exc}")
             else:
-                try:
-                    edited = LiteratureSearchBlueprint.model_validate_json(edited_json)
-                    confirmed_blueprint = LiteratureBlueprintConfirmationService().confirm(
-                        edited,
-                        confirmed_by=confirmed_by,
-                        note=note or None,
-                        expected_policy=draft.requirement_policy,
-                    )
-                except (ValidationError, ValueError) as exc:
-                    st.error(f"蓝图确认失败：{exc}")
-                else:
-                    st.session_state["literature_blueprint_json"] = edited.model_dump_json(indent=2)
-                    st.session_state["literature_blueprint_editor"] = edited.model_dump_json(
-                        indent=2
-                    )
-                    st.session_state["literature_confirmed_blueprint_json"] = (
-                        confirmed_blueprint.model_dump_json(indent=2)
-                    )
-                    _clear_literature_derived_state()
-                    st.rerun()
+                st.session_state["literature_blueprint_json"] = edited.model_dump_json(indent=2)
+                st.session_state["literature_blueprint_editor"] = edited.model_dump_json(indent=2)
+                st.session_state["literature_confirmed_blueprint_json"] = (
+                    confirmed_blueprint.model_dump_json(indent=2)
+                )
+                _clear_literature_derived_state()
+                st.session_state["literature_auto_run_requested"] = True
+                st.rerun()
         return
 
     confirmed_blueprint = ConfirmedLiteratureSearchBlueprint.model_validate_json(
         st.session_state["literature_confirmed_blueprint_json"]
     )
-    st.success(
-        f"检索蓝图已由 {confirmed_blueprint.confirmed_by} 确认；"
-        "现在才允许访问 Crossref、DOI.org 和 DeepSeek。"
-    )
-    controls = st.columns([1, 1])
-    controls[0].download_button(
-        "下载确认后的检索蓝图",
-        st.session_state["literature_confirmed_blueprint_json"],
-        file_name="confirmed_literature_search_blueprint.json",
-        mime="application/json",
-        width="stretch",
-    )
-    if controls[1].button(
-        "撤销确认并修改蓝图",
-        width="stretch",
-    ):
-        st.session_state.pop("literature_confirmed_blueprint_json", None)
-        _clear_literature_derived_state()
-        st.rerun()
-
-    st.subheader("5. 执行 V0.2 文献工作流")
+    st.success("检索方案已锁定；检索只会使用这组主题、配额和年份限制。")
     pool_multiplier = int(st.session_state.get("literature_pool_multiplier", 2))
     st.caption(
         f"当前每个主题获取最终配额约 {pool_multiplier} 倍的候选；"
-        "DOI/RIS 最多尝试 3 次。"
-        "运行结果按确认蓝图缓存，中断后点击同一按钮可继续。"
+        "运行结果自动缓存，中断后可继续。"
     )
-    _render_retrieval_adjustment_controls(confirmed_blueprint)
-    st.markdown("#### 5.2 开始或继续检索")
+    with st.expander("方案导出与高级检索设置"):
+        controls = st.columns([1, 1])
+        controls[0].download_button(
+            "下载检索方案",
+            st.session_state["literature_confirmed_blueprint_json"],
+            file_name="confirmed_literature_search_blueprint.json",
+            mime="application/json",
+            width="stretch",
+        )
+        if controls[1].button("修改主题或检索词", width="stretch"):
+            st.session_state.pop("literature_confirmed_blueprint_json", None)
+            _clear_literature_derived_state()
+            st.rerun()
+        _render_retrieval_adjustment_controls(confirmed_blueprint)
+
+    st.subheader("检索真实文献")
     auto_run_requested = st.session_state.pop("literature_auto_run_requested", False)
     if st.button(
-        "开始或继续检索、验证与选择",
+        "开始或继续检索",
         type="primary",
         width="stretch",
     ) or auto_run_requested:
@@ -289,6 +284,80 @@ def _render_requirement_handoff(
             st.code("\n".join(policy.unresolved_requirements))
 
 
+def _render_completed_literature_result(
+    selection: BalancedLiteratureSelection,
+    payload: dict,
+    *,
+    include_downstream: bool,
+) -> None:
+    st.success("文献数量、主题配额和 V0.1 硬性规则均已满足。")
+    metrics = st.columns(4)
+    metrics[0].metric("真实性通过", payload["verified_count"])
+    metrics[1].metric("最终入选", len(selection.selected))
+    metrics[2].metric("覆盖主题", len({item.theme_id for item in selection.selected}))
+    metrics[3].metric("外文文献", sum(item.is_foreign for item in selection.selected))
+
+    if not include_downstream:
+        if st.button("继续获取核心论文全文", type="primary", width="stretch"):
+            st.session_state["mvp_navigation_request"] = "evidence"
+            st.rerun()
+
+    with st.expander("查看文献清单与验证记录"):
+        st.dataframe(
+            [
+                {
+                    "主题": item.theme_id,
+                    "年份": item.year,
+                    "相关性": item.relevance_score,
+                    "期刊": item.journal or "—",
+                    "题名": item.title,
+                    "DOI": item.doi,
+                }
+                for item in selection.selected
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(f"本地运行目录：{st.session_state['literature_run_dir']}")
+        downloads = st.columns(3)
+        downloads[0].download_button(
+            "文献 JSON",
+            st.session_state["literature_result_json"],
+            file_name="verified_literature_selection.json",
+            mime="application/json",
+            width="stretch",
+        )
+        downloads[1].download_button(
+            "文献 RIS",
+            st.session_state["literature_ris"],
+            file_name="verified_literature.ris",
+            mime="application/x-research-info-systems",
+            width="stretch",
+        )
+        downloads[2].download_button(
+            "真实性证据",
+            st.session_state["literature_verification_json"],
+            file_name="literature_verification_evidence.json",
+            mime="application/json",
+            width="stretch",
+        )
+        st.divider()
+        restart_accepted = st.checkbox(
+            "我知道重新检索会清除 V0.2 之后的页面状态",
+            key="literature_restart_accepted",
+        )
+        if st.button(
+            "重新生成方案并检索",
+            disabled=not restart_accepted,
+            width="stretch",
+        ):
+            clear_literature_state()
+            st.rerun()
+
+    if include_downstream:
+        render_pdf_acquisition_console(selection)
+
+
 def _render_blueprint_summary(
     blueprint: LiteratureSearchBlueprint,
 ) -> None:
@@ -320,23 +389,19 @@ def _render_blueprint_summary(
 def _render_literature_result(*, include_downstream: bool = True) -> None:
     payload = json.loads(st.session_state["literature_result_json"])
     selection = BalancedLiteratureSelection.model_validate(payload["selection"])
-    st.subheader("6. V0.2 最终结果")
-    metrics = st.columns(5)
+    st.subheader("文献选择结果")
+    metrics = st.columns(4)
     metrics[0].metric("预筛候选", payload["prefiltered_count"])
     metrics[1].metric("真实性通过", payload["verified_count"])
-    metrics[2].metric(
-        "真实性排除",
-        payload["verification_excluded_count"],
-    )
-    metrics[3].metric("最终入选", len(selection.selected))
-    metrics[4].metric("主题缺口", sum(selection.shortages.values()))
+    metrics[2].metric("最终入选", len(selection.selected))
+    metrics[3].metric("主题缺口", sum(selection.shortages.values()))
 
     if selection.target_reached:
         st.success("最终文献数量和各主题配额均已达到。")
     else:
         st.warning(
             "当前没有达到全部主题配额。系统不会用其他主题论文静默凑数。"
-            "可在上方‘5.1 检索规模设置’增加候选扫描上限或候选池倍率后补搜，"
+            "可在上方高级检索设置中增加候选扫描上限或候选池倍率后补搜，"
             "也可以返回蓝图修改关键词和限制。"
         )
         theme_targets = {
@@ -492,34 +557,33 @@ def _render_literature_result(*, include_downstream: bool = True) -> None:
         if payload["verification_exclusion_reason_counts"]:
             st.markdown("**真实性验证排除原因**")
             st.json(payload["verification_exclusion_reason_counts"])
-    st.caption(f"本地运行目录：{st.session_state['literature_run_dir']}")
-
-    downloads = st.columns(3)
-    downloads[0].download_button(
-        "下载最终文献 JSON",
-        st.session_state["literature_result_json"],
-        file_name="verified_literature_selection.json",
-        mime="application/json",
-        type="primary",
-        width="stretch",
-    )
-    downloads[1].download_button(
-        "下载最终 RIS",
-        st.session_state["literature_ris"],
-        file_name="verified_literature.ris",
-        mime="application/x-research-info-systems",
-        width="stretch",
-    )
-    downloads[2].download_button(
-        "下载真实性验证证据",
-        st.session_state["literature_verification_json"],
-        file_name="literature_verification_evidence.json",
-        mime="application/json",
-        width="stretch",
-    )
-    if selection.target_reached and not include_downstream:
+    with st.expander("导出文献与验证记录"):
+        st.caption(f"本地运行目录：{st.session_state['literature_run_dir']}")
+        downloads = st.columns(3)
+        downloads[0].download_button(
+            "文献 JSON",
+            st.session_state["literature_result_json"],
+            file_name="verified_literature_selection.json",
+            mime="application/json",
+            width="stretch",
+        )
+        downloads[1].download_button(
+            "文献 RIS",
+            st.session_state["literature_ris"],
+            file_name="verified_literature.ris",
+            mime="application/x-research-info-systems",
+            width="stretch",
+        )
+        downloads[2].download_button(
+            "真实性证据",
+            st.session_state["literature_verification_json"],
+            file_name="literature_verification_evidence.json",
+            mime="application/json",
+            width="stretch",
+        )
+    if selection.target_reached and not selection.policy_issues and not include_downstream:
         if st.button(
-            "进入 V0.3 核心论文全文",
+            "继续获取核心论文全文",
             type="primary",
             width="stretch",
         ):
@@ -539,7 +603,7 @@ def _render_retrieval_adjustment_controls(
     blueprint = confirmed.blueprint
     current_multiplier = int(st.session_state.get("literature_pool_multiplier", 2))
 
-    st.markdown("#### 5.1 检索规模设置")
+    st.markdown("#### 调整检索规模")
     st.caption(
         "提高最终目标会按原比例重算各主题配额；候选扫描上限控制 Crossref "
         "最多检查多少条；候选池倍率控制每个主题为每个最终名额准备多少候选。"

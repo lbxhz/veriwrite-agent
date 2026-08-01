@@ -65,12 +65,58 @@ def render_pdf_acquisition_console(
     """Let users download only core PDFs, then inspect them as a batch."""
 
     st.divider()
-    st.header("V0.3 核心论文全文获取")
+    st.header("V0.3 获取核心全文并建立证据")
     st.caption(
         "Agent 负责确定下载队列、打开权威入口和检查 PDF；用户只处理出版社登录、验证码与下载按钮。"
     )
     if not selection.selected:
         st.info("V0.2 尚无入选论文，不能建立核心论文下载队列。")
+        return
+
+    completed_handoff_json = st.session_state.get("v03_writing_handoff_json")
+    if completed_handoff_json:
+        handoff = V04WritingHandoff.model_validate_json(completed_handoff_json)
+        library = handoff.evidence_library
+        st.success("核心全文、证据卡和写作章节已准备完成。")
+        metrics = st.columns(4)
+        metrics[0].metric("核心全文", sum(r.evidence_tier == "A_core" for r in library.records))
+        metrics[1].metric("完整页", len(library.pages))
+        metrics[2].metric("证据卡", len(library.evidence_cards))
+        metrics[3].metric("写作章节", len(handoff.outline.outline.sections))
+        if not include_writing:
+            if st.button("进入 V0.4 逐章写作", type="primary", width="stretch"):
+                st.session_state["mvp_navigation_request"] = "writing"
+                st.rerun()
+        with st.expander("查看证据详情与交接包"):
+            st.caption(
+                f"{len(library.records)} 篇文献 · {len(library.pages)} 个完整文本页 · "
+                f"{len(library.evidence_cards)} 张证据卡"
+            )
+            st.dataframe(
+                [
+                    {
+                        "主题": card.theme_id,
+                        "类型": card.evidence_type,
+                        "结论": card.normalized_claim,
+                        "页码": "、".join(
+                            str(item.page_number) for item in card.supporting_quotes
+                        ),
+                        "DOI": card.doi,
+                    }
+                    for card in library.evidence_cards
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+            st.download_button(
+                "下载 V0.4 写作交接包",
+                completed_handoff_json,
+                file_name="v04_writing_handoff.json",
+                mime="application/json",
+                width="stretch",
+            )
+        if include_writing:
+            render_grounded_writing_console(handoff)
         return
 
     records = {item.doi: item for item in selection.selected}
@@ -81,16 +127,21 @@ def render_pdf_acquisition_console(
     previous_dois = [
         doi for doi in st.session_state.get("v03_core_dois", default_dois) if doi in records
     ]
-    selected_dois = st.multiselect(
-        "选择需要全文核验的核心论文",
-        options=list(records),
-        default=previous_dois,
-        format_func=lambda doi: f"{records[doi].title} · {doi}",
-        help=(
-            "快速联通测试默认取 1 篇，真实项目默认取排序靠前的 8 篇；"
-            "非核心论文暂时只保留已验证元数据。"
-        ),
+    st.write(
+        f"系统已按相关性和主题覆盖选择前 {len(previous_dois)} 篇作为核心论文；"
+        "其余文献保留已验证元数据。"
     )
+    with st.expander("调整核心论文"):
+        selected_dois = st.multiselect(
+            "需要全文核验的论文",
+            options=list(records),
+            default=previous_dois,
+            format_func=lambda doi: f"{records[doi].title} · {doi}",
+            help=(
+                "快速联通测试默认取 1 篇，真实项目默认取排序靠前的 8 篇；"
+                "只有确实需要改变核心范围时才调整。"
+            ),
+        )
     if selected_dois != previous_dois:
         st.session_state.pop("v03_pdf_inspection_json", None)
         st.session_state.pop("v03_evidence_library_json", None)
@@ -121,13 +172,10 @@ def render_pdf_acquisition_console(
         help="点击出版社的下载按钮后，文件通常会保存到这里。",
     )
     st.session_state["v03_download_directory"] = download_directory
-    st.info(
-        "完成下载后点击下方按钮。系统会用 DOI 和题名自动匹配文件，"
-        "检查 PDF 文件头、EOF、页数、可提取文本与文件哈希。"
-    )
+    st.info("下载完成后点击扫描；系统会自动匹配文件并检查身份、完整性和可提取性。")
 
     if st.button(
-        "扫描下载目录并检查核心 PDF",
+        "我已下载，扫描核心 PDF",
         type="primary",
         width="stretch",
     ):
@@ -205,17 +253,18 @@ def _render_pdf_results(batch: PdfInspectionBatch) -> None:
     if batch.unmatched_files:
         with st.expander("未能匹配到核心论文的其他 PDF"):
             st.code("\n".join(batch.unmatched_files))
-    st.download_button(
-        "下载 PDF 检查报告",
-        json.dumps(
-            json.loads(batch.model_dump_json()),
-            ensure_ascii=False,
-            indent=2,
-        ),
-        file_name="core_paper_pdf_inspection.json",
-        mime="application/json",
-        width="stretch",
-    )
+    with st.expander("导出 PDF 检查报告"):
+        st.download_button(
+            "下载检查报告 JSON",
+            json.dumps(
+                json.loads(batch.model_dump_json()),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file_name="core_paper_pdf_inspection.json",
+            mime="application/json",
+            width="stretch",
+        )
 
 
 def _render_evidence_pipeline(
@@ -224,43 +273,36 @@ def _render_evidence_pipeline(
     *,
     include_writing: bool = True,
 ) -> None:
-    st.subheader("全文证据卡与文献矩阵")
+    st.subheader("全文证据与写作准备")
     verified_count = sum(report.status == "verified" for report in batch.reports)
     if verified_count == 0:
         st.warning("当前没有通过身份与完整性检查的PDF，不能提取全文证据。")
         return
 
     st.caption(
-        "DeepSeek只负责对给定PDF页进行语义归类；DOI、文件哈希、页码和原文引句"
-        "由代码固定并复核。每篇PDF可能产生多次小批量API调用。"
+        "代码固定 DOI、文件哈希、页码和原文；DeepSeek只对候选页面做语义归类。"
     )
-    if st.button(
-        "从已验证PDF生成V0.3证据库草案",
-        type="primary",
-        width="stretch",
-    ):
-        try:
-            with st.spinner("正在分页提取PDF并生成可追溯证据卡……"):
-                library = _build_evidence_library(selection, batch)
-        except Exception as exc:
-            st.error(f"V0.3证据库生成中断：{exc}")
-        else:
-            st.session_state["v03_evidence_library_json"] = library.model_dump_json(indent=2)
-            st.session_state.pop("v03_writing_handoff_json", None)
-            st.rerun()
+    if "v03_evidence_library_json" not in st.session_state:
+        if st.button(
+            "提取证据并准备写作",
+            type="primary",
+            width="stretch",
+        ):
+            try:
+                with st.spinner("正在分页提取PDF、生成证据并检查章节覆盖……"):
+                    library = _build_evidence_library(selection, batch)
+            except Exception as exc:
+                st.error(f"证据提取中断：{exc}")
+            else:
+                st.session_state["v03_evidence_library_json"] = library.model_dump_json(indent=2)
+                st.session_state.pop("v03_writing_handoff_json", None)
+                st.rerun()
 
     serialized = st.session_state.get("v03_evidence_library_json")
     if not serialized:
         return
     library = EvidenceLibrary.model_validate_json(serialized)
     _render_library_summary(library)
-    st.download_button(
-        "下载V0.3证据库草案",
-        serialized,
-        file_name="v03_evidence_library_draft.json",
-        mime="application/json",
-        width="stretch",
-    )
 
     confirmed_requirement = ConfirmedRequirementSpec.model_validate_json(
         st.session_state["confirmed_json"]
@@ -280,7 +322,7 @@ def _render_evidence_pipeline(
             "仅验证一篇核心PDF能否完成证据提取、V0.4写作与最终交付；"
             "真实项目仍执行逐章节全文证据门禁。"
         )
-    st.markdown("#### V0.4写作大纲交接预览")
+    st.markdown("#### 写作章节与证据覆盖")
     st.dataframe(
         [
             {
@@ -303,53 +345,64 @@ def _render_evidence_pipeline(
             st.code("\n".join(blockers))
         return
 
-    confirmed_by = st.text_input(
-        "V0.3与最终写作大纲确认人",
-        value=confirmed_requirement.confirmed_by,
-    )
-    accepted = st.checkbox("我已检查核心证据卡和章节证据覆盖，同意生成V0.4交接包。")
-    if st.button(
-        "确认V0.3并生成V0.4交接包",
-        disabled=not accepted,
-        width="stretch",
-    ):
-        confirmed_library = EvidenceLibraryConfirmationService().confirm(
-            library,
-            confirmed_by=confirmed_by,
-        )
-        handoff_service = WritingHandoffService()
-        confirmed_outline = handoff_service.confirm_outline(
-            outline,
-            confirmed_by=confirmed_by,
-        )
-        handoff = handoff_service.create(
-            requirement=confirmed_requirement,
-            outline=confirmed_outline,
-            evidence_library=confirmed_library,
-            policy=policy,
-        )
-        st.session_state["v03_evidence_library_json"] = confirmed_library.model_dump_json(indent=2)
-        st.session_state["v03_writing_handoff_json"] = handoff.model_dump_json(indent=2)
-        st.rerun()
-
     handoff_json = st.session_state.get("v03_writing_handoff_json")
-    if handoff_json:
-        handoff = V04WritingHandoff.model_validate_json(handoff_json)
-        st.success(
-            f"V0.3已确认：{len(handoff.evidence_library.records)}篇文献、"
-            f"{len(handoff.evidence_library.evidence_cards)}张证据卡，"
-            "V0.4可以开始逐章写作。"
-        )
+    if not handoff_json:
+        if st.button(
+            "采用这些证据并进入写作",
+            type="primary",
+            width="stretch",
+        ):
+            confirmed_library = EvidenceLibraryConfirmationService().confirm(
+                library,
+                confirmed_by=confirmed_requirement.confirmed_by,
+            )
+            handoff_service = WritingHandoffService()
+            confirmed_outline = handoff_service.confirm_outline(
+                outline,
+                confirmed_by=confirmed_requirement.confirmed_by,
+            )
+            handoff = handoff_service.create(
+                requirement=confirmed_requirement,
+                outline=confirmed_outline,
+                evidence_library=confirmed_library,
+                policy=policy,
+            )
+            st.session_state["v03_evidence_library_json"] = (
+                confirmed_library.model_dump_json(indent=2)
+            )
+            st.session_state["v03_writing_handoff_json"] = handoff.model_dump_json(indent=2)
+            st.session_state["mvp_flash"] = "证据与写作章节已锁定，可以开始正文。"
+            st.session_state["mvp_navigation_request"] = "writing"
+            st.rerun()
+        with st.expander("导出证据库草案"):
+            st.download_button(
+                "下载证据库 JSON",
+                serialized,
+                file_name="v03_evidence_library_draft.json",
+                mime="application/json",
+                width="stretch",
+            )
+        return
+
+    handoff = V04WritingHandoff.model_validate_json(handoff_json)
+    st.success(
+        f"证据已就绪：{len(handoff.evidence_library.records)}篇文献、"
+        f"{len(handoff.evidence_library.evidence_cards)}张证据卡。"
+    )
+    if not include_writing:
+        if st.button("进入 V0.4 逐章写作", type="primary", width="stretch"):
+            st.session_state["mvp_navigation_request"] = "writing"
+            st.rerun()
+    with st.expander("导出写作交接包"):
         st.download_button(
-            "下载V0.4写作交接包",
+            "下载 V0.4 写作交接包",
             handoff_json,
             file_name="v04_writing_handoff.json",
             mime="application/json",
-            type="primary",
             width="stretch",
         )
-        if include_writing:
-            render_grounded_writing_console(handoff)
+    if include_writing:
+        render_grounded_writing_console(handoff)
 
 
 def _build_evidence_library(
@@ -509,29 +562,22 @@ def _build_evidence_library(
 
 
 def _render_library_summary(library: EvidenceLibrary) -> None:
-    metrics = st.columns(7)
+    metrics = st.columns(4)
     metrics[0].metric("文献总数", len(library.records))
     metrics[1].metric(
         "核心全文",
         sum(record.evidence_tier == "A_core" for record in library.records),
     )
-    metrics[2].metric(
-        "元数据文献",
-        sum(record.evidence_status == "metadata_verified" for record in library.records),
-    )
-    metrics[3].metric("证据卡", len(library.evidence_cards))
-    metrics[4].metric("阻塞项", len(library.unresolved_issues))
-    metrics[5].metric(
-        "完整提取 PDF",
-        sum(item.status == "complete" for item in library.extractions),
-    )
-    metrics[6].metric(
-        "完整页 / 送 LLM 页",
-        f"{len(library.pages)} / "
-        f"{sum(len(item.selected_page_numbers) for item in library.page_selections)}",
-    )
+    metrics[2].metric("证据卡", len(library.evidence_cards))
+    metrics[3].metric("阻塞项", len(library.unresolved_issues))
     if library.extractions:
         with st.expander("查看 PDF 全文提取与检索选页审计"):
+            st.caption(
+                f"完整提取 {sum(item.status == 'complete' for item in library.extractions)} 篇 · "
+                f"完整文本 {len(library.pages)} 页 · "
+                "送入 LLM "
+                f"{sum(len(item.selected_page_numbers) for item in library.page_selections)} 页"
+            )
             st.dataframe(
                 [
                     {
@@ -555,21 +601,26 @@ def _render_library_summary(library: EvidenceLibrary) -> None:
                 width="stretch",
             )
     if library.evidence_cards:
-        st.dataframe(
-            [
-                {
-                    "主题": card.theme_id,
-                    "类型": card.evidence_type,
-                    "结论": card.normalized_claim,
-                    "页码": "、".join(str(item.page_number) for item in card.supporting_quotes),
-                    "原文": " / ".join(item.exact_text for item in card.supporting_quotes),
-                    "DOI": card.doi,
-                }
-                for card in library.evidence_cards
-            ],
-            width="stretch",
-            hide_index=True,
-        )
+        with st.expander("查看全部证据卡"):
+            st.dataframe(
+                [
+                    {
+                        "主题": card.theme_id,
+                        "类型": card.evidence_type,
+                        "结论": card.normalized_claim,
+                        "页码": "、".join(
+                            str(item.page_number) for item in card.supporting_quotes
+                        ),
+                        "原文": " / ".join(
+                            item.exact_text for item in card.supporting_quotes
+                        ),
+                        "DOI": card.doi,
+                    }
+                    for card in library.evidence_cards
+                ],
+                width="stretch",
+                hide_index=True,
+            )
 
 
 def _target_words(confirmed: ConfirmedRequirementSpec) -> int:

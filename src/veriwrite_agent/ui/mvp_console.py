@@ -230,13 +230,12 @@ def render_project_sidebar(status: MvpProjectStatus) -> str:
     """Render project controls and return the selected stage id."""
 
     st.session_state.setdefault("mvp_project_id", str(uuid4()))
-    st.session_state.setdefault("mvp_project_name", "课程论文 MVP 测试")
+    st.session_state.setdefault("mvp_project_name", "未命名课程论文")
     st.session_state.setdefault("mvp_navigation", "overview")
 
     with st.sidebar:
         st.markdown("## VeriWrite MVP")
         st.text_input("项目名称", key="mvp_project_name")
-        st.caption(f"项目编号：{st.session_state['mvp_project_id'][:8]}")
         st.progress(status.progress, text=f"全链路完成 {status.progress:.0%}")
         selected = st.radio(
             "工作阶段",
@@ -245,39 +244,39 @@ def render_project_sidebar(status: MvpProjectStatus) -> str:
             key="mvp_navigation",
         )
 
-        st.divider()
-        snapshot = create_project_snapshot(st.session_state)
-        st.download_button(
-            "导出项目检查点",
-            snapshot.model_dump_json(indent=2),
-            file_name="veriwrite_mvp_project.json",
-            mime="application/json",
-            width="stretch",
-            help="保存已提取文本和各阶段 JSON；不会保存 API 密钥或原始上传文件。",
-        )
-        upload = st.file_uploader(
-            "恢复项目检查点",
-            type=["json"],
-            key="mvp_snapshot_upload",
-            label_visibility="collapsed",
-        )
-        if st.button(
-            "载入检查点",
-            disabled=upload is None,
-            width="stretch",
-        ):
-            try:
-                payload = upload.getvalue()
-                if len(payload) > 10 * 1024 * 1024:
-                    raise ValueError("项目检查点不能超过 10 MB")
-                restored = MvpProjectSnapshot.model_validate_json(payload)
-            except Exception as exc:
-                st.error(f"检查点无效：{exc}")
-            else:
-                _restore_snapshot(restored)
-                st.rerun()
+        with st.expander("项目与恢复"):
+            st.caption(f"项目编号：{st.session_state['mvp_project_id'][:8]}")
+            snapshot = create_project_snapshot(st.session_state)
+            st.download_button(
+                "导出检查点",
+                snapshot.model_dump_json(indent=2),
+                file_name="veriwrite_mvp_project.json",
+                mime="application/json",
+                width="stretch",
+                help="保存已提取文本和各阶段 JSON；不会保存 API 密钥或原始上传文件。",
+            )
+            upload = st.file_uploader(
+                "恢复检查点",
+                type=["json"],
+                key="mvp_snapshot_upload",
+            )
+            if st.button(
+                "载入检查点",
+                disabled=upload is None,
+                width="stretch",
+            ):
+                try:
+                    payload = upload.getvalue()
+                    if len(payload) > 10 * 1024 * 1024:
+                        raise ValueError("项目检查点不能超过 10 MB")
+                    restored = MvpProjectSnapshot.model_validate_json(payload)
+                except Exception as exc:
+                    st.error(f"检查点无效：{exc}")
+                else:
+                    _restore_snapshot(restored)
+                    st.rerun()
 
-        with st.expander("新建空白项目"):
+            st.divider()
             confirmed = st.checkbox("清除当前页面中的全部项目状态")
             if st.button("新建项目", disabled=not confirmed, width="stretch"):
                 st.session_state["mvp_reset_request"] = True
@@ -288,17 +287,13 @@ def render_project_sidebar(status: MvpProjectStatus) -> str:
 def render_mvp_overview(status: MvpProjectStatus) -> None:
     """Render the cross-stage dashboard and one clear next action."""
 
-    st.header("MVP 全链路总览")
-    st.caption(
-        "需求合同 → 真实文献 → 核心全文证据 → 逐章写作 → 最终论文。"
-        "每个阶段都保留输入、产物、阻塞原因和人工确认点。"
-    )
-    metrics = st.columns(4)
+    st.header("项目进度")
+    st.caption("需求 → 文献 → 全文证据 → 正文 → 最终论文")
+    metrics = st.columns(3)
     metrics[0].metric("总体进度", f"{status.progress:.0%}")
     metrics[1].metric("完成阶段", f"{status.completed_count}/{len(status.stages)}")
     metrics[2].metric("当前阻塞", len(status.blockers))
     final_complete = status.stages[-1].state == "complete"
-    metrics[3].metric("最终交付", "已确认" if final_complete else "尚未完成")
     st.progress(status.progress)
 
     icons = {
@@ -315,28 +310,38 @@ def render_mvp_overview(status: MvpProjectStatus) -> None:
         "blocked": "有阻塞",
         "complete": "已完成",
     }
-    for stage in status.stages:
-        with st.container(border=True):
-            left, right = st.columns([4, 1])
-            left.markdown(f"### {icons[stage.state]} {stage.title}")
-            left.caption(stage.summary)
-            right.markdown(f"**{labels[stage.state]}**")
-            if stage.blockers:
-                with st.expander(f"查看 {len(stage.blockers)} 个阻塞/异常"):
-                    for blocker in stage.blockers:
-                        st.markdown(f"- {blocker}")
-            st.caption(f"下一步：{stage.next_action}")
-
     next_stage = status.next_stage_id
     if final_complete:
         st.success("MVP 全链路已完成，可以在“最终交付”下载论文和审计包。")
-    elif st.button(
-        f"继续：{STAGE_LABELS[next_stage]}",
-        type="primary",
-        width="stretch",
-    ):
-        st.session_state["mvp_navigation_request"] = next_stage
-        st.rerun()
+        if st.button("查看最终交付", type="primary", width="stretch"):
+            st.session_state["mvp_navigation_request"] = "delivery"
+            st.rerun()
+    else:
+        current = next(stage for stage in status.stages if stage.stage_id == next_stage)
+        with st.container(border=True):
+            st.markdown(f"### {icons[current.state]} 现在做：{current.title}")
+            st.write(current.summary)
+            if current.blockers:
+                for blocker in current.blockers:
+                    st.error(blocker)
+            st.caption(current.next_action)
+        if st.button(
+            f"继续：{STAGE_LABELS[next_stage]}",
+            type="primary",
+            width="stretch",
+        ):
+            st.session_state["mvp_navigation_request"] = next_stage
+            st.rerun()
+
+    with st.expander("查看全部阶段"):
+        for stage in status.stages:
+            left, right = st.columns([4, 1])
+            left.markdown(f"**{icons[stage.state]} {stage.title}**")
+            left.caption(stage.summary)
+            right.caption(labels[stage.state])
+            if stage.blockers:
+                for blocker in stage.blockers:
+                    st.caption(f"! {blocker}")
 
 
 def render_locked_stage(stage: MvpStage, previous_stage_id: str) -> None:

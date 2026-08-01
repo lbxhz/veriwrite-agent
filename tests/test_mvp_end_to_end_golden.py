@@ -163,7 +163,9 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
         expected_policy=blueprint.requirement_policy,
     )
 
+    old_doi = "10.1000/gold.old"
     candidates = [
+        _candidate(old_doi, "Outdated atmospheric retrieval study", 1998),
         _candidate(DOIS[0], "Recent atmospheric retrieval background", 2025),
         _candidate(DOIS[1], "Comparison of satellite retrieval methods", 2024),
     ]
@@ -191,6 +193,14 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
     )
     assert literature.selection.target_reached is True
     assert len(literature.selection.selected) == 2
+    assert old_doi not in {item.doi for item in literature.selection.selected}
+    assert any(
+        diagnostic["exclusion_reason_counts"].get(
+            "publication_year_below_requirement",
+            0,
+        )
+        for diagnostic in literature.diagnostics
+    )
 
     records = []
     documents = []

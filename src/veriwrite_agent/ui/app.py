@@ -11,6 +11,7 @@ import streamlit as st
 
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.models.requirement_workflow import (
+    ConfirmedRequirementSpec,
     RequirementConfirmation,
     RequirementConflict,
     RequirementReviewPackage,
@@ -50,7 +51,6 @@ from veriwrite_agent.ui.workbench import (
     WorkbenchResult,
     built_in_samples,
     comparison_rows,
-    diagnostic_messages,
     prepare_review_from_path,
     prepare_review_from_text,
     prepare_review_from_uploads,
@@ -90,6 +90,9 @@ def run() -> None:
         "从课程要求到最终 DOCX 的可恢复 Agent 工作流 · "
         "LLM 负责语义任务，确定性代码负责合同、身份、引用与审计"
     )
+    flash_message = st.session_state.pop("mvp_flash", None)
+    if flash_message:
+        st.success(flash_message)
     if st.session_state.get("mvp_smoke_test"):
         st.info(
             "当前是快速全链路联通测试：目标仅为验证 V0.1→V0.4→最终交付能否跑通。"
@@ -170,39 +173,77 @@ def _render_runtime_recovery_offer() -> None:
 def render_requirement_console() -> None:
     """Render V0.1 as one independently navigable MVP stage."""
 
-    source_kind, selected_sample, uploaded_files, mode = _render_input_panel()
-    if st.button("开始分析", type="primary", width="stretch"):
-        try:
-            with st.spinner("正在提取文本并执行双路检查…"):
-                if source_kind == "内置样例":
-                    result = prepare_review_from_path(
-                        selected_sample.path,
-                        mode=mode,
-                    )
-                else:
-                    if not uploaded_files:
-                        st.error("请先上传要求文件。")
-                        st.stop()
-                    result = prepare_review_from_uploads(
-                        [
-                            (uploaded_file.name, uploaded_file.getvalue())
-                            for uploaded_file in uploaded_files
-                        ],
-                        mode=mode,
-                    )
-        except Exception as exc:
-            st.error(f"分析失败：{exc}")
-        else:
-            _store_result(result, mode=mode)
-            st.session_state["mvp_smoke_test"] = bool(
-                source_kind == "内置样例" and selected_sample.smoke_test
-            )
-            st.session_state.pop("confirmed_json", None)
-            clear_literature_state()
+    st.header("V0.1 确认课程要求")
+    if "confirmed_json" in st.session_state:
+        _render_confirmed_requirement()
+        return
 
-    if "review_json" in st.session_state:
+    has_review = "review_json" in st.session_state
+    input_container = st.expander("更换要求文件并重新分析") if has_review else st.container()
+    with input_container:
+        source_kind, selected_sample, uploaded_files, pasted_text, mode = _render_input_panel()
+        if st.button("分析课程要求", type="primary", width="stretch"):
+            try:
+                with st.spinner("正在提取文本并检查要求…"):
+                    if source_kind == "试用示例":
+                        result = prepare_review_from_path(
+                            selected_sample.path,
+                            mode=mode,
+                        )
+                    elif source_kind == "粘贴文本":
+                        result = prepare_review_from_text(
+                            pasted_text,
+                            mode=mode,
+                            source_name="粘贴的课程要求",
+                            source_format="text",
+                        )
+                    else:
+                        if not uploaded_files:
+                            st.error("请先上传要求文件。")
+                            st.stop()
+                        result = prepare_review_from_uploads(
+                            [
+                                (uploaded_file.name, uploaded_file.getvalue())
+                                for uploaded_file in uploaded_files
+                            ],
+                            mode=mode,
+                        )
+            except Exception as exc:
+                st.error(f"分析失败：{exc}")
+            else:
+                _store_result(result, mode=mode)
+                st.session_state["mvp_smoke_test"] = bool(
+                    source_kind == "试用示例" and selected_sample.smoke_test
+                )
+                st.session_state.pop("confirmed_json", None)
+                clear_literature_state()
+                st.rerun()
+
+    if has_review:
         result = _restore_result()
         _render_result(result)
+
+
+def _render_confirmed_requirement() -> None:
+    confirmed = ConfirmedRequirementSpec.model_validate_json(st.session_state["confirmed_json"])
+    st.success(f"课程要求已确认：{confirmed.requirement.topic or '未命名主题'}")
+    _render_requirement_facts(confirmed.requirement)
+    if confirmed.remaining_warnings:
+        with st.expander(f"查看 {len(confirmed.remaining_warnings)} 条已知提醒"):
+            for issue in confirmed.remaining_warnings:
+                st.markdown(f"- {issue.message}")
+    if st.button("进入 V0.2 文献检索", type="primary", width="stretch"):
+        st.session_state["mvp_navigation_request"] = "literature"
+        st.rerun()
+    with st.expander("技术产物"):
+        st.download_button(
+            "下载确认后的 RequirementSpec",
+            st.session_state["confirmed_json"],
+            file_name="confirmed_requirement_spec.json",
+            mime="application/json",
+            width="stretch",
+        )
+        st.json(json.loads(st.session_state["confirmed_json"]))
 
 
 def _restore_literature_selection() -> BalancedLiteratureSelection:
@@ -210,23 +251,30 @@ def _restore_literature_selection() -> BalancedLiteratureSelection:
     return BalancedLiteratureSelection.model_validate(payload["selection"])
 
 
-def _render_input_panel() -> tuple[str, Any, Any, str]:
-    st.subheader("1. 选择输入与解析方式")
-    left, right = st.columns([1.2, 1])
+def _render_input_panel() -> tuple[str, Any, Any, str, str]:
+    st.subheader("提供课程要求")
+    left, right = st.columns([1.4, 1])
     samples = built_in_samples()
     with left:
         source_kind = st.radio(
             "要求来源",
-            ["内置样例", "上传文件"],
+            ["上传文件", "粘贴文本", "试用示例"],
             horizontal=True,
         )
         selected_sample = samples[0]
         uploaded_files = []
-        if source_kind == "内置样例":
+        pasted_text = ""
+        if source_kind == "试用示例":
             labels = [sample.label for sample in samples]
             label = st.selectbox("测试样例", labels)
             selected_sample = next(sample for sample in samples if sample.label == label)
             st.caption(selected_sample.focus)
+        elif source_kind == "粘贴文本":
+            pasted_text = st.text_area(
+                "粘贴老师发布的课程要求",
+                height=220,
+                placeholder="粘贴题目、篇幅、参考文献、格式、截止时间等要求……",
+            )
         else:
             uploaded_files = (
                 st.file_uploader(
@@ -270,72 +318,65 @@ def _render_input_panel() -> tuple[str, Any, Any, str]:
                     width=240,
                 )
     with right:
+        try:
+            summary = LLMSettings().public_summary()
+        except Exception:
+            summary = None
         mode_label = st.radio(
-            "解析模式",
-            ["规则模式", "规则 + DeepSeek 双路模式"],
+            "理解方式",
+            ["仅规则解析", "规则 + DeepSeek 交叉检查"],
+            index=1 if summary is not None else 0,
+            help="交叉检查更适合真实课程要求；仅规则解析用于离线调试。",
         )
         mode = "dual" if "DeepSeek" in mode_label else "rule"
         if mode == "dual":
-            try:
-                summary = LLMSettings().public_summary()
-            except Exception as exc:
-                st.error(f"DeepSeek 配置不可用：{exc}")
-            else:
+            if summary is not None:
                 st.success(f"已配置模型：{summary['model']} · 将产生一次 API 调用")
+            else:
+                st.error("DeepSeek 配置不可用，请先使用仅规则解析或补充环境配置。")
         else:
-            st.info("不联网、不产生费用；适合建立稳定基线。")
-    return source_kind, selected_sample, uploaded_files, mode
+            st.info("离线解析，不产生 API 费用。")
+    return source_kind, selected_sample, uploaded_files, pasted_text, mode
 
 
 def _render_result(result: WorkbenchResult) -> None:
     review = result.review
     st.divider()
-    st.subheader("2. 本次运行概览")
-    metrics = st.columns(6)
-    metrics[0].metric("输入格式", result.source_format.upper().lstrip("."))
-    extraction_label = {
-        "native": "原生文本",
-        "ocr": "本地 OCR",
-        "mixed": "文本 + OCR",
-    }.get(result.extraction_method, result.extraction_method)
-    metrics[1].metric("提取方式", extraction_label)
-    metrics[2].metric("提取字符", len(result.extracted_text))
-    llm_label = "未启用"
-    if review.llm_run is not None:
-        llm_label = "成功" if review.llm_run.status == "succeeded" else "失败"
-    metrics[3].metric("LLM 路径", llm_label)
-    metrics[4].metric("冲突", len(review.reconciliation.conflicts))
-    metrics[5].metric("阻塞项", review.completeness.blocking_count)
-    st.caption(f"总耗时：{result.elapsed_seconds:.1f} 秒")
-    if result.source_count > 1:
-        st.caption(f"本次按顺序合并了 {result.source_count} 个输入文件。")
-
-    if result.ocr_average_confidence is not None:
-        st.info(
-            f"OCR 平均置信度：{result.ocr_average_confidence:.1%}。"
-            "置信度是模型自评，不等于文字一定正确；"
-            "DeepSeek 只接收 OCR 后的文本，不接收原始图片。"
-        )
+    st.subheader("核对需要执行的要求")
     for warning in result.extraction_warnings:
         st.warning(warning)
 
     if review.status == "needs_resolution":
-        st.warning("当前结果需要用户处理后才能交给 V0.2。")
+        st.warning("还有关键字段需要处理，完成下方项目后才能检索文献。")
     else:
-        st.success("当前结果可以进入最终确认。")
+        st.success("没有关键冲突，请核对主题和默认值后继续。")
 
-    tab_summary, tab_compare, tab_issues, tab_confirm, tab_raw = st.tabs(
-        ["关键结果", "双路对照", "冲突与问题", "用户确认", "原文与 JSON"]
-    )
-    with tab_summary:
-        _render_summary(review)
-    with tab_compare:
+    _render_summary(review)
+    _render_confirmation(review)
+
+    with st.expander("解析详情与校对"):
+        extraction_label = {
+            "native": "原生文本",
+            "ocr": "本地 OCR",
+            "mixed": "文本 + OCR",
+        }.get(result.extraction_method, result.extraction_method)
+        llm_label = "未启用"
+        if review.llm_run is not None:
+            llm_label = "成功" if review.llm_run.status == "succeeded" else "失败"
+        st.caption(
+            f"{result.source_format.upper().lstrip('.')} · {extraction_label} · "
+            f"{len(result.extracted_text)} 字符 · LLM {llm_label} · "
+            f"{result.elapsed_seconds:.1f} 秒"
+        )
+        if result.source_count > 1:
+            st.caption(f"已按顺序合并 {result.source_count} 个输入文件。")
+        if result.ocr_average_confidence is not None:
+            st.info(
+                f"OCR 平均置信度：{result.ocr_average_confidence:.1%}。"
+                "如原文有扫描页，请重点校对关键数字和日期。"
+            )
         _render_comparison(review)
-    with tab_issues:
         _render_issues(review)
-    with tab_confirm:
-        _render_confirmation(review)
-    with tab_raw:
         st.markdown("#### 可校对的提取文本")
         st.caption("OCR 置信度高也可能漏字符。可直接修正文字，再按修正版重新执行规则与 LLM。")
         st.session_state.setdefault("editable_extracted_text", result.extracted_text)
@@ -370,13 +411,14 @@ def _render_result(result: WorkbenchResult) -> None:
                 st.rerun()
         with st.expander("查看完整审查 JSON"):
             st.json(json.loads(review.model_dump_json()))
-
-    _render_downloads(review)
+        _render_downloads(review)
 
 
 def _render_summary(review: RequirementReviewPackage) -> None:
-    spec = review.reconciliation.merged_spec
-    st.markdown("#### 合并后的临时要求")
+    _render_requirement_facts(review.reconciliation.merged_spec)
+
+
+def _render_requirement_facts(spec) -> None:
     length_value = "未规定"
     if spec.length.minimum_words is not None:
         length_value = f"{spec.length.minimum_words}–{spec.length.maximum_words or '待确认'} 单词"
@@ -412,7 +454,7 @@ def _render_summary(review: RequirementReviewPackage) -> None:
     st.dataframe(rows, width="stretch", hide_index=True)
 
     if spec.profiles:
-        st.markdown("#### 可选教师 / 方向")
+        st.markdown("**可选教师 / 方向**")
         st.dataframe(
             [
                 {
@@ -433,21 +475,6 @@ def _render_summary(review: RequirementReviewPackage) -> None:
             width="stretch",
             hide_index=True,
         )
-
-    advantages, problems = diagnostic_messages(review)
-    left, right = st.columns(2)
-    with left:
-        st.markdown("#### 已体现的优势")
-        for item in advantages:
-            st.markdown(f"- {item}")
-    with right:
-        st.markdown("#### 暴露的问题")
-        if problems:
-            for item in problems:
-                st.markdown(f"- {item}")
-        else:
-            st.markdown("- 本次运行没有发现遗留问题。")
-
 
 def _render_comparison(review: RequirementReviewPackage) -> None:
     st.markdown("#### 规则与 LLM 候选结果")
@@ -512,7 +539,8 @@ def _render_issues(review: RequirementReviewPackage) -> None:
 
 
 def _render_confirmation(review: RequirementReviewPackage) -> None:
-    st.caption("用户可以选择规则值、LLM 值、两边并集，或填写自定义 JSON。")
+    st.markdown("#### 需要你决定的内容")
+    st.caption("系统只要求确认会改变后续检索或交付结果的字段。")
     spec = review.reconciliation.merged_spec
     selected_profile_id = None
     selected_profile = None
@@ -536,37 +564,63 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
         )
 
     with st.form("requirement_confirmation"):
-        confirmed_by = st.text_input("确认人", value="student")
         topic = st.text_input(
-            "确认或细化后的研究主题",
+            "研究主题",
             value=(selected_profile.topic if selected_profile is not None else spec.topic or ""),
             key=f"confirmed_topic_{selected_profile_id or 'single'}",
         )
         bibliography_style = st.text_input(
-            "参考文献著录标准（可留空并确认待定）",
-            value=(
-                ""
-                if spec.references.bibliography_style == "pending_confirmation"
-                else spec.references.bibliography_style
-            ),
+            "参考文献格式",
+            value=_default_bibliography_style(spec),
+            help="课程未明确规定时，系统会按论文语言给出可修改的常用默认值。",
         )
-        counting_options = [
-            "待确认",
-            "按原文：英文单词",
-            "中文字符 + 英文单词",
-        ]
+        language_options = {
+            "中文": "Chinese",
+            "英文": "English",
+            "中英双语": "bilingual",
+        }
+        current_language = next(
+            (
+                label
+                for label, value in language_options.items()
+                if value == spec.output_language
+            ),
+            "中文",
+        )
+        language_label = st.selectbox(
+            "成文语言",
+            list(language_options),
+            index=list(language_options).index(current_language),
+        )
+        counting_options = ["按原文：英文单词", "中文字符 + 英文单词"]
         current_counting = {
             "words": "按原文：英文单词",
             "chinese_chars_and_english_words": "中文字符 + 英文单词",
-        }.get(spec.length.counting_policy, "待确认")
+        }.get(
+            spec.length.counting_policy,
+            "按原文：英文单词"
+            if language_options[language_label] == "English"
+            else "中文字符 + 英文单词",
+        )
         counting_label = st.selectbox(
             "字数统计口径",
             counting_options,
             index=counting_options.index(current_counting),
         )
 
+        controlled_fields = {
+            "topic",
+            "output_language",
+            "references.bibliography_style",
+            "length.counting_policy",
+        }
         conflict_choices: dict[str, tuple[str, str]] = {}
-        for index, conflict in enumerate(review.reconciliation.conflicts):
+        remaining_conflicts = [
+            conflict
+            for conflict in review.reconciliation.conflicts
+            if conflict.field not in controlled_fields
+        ]
+        for index, conflict in enumerate(remaining_conflicts):
             st.markdown(f"**冲突：`{conflict.field}`**")
             rule_column, llm_column = st.columns(2)
             rule_column.caption("规则结果")
@@ -599,24 +653,17 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
             )
             conflict_choices[conflict.field] = (choice, custom)
 
-        acknowledgements: dict[str, bool] = {}
-        for issue in review.completeness.issues:
-            if not issue.requires_user_confirmation:
-                continue
-            if issue.issue_id == "missing_topic" or issue.issue_id.startswith(
-                "unresolved_conflict:"
-            ):
-                continue
-            if issue.issue_id == "missing_selected_profile":
-                continue
-            acknowledgements[issue.issue_id] = st.checkbox(
-                f"我已知悉：{issue.message}",
-                key=f"ack_{issue.issue_id}",
-            )
-
-        note = st.text_area("确认说明（可选）")
+        warnings = [
+            issue.message
+            for issue in review.completeness.issues
+            if issue.severity == "warning" and issue.requires_user_confirmation
+        ]
+        if warnings:
+            st.caption("点击继续表示接受仍未在课程文件中明确的默认项：")
+            for message in warnings:
+                st.caption(f"• {message}")
         submitted = st.form_submit_button(
-            "验证并生成最终版本",
+            "确认要求并进入文献检索",
             type="primary",
             width="stretch",
         )
@@ -627,17 +674,19 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
                 review,
                 topic,
                 bibliography_style,
+                language_options[language_label],
                 counting_label,
                 conflict_choices,
                 selected_profile_id=selected_profile_id,
             )
             confirmation = RequirementConfirmation(
-                confirmed_by=confirmed_by,
+                confirmed_by="student",
                 field_updates=updates,
                 acknowledged_issue_ids=[
-                    issue_id for issue_id, checked in acknowledgements.items() if checked
+                    issue.issue_id
+                    for issue in review.completeness.issues
+                    if issue.requires_user_confirmation
                 ],
-                note=note or None,
             )
             confirmed = RequirementConfirmationService().confirm(
                 review,
@@ -648,14 +697,16 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
         else:
             clear_literature_state()
             st.session_state["confirmed_json"] = confirmed.model_dump_json(indent=2)
-            st.success("最终需求版本已通过数据合同和完整性检查。")
-            st.json(json.loads(st.session_state["confirmed_json"]))
+            st.session_state["mvp_flash"] = "课程要求已确认，正在准备检索方案。"
+            st.session_state["mvp_navigation_request"] = "literature"
+            st.rerun()
 
 
 def _build_updates(
     review: RequirementReviewPackage,
     topic: str,
     bibliography_style: str,
+    output_language: str,
     counting_label: str,
     conflict_choices: dict[str, tuple[str, str]],
     *,
@@ -668,6 +719,7 @@ def _build_updates(
         updates["topic"] = topic.strip()
     if bibliography_style.strip():
         updates["references.bibliography_style"] = bibliography_style.strip()
+    updates["output_language"] = output_language
     if counting_label == "中文字符 + 英文单词":
         updates["length.counting_policy"] = "chinese_chars_and_english_words"
     elif counting_label == "按原文：英文单词":
@@ -692,6 +744,13 @@ def _build_updates(
                 raise ValueError(f"{field} 需要填写自定义 JSON。")
             updates[field] = json.loads(custom)
     return updates
+
+
+def _default_bibliography_style(spec) -> str:
+    style = spec.references.bibliography_style
+    if style != "pending_confirmation":
+        return style
+    return "APA 7" if spec.output_language == "English" else "GB/T 7714—2015"
 
 
 def conflict_resolution_options(
