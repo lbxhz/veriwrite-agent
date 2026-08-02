@@ -118,7 +118,9 @@ def render_grounded_writing_console(
                 ).draft(packet)
                 project = WritingProjectService().save_draft(project, draft)
         except Exception as exc:
-            st.error(f"本章生成失败：{exc}")
+            st.error(_friendly_writing_error(exc))
+            with st.expander("技术详情"):
+                st.code(str(exc))
         else:
             _store_project(project)
             st.rerun()
@@ -157,6 +159,21 @@ def _load_or_start_project(
 
 def _store_project(project: V04WritingProject) -> None:
     st.session_state[V04_PROJECT_KEY] = project.model_dump_json(indent=2)
+
+
+def _friendly_writing_error(exc: Exception) -> str:
+    detail = str(exc)
+    if "support repair" in detail:
+        return (
+            "正文已经生成，但证据绑定自动修复后仍未通过审计。"
+            "系统没有保存这份草稿，请重新生成本章。"
+        )
+    if "V0.4 data contract" in detail or "declared source support" in detail:
+        return (
+            "模型返回的段落结构或证据声明不完整，系统没有保存不合规草稿。"
+            "请重新生成本章。"
+        )
+    return f"本章生成中断：{detail}"
 
 
 def _render_packet(packet) -> None:

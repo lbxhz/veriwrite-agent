@@ -96,8 +96,8 @@ class SectionEvidencePacket(StrictModel):
         return self
 
 
-class DraftParagraphProposal(StrictModel):
-    """LLM prose proposal without authority to create citations."""
+class DraftParagraphContent(StrictModel):
+    """LLM prose and tentative support before support completeness validation."""
 
     role: ParagraphRole
     text: str = Field(min_length=1)
@@ -116,12 +116,63 @@ class DraftParagraphProposal(StrictModel):
     def normalize_dois(cls, values: list[str]) -> list[str]:
         return [canonicalize_doi(value) for value in values]
 
+
+class DraftParagraphProposal(DraftParagraphContent):
+    """LLM prose proposal without authority to create citations."""
+
     @model_validator(mode="after")
     def paragraph_needs_declared_support(self) -> DraftParagraphProposal:
         if not self.evidence_card_ids and not self.source_dois:
             raise ValueError("every paragraph requires declared source support")
         if self.role == "detailed_evidence" and not self.evidence_card_ids:
             raise ValueError("detailed_evidence paragraphs require evidence cards")
+        return self
+
+
+class UnboundSectionDraftProposal(StrictModel):
+    """Parse valid prose even when its support declarations need repair."""
+
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    paragraphs: list[DraftParagraphContent] = Field(min_length=1, max_length=20)
+
+
+class ParagraphSupportBinding(StrictModel):
+    """One repair-only LLM response that cannot alter paragraph prose."""
+
+    paragraph_number: int = Field(ge=1)
+    evidence_card_ids: list[str] = Field(default_factory=list)
+    source_dois: list[str] = Field(default_factory=list)
+
+    @field_validator("evidence_card_ids", "source_dois", mode="after")
+    @classmethod
+    def values_must_be_unique(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("paragraph support identifiers must be unique")
+        return values
+
+    @field_validator("source_dois")
+    @classmethod
+    def normalize_dois(cls, values: list[str]) -> list[str]:
+        return [canonicalize_doi(value) for value in values]
+
+    @model_validator(mode="after")
+    def support_cannot_be_empty(self) -> ParagraphSupportBinding:
+        if not self.evidence_card_ids and not self.source_dois:
+            raise ValueError("support repair cannot leave a paragraph unbound")
+        return self
+
+
+class SectionSupportBindingBatch(StrictModel):
+    """Repair-only bindings for every paragraph in one immutable draft."""
+
+    section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    bindings: list[ParagraphSupportBinding] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def paragraph_numbers_must_be_unique(self) -> SectionSupportBindingBatch:
+        numbers = [binding.paragraph_number for binding in self.bindings]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("support repair paragraph numbers must be unique")
         return self
 
 

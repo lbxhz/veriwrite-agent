@@ -13,13 +13,17 @@ from veriwrite_agent.models.evidence import EvidenceCard, LiteratureLibraryRecor
 from veriwrite_agent.models.writing import (
     BodyDraftPackage,
     CitationBinding,
+    DraftParagraphContent,
     DraftParagraphProposal,
+    ParagraphSupportBinding,
     SectionDraft,
     SectionDraftIssue,
     SectionDraftProposal,
     SectionEvidenceItem,
     SectionEvidencePacket,
     SectionSourceRecord,
+    SectionSupportBindingBatch,
+    UnboundSectionDraftProposal,
     V04WritingProject,
     WritingSectionState,
 )
@@ -141,8 +145,13 @@ class LLMGroundedSectionWriter:
                         "citation markers in paragraph text; the application adds them. "
                         "Every paragraph must declare the exact evidence_card_ids and/or "
                         "source_dois it uses. detailed_evidence paragraphs require "
-                        "full-text evidence cards. Metadata-only B sources may support "
-                        "general section claims; C sources are background only. Group "
+                        "at least one full-text evidence card; a DOI alone is not enough. "
+                        "Never leave both support arrays empty, including for synthesis. "
+                        "Use detailed_evidence only when the paragraph is grounded in "
+                        "the attached evidence cards. Do not state specific numbers, "
+                        "results, or methods from metadata-only sources. "
+                        "Metadata-only B sources may support general section claims; "
+                        "C sources are background only. Group "
                         "literature by problem, method, trend, limitation, or comparison "
                         "instead of listing one paper per paragraph. Use a restrained "
                         "academic style and stay close to the target word count. "
@@ -162,15 +171,169 @@ class LLMGroundedSectionWriter:
         try:
             proposal = SectionDraftProposal.model_validate_json(raw)
         except ValidationError as exc:
-            raise GroundedWritingError(
-                "LLM section output violates the V0.4 data contract: "
-                f"{exc.errors(include_url=False)[:8]}"
-            ) from exc
+            if not _only_missing_support_errors(exc):
+                raise GroundedWritingError(
+                    "LLM section output violates the V0.4 data contract: "
+                    f"{_validation_error_summary(exc)}"
+                ) from exc
+            proposal = self._repair_support_bindings(packet, raw, exc)
         if proposal.section_id != packet.section_id:
             raise GroundedWritingError(
                 "LLM changed the confirmed section_id"
             )
         return GroundedSectionDraftService().create(packet, proposal)
+
+    def _repair_support_bindings(
+        self,
+        packet: SectionEvidencePacket,
+        raw: str,
+        validation_error: ValidationError,
+    ) -> SectionDraftProposal:
+        try:
+            unbound = UnboundSectionDraftProposal.model_validate_json(raw)
+        except ValidationError as exc:
+            raise GroundedWritingError(
+                "LLM prose could not be preserved for support repair: "
+                f"{_validation_error_summary(exc)}"
+            ) from exc
+        if unbound.section_id != packet.section_id:
+            raise GroundedWritingError("LLM changed the confirmed section_id")
+
+        repair_numbers = _support_error_paragraph_numbers(validation_error)
+
+        schema = json.dumps(
+            SectionSupportBindingBatch.model_json_schema(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        repair_payload = {
+            "section_id": unbound.section_id,
+            "paragraphs": [
+                {
+                    "paragraph_number": number,
+                    "role": paragraph.role,
+                    "text": paragraph.text,
+                    "current_evidence_card_ids": paragraph.evidence_card_ids,
+                    "current_source_dois": paragraph.source_dois,
+                }
+                for number, paragraph in enumerate(unbound.paragraphs, 1)
+                if number in repair_numbers
+            ],
+            "allowed_evidence_items": [
+                item.model_dump(mode="json") for item in packet.evidence_items
+            ],
+            "allowed_sources": [
+                source.model_dump(mode="json") for source in packet.sources
+            ],
+        }
+        repaired_raw = self._client.complete(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You repair evidence bindings for an immutable scholarly draft. "
+                        "Return JSON only and do not return or rewrite paragraph text. "
+                        "Return exactly one binding for every supplied paragraph_number. "
+                        "Existing valid paragraph bindings are code-owned and immutable. Use only "
+                        "evidence_card_ids and source_dois from the supplied allowlists. "
+                        "Every paragraph needs at least one declared support identifier. "
+                        "A detailed_evidence paragraph must include at least one evidence "
+                        "card whose normalized claim or exact quote supports that paragraph. "
+                        "General synthesis may use source_dois, but must still declare its "
+                        "sources. Do not guess when the packet lacks support. "
+                        f"The response must satisfy this JSON Schema: {schema}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(repair_payload, ensure_ascii=False),
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+        try:
+            repaired = SectionSupportBindingBatch.model_validate_json(repaired_raw)
+        except ValidationError as exc:
+            raise GroundedWritingError(
+                "LLM support repair still violates the V0.4 data contract: "
+                f"{_validation_error_summary(exc)}"
+            ) from exc
+        if repaired.section_id != packet.section_id:
+            raise GroundedWritingError("LLM support repair changed the confirmed section_id")
+
+        bindings = {binding.paragraph_number: binding for binding in repaired.bindings}
+        if set(bindings) != repair_numbers:
+            raise GroundedWritingError(
+                "LLM support repair did not bind every paragraph exactly once"
+            )
+
+        try:
+            paragraphs = [
+                (
+                    _bind_paragraph_support(paragraph, bindings[number])
+                    if number in bindings
+                    else DraftParagraphProposal.model_validate(
+                        paragraph.model_dump(mode="python")
+                    )
+                )
+                for number, paragraph in enumerate(unbound.paragraphs, 1)
+            ]
+            return SectionDraftProposal(
+                section_id=unbound.section_id,
+                paragraphs=paragraphs,
+            )
+        except ValidationError as exc:
+            raise GroundedWritingError(
+                "LLM support repair left invalid paragraph bindings: "
+                f"{_validation_error_summary(exc)}"
+            ) from exc
+
+
+def _only_missing_support_errors(exc: ValidationError) -> bool:
+    allowed_messages = {
+        "Value error, every paragraph requires declared source support",
+        "Value error, detailed_evidence paragraphs require evidence cards",
+    }
+    errors = exc.errors(include_url=False)
+    return bool(errors) and all(
+        error.get("msg") in allowed_messages
+        and tuple(error.get("loc", ()))[:1] == ("paragraphs",)
+        for error in errors
+    )
+
+
+def _validation_error_summary(exc: ValidationError) -> list[dict[str, object]]:
+    """Keep UI errors useful without echoing entire generated paragraphs."""
+
+    return [
+        {
+            "location": ".".join(str(item) for item in error.get("loc", ())),
+            "message": error.get("msg", "validation failed"),
+        }
+        for error in exc.errors(include_url=False)[:8]
+    ]
+
+
+def _support_error_paragraph_numbers(exc: ValidationError) -> set[int]:
+    return {
+        int(error["loc"][1]) + 1
+        for error in exc.errors(include_url=False)
+        if len(error.get("loc", ())) >= 2
+        and error["loc"][0] == "paragraphs"
+        and isinstance(error["loc"][1], int)
+    }
+
+
+def _bind_paragraph_support(
+    paragraph: DraftParagraphContent,
+    binding: ParagraphSupportBinding,
+) -> DraftParagraphProposal:
+    return DraftParagraphProposal(
+        role=paragraph.role,
+        text=paragraph.text,
+        evidence_card_ids=binding.evidence_card_ids,
+        source_dois=binding.source_dois,
+    )
 
 
 class GroundedSectionDraftService:

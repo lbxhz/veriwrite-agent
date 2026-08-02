@@ -38,6 +38,26 @@ SHA = "a" * 64
 EVIDENCE_ID = "ev_method_direct_001"
 
 
+class SequenceLLMClient:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = list(responses)
+        self.calls: list[dict[str, object]] = []
+
+    def complete(
+        self,
+        messages,
+        *,
+        response_format: dict[str, str] | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "messages": list(messages),
+                "response_format": response_format,
+            }
+        )
+        return self.responses.pop(0)
+
+
 def handoff() -> V04WritingHandoff:
     document = DocumentAcquisition(
         doi=DOI,
@@ -206,6 +226,150 @@ def test_llm_writes_prose_but_code_adds_citation_and_page() -> None:
     assert draft.citations[0].doi == DOI
     assert draft.citations[0].page_numbers == [4]
     assert client.calls[0]["response_format"] == {"type": "json_object"}
+    system_prompt = client.calls[0]["messages"][0]["content"]
+    assert "Do not state specific numbers" in system_prompt
+
+
+def test_writer_repairs_missing_support_without_rewriting_prose() -> None:
+    packet = SectionEvidencePacketBuilder().build(handoff(), "method")
+    detailed_text = "The retrieval model reduces regional uncertainty."
+    synthesis_text = "Together, the studies motivate regional retrieval workflows."
+    valid_text = "The verified result provides direct regional evidence."
+    unbound_response = json.dumps(
+        {
+            "section_id": "method",
+            "paragraphs": [
+                {
+                    "role": "detailed_evidence",
+                    "text": detailed_text,
+                    "evidence_card_ids": [],
+                    "source_dois": [DOI],
+                },
+                {
+                    "role": "synthesis",
+                    "text": synthesis_text,
+                    "evidence_card_ids": [],
+                    "source_dois": [],
+                },
+                {
+                    "role": "detailed_evidence",
+                    "text": valid_text,
+                    "evidence_card_ids": [EVIDENCE_ID],
+                    "source_dois": [],
+                },
+            ],
+        }
+    )
+    repair_response = json.dumps(
+        {
+            "section_id": "method",
+            "bindings": [
+                {
+                    "paragraph_number": 1,
+                    "evidence_card_ids": [EVIDENCE_ID],
+                    "source_dois": [],
+                },
+                {
+                    "paragraph_number": 2,
+                    "evidence_card_ids": [],
+                    "source_dois": [SUPPORTING_DOI],
+                },
+            ],
+        }
+    )
+    client = SequenceLLMClient([unbound_response, repair_response])
+
+    draft = LLMGroundedSectionWriter(client).draft(packet)
+
+    assert len(client.calls) == 2
+    assert [paragraph.text for paragraph in draft.paragraphs] == [
+        detailed_text,
+        synthesis_text,
+        valid_text,
+    ]
+    assert draft.paragraphs[0].evidence_card_ids == [EVIDENCE_ID]
+    assert draft.paragraphs[1].source_dois == [SUPPORTING_DOI]
+    assert draft.paragraphs[2].evidence_card_ids == [EVIDENCE_ID]
+    assert draft.status == "draft"
+    assert "[@sun2025_core1, p. 4]" in draft.markdown
+    repair_prompt = client.calls[1]["messages"][0]["content"]
+    assert "do not return or rewrite paragraph text" in repair_prompt
+    repair_payload = json.loads(client.calls[1]["messages"][1]["content"])
+    assert [item["paragraph_number"] for item in repair_payload["paragraphs"]] == [1, 2]
+
+
+def test_repaired_unknown_evidence_id_remains_blocking() -> None:
+    packet = SectionEvidencePacketBuilder().build(handoff(), "method")
+    unbound_response = json.dumps(
+        {
+            "section_id": "method",
+            "paragraphs": [
+                {
+                    "role": "detailed_evidence",
+                    "text": "The retrieval model reduces regional uncertainty.",
+                    "evidence_card_ids": [],
+                    "source_dois": [DOI],
+                }
+            ],
+        }
+    )
+    repair_response = json.dumps(
+        {
+            "section_id": "method",
+            "bindings": [
+                {
+                    "paragraph_number": 1,
+                    "evidence_card_ids": ["ev_method_unknown_001"],
+                    "source_dois": [],
+                }
+            ],
+        }
+    )
+    client = SequenceLLMClient([unbound_response, repair_response])
+
+    draft = LLMGroundedSectionWriter(client).draft(packet)
+
+    assert draft.status == "needs_review"
+    assert any(issue.code == "unknown_evidence_card" for issue in draft.issues)
+
+
+def test_support_repair_must_bind_every_paragraph() -> None:
+    packet = SectionEvidencePacketBuilder().build(handoff(), "method")
+    unbound_response = json.dumps(
+        {
+            "section_id": "method",
+            "paragraphs": [
+                {
+                    "role": "detailed_evidence",
+                    "text": "The retrieval model reduces regional uncertainty.",
+                    "evidence_card_ids": [],
+                    "source_dois": [DOI],
+                },
+                {
+                    "role": "synthesis",
+                    "text": "The evidence supports further regional evaluation.",
+                    "evidence_card_ids": [],
+                    "source_dois": [],
+                },
+            ],
+        }
+    )
+    incomplete_repair = json.dumps(
+        {
+            "section_id": "method",
+            "bindings": [
+                {
+                    "paragraph_number": 1,
+                    "evidence_card_ids": [EVIDENCE_ID],
+                    "source_dois": [],
+                }
+            ],
+        }
+    )
+    client = SequenceLLMClient([unbound_response, incomplete_repair])
+
+    with pytest.raises(GroundedWritingError, match="every paragraph exactly once"):
+        LLMGroundedSectionWriter(client).draft(packet)
 
 
 def test_confirmed_ai_policy_blocks_provider_call_but_keeps_evidence_packet() -> None:
