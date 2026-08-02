@@ -161,6 +161,7 @@ class LLMEvidenceCardExtractor:
                         "future_work. normalized_claim may summarize only what the "
                         "selected passages support. Return no selection when evidence "
                         "is unclear. "
+                        "Each selection must contain 1 to 3 unique passage_ids. "
                         f"Return at most {self._max_cards_per_batch} selections. "
                         f"The output must satisfy this JSON Schema: {schema}"
                     ),
@@ -173,7 +174,15 @@ class LLMEvidenceCardExtractor:
             response_format={"type": "json_object"},
         )
         try:
-            parsed = EvidencePassageSelectionBatch.model_validate_json(raw)
+            payload = json.loads(raw)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise EvidenceCardExtractionError(
+                f"LLM evidence output is not valid JSON: {exc}"
+            ) from exc
+        try:
+            parsed = EvidencePassageSelectionBatch.model_validate(
+                _normalize_passage_ids(payload)
+            )
         except ValidationError as exc:
             raise EvidenceCardExtractionError(
                 "LLM evidence output violates the data contract: "
@@ -261,3 +270,47 @@ def _build_passages(
                 )
             )
     return passages
+
+
+def _normalize_passage_ids(payload: object) -> object:
+    """Repair only safe cardinality errors without inventing source authority.
+
+    Providers occasionally repeat a selected passage or return four IDs even
+    though the schema permits three. Keeping the first three unique string IDs
+    is deterministic and does not weaken the later unknown-ID or PDF-grounding
+    checks. All other malformed values remain untouched for Pydantic to reject.
+    """
+
+    if not isinstance(payload, dict):
+        return payload
+    selections = payload.get("selections")
+    if not isinstance(selections, list):
+        return payload
+
+    normalized_payload = dict(payload)
+    normalized_selections = []
+    for selection in selections:
+        if not isinstance(selection, dict):
+            normalized_selections.append(selection)
+            continue
+        passage_ids = selection.get("passage_ids")
+        if not isinstance(passage_ids, list):
+            normalized_selections.append(selection)
+            continue
+
+        normalized_ids: list[object] = []
+        seen_strings: set[str] = set()
+        for passage_id in passage_ids:
+            if isinstance(passage_id, str):
+                if passage_id in seen_strings:
+                    continue
+                seen_strings.add(passage_id)
+            normalized_ids.append(passage_id)
+            if len(normalized_ids) == 3:
+                break
+        normalized_selection = dict(selection)
+        normalized_selection["passage_ids"] = normalized_ids
+        normalized_selections.append(normalized_selection)
+
+    normalized_payload["selections"] = normalized_selections
+    return normalized_payload

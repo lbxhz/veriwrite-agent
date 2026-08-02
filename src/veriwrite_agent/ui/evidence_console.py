@@ -340,8 +340,41 @@ def _render_evidence_pipeline(
     )
     blockers = [*library.unresolved_issues, *outline.unresolved_gaps]
     if blockers:
-        st.error("当前V0.3仍是草案，不能交给V0.4。请补充缺失核心PDF、OCR或证据卡。")
-        with st.expander("查看阻塞项"):
+        extraction_failures = [
+            issue
+            for issue in library.unresolved_issues
+            if issue.startswith("evidence_extraction_failed:")
+        ]
+        st.error(
+            f"当前还有 {len(blockers)} 个问题，暂时不能进入 V0.4。"
+            "系统会保留已经成功的全文和证据卡。"
+        )
+        if extraction_failures:
+            st.warning(
+                f"其中 {len(extraction_failures)} 篇论文的证据归类输出未通过格式检查。"
+                "这通常不是 PDF 问题，可以直接重试失败文献。"
+            )
+            if st.button(
+                "重新提取失败文献",
+                type="primary",
+                width="stretch",
+                key="retry_failed_evidence_extraction",
+            ):
+                try:
+                    with st.spinner("正在复用成功缓存并重新提取失败文献……"):
+                        retried_library = _build_evidence_library(selection, batch)
+                except Exception as exc:
+                    st.error(f"重新提取中断：{exc}")
+                else:
+                    st.session_state["v03_evidence_library_json"] = (
+                        retried_library.model_dump_json(indent=2)
+                    )
+                    st.session_state.pop("v03_writing_handoff_json", None)
+                    st.rerun()
+        with st.expander("查看问题详情"):
+            for blocker in blockers:
+                st.write(f"- {_friendly_evidence_blocker(blocker)}")
+        with st.expander("技术详情"):
             st.code("\n".join(blockers))
         return
 
@@ -569,7 +602,7 @@ def _render_library_summary(library: EvidenceLibrary) -> None:
         sum(record.evidence_tier == "A_core" for record in library.records),
     )
     metrics[2].metric("证据卡", len(library.evidence_cards))
-    metrics[3].metric("阻塞项", len(library.unresolved_issues))
+    metrics[3].metric("提取问题", len(library.unresolved_issues))
     if library.extractions:
         with st.expander("查看 PDF 全文提取与检索选页审计"):
             st.caption(
@@ -621,6 +654,21 @@ def _render_library_summary(library: EvidenceLibrary) -> None:
                 width="stretch",
                 hide_index=True,
             )
+
+
+def _friendly_evidence_blocker(issue: str) -> str:
+    if issue.startswith("evidence_extraction_failed:"):
+        _, doi, _ = issue.split(":", 2)
+        return f"{doi}：模型返回的证据选择格式不合规，可自动重试。"
+    if issue.startswith("core_pdf_missing:"):
+        return f"{issue.rsplit(':', 1)[-1]}：尚未找到核心 PDF。"
+    if issue.startswith("core_pdf_needs_review:"):
+        return f"{issue.rsplit(':', 1)[-1]}：PDF 身份或文本需要复核。"
+    if issue.startswith("pdf_extraction_"):
+        return f"PDF 全文提取未完成：{issue.split(':', 1)[-1]}。"
+    if issue.endswith("缺少已验证全文或可追溯证据卡。"):
+        return issue
+    return issue
 
 
 def _target_words(confirmed: ConfirmedRequirementSpec) -> int:

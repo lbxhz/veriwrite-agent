@@ -26,6 +26,27 @@ def page() -> DocumentPage:
     )
 
 
+def multi_passage_page() -> DocumentPage:
+    return DocumentPage(
+        doi=DOI,
+        document_sha256=SHA,
+        page_number=4,
+        text=" ".join(
+            [
+                "Satellite observations provide a detailed view of atmospheric states "
+                "for retrieval experiments across several representative regions.",
+                "A physical retrieval model constrains the machine learning estimates "
+                "and preserves consistency with the measured radiative quantities.",
+                "Independent validation data are used to calculate prediction errors "
+                "and compare the proposed approach with established baseline methods.",
+                "The reported results show improved retrieval accuracy under the tested "
+                "conditions while identifying limitations for future regional studies.",
+            ]
+        ),
+        extraction_method="native_text",
+    )
+
+
 def response(passage_id: str = "page_4_passage_1") -> str:
     return json.dumps(
         {
@@ -75,6 +96,70 @@ def test_rejects_an_unknown_passage_id() -> None:
             section_purpose="Compare retrieval methods.",
             pages=[page()],
         )
+
+
+def test_deduplicates_passage_ids_without_weakening_grounding() -> None:
+    client = FakeLLMClient(
+        json.dumps(
+            {
+                "selections": [
+                    {
+                        "evidence_type": "method",
+                        "normalized_claim": "The study combines observations and modelling.",
+                        "passage_ids": [
+                            "page_4_passage_1",
+                            "page_4_passage_2",
+                            "page_4_passage_2",
+                        ],
+                        "support_strength": "direct",
+                    }
+                ]
+            }
+        )
+    )
+
+    cards = LLMEvidenceCardExtractor(client, max_quote_chars=150).extract(
+        doi=DOI,
+        title="Aerosol retrieval",
+        theme_id="retrieval_method",
+        section_purpose="Compare retrieval methods.",
+        pages=[multi_passage_page()],
+    )
+
+    assert len(cards[0].supporting_quotes) == 2
+    assert len({quote.exact_text for quote in cards[0].supporting_quotes}) == 2
+
+
+def test_keeps_first_three_unique_passage_ids_when_provider_returns_four() -> None:
+    client = FakeLLMClient(
+        json.dumps(
+            {
+                "selections": [
+                    {
+                        "evidence_type": "method",
+                        "normalized_claim": "The study combines observations and modelling.",
+                        "passage_ids": [
+                            "page_4_passage_1",
+                            "page_4_passage_2",
+                            "page_4_passage_3",
+                            "page_4_passage_4",
+                        ],
+                        "support_strength": "direct",
+                    }
+                ]
+            }
+        )
+    )
+
+    cards = LLMEvidenceCardExtractor(client, max_quote_chars=150).extract(
+        doi=DOI,
+        title="Aerosol retrieval",
+        theme_id="retrieval_method",
+        section_purpose="Compare retrieval methods.",
+        pages=[multi_passage_page()],
+    )
+
+    assert len(cards[0].supporting_quotes) == 3
 
 
 def test_rejects_oversized_structured_output() -> None:
