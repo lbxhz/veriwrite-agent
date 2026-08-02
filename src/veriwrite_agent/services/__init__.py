@@ -95,6 +95,15 @@ from veriwrite_agent.services.grounded_writing import (
     WritingProjectService,
     count_writing_units,
 )
+from veriwrite_agent.services.writing_planning import (
+    GroundedWritingPlanner,
+    LLMGroundedParagraphWriter,
+    ParagraphEvidencePacketBuilder,
+    ParagraphWritingRuntimeCache,
+    PlannedSectionDraftService,
+    WritingPlanError,
+    WritingPlanRuntimeCache,
+)
 
 __all__ = [
     "LLMOutputValidationError",
@@ -148,6 +157,13 @@ __all__ = [
     "SectionEvidencePacketBuilder",
     "WritingProjectService",
     "count_writing_units",
+    "GroundedWritingPlanner",
+    "LLMGroundedParagraphWriter",
+    "ParagraphEvidencePacketBuilder",
+    "ParagraphWritingRuntimeCache",
+    "PlannedSectionDraftService",
+    "WritingPlanError",
+    "WritingPlanRuntimeCache",
     "ai_generation_prohibitions",
     "candidate_source_restriction_reasons",
     "is_foreign_literature",

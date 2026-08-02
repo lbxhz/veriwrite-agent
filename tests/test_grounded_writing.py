@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +31,15 @@ from veriwrite_agent.services.grounded_writing import (
     LLMGroundedSectionWriter,
     SectionEvidencePacketBuilder,
     WritingProjectService,
+)
+from veriwrite_agent.services.writing_planning import (
+    GroundedWritingPlanner,
+    LLMGroundedParagraphWriter,
+    ParagraphEvidencePacketBuilder,
+    ParagraphWritingRuntimeCache,
+    PlannedSectionDraftService,
+    WritingPlanError,
+    WritingPlanRuntimeCache,
 )
 
 DOI = "10.1000/core.1"
@@ -205,12 +215,225 @@ def proposal(
     )
 
 
+def plan_response(*, evidence_ref: str = "E001") -> str:
+    return json.dumps(
+        {
+            "section_id": "method",
+            "paragraphs": [
+                {
+                    "role": "detailed_evidence",
+                    "purpose": "Present the verified retrieval result.",
+                    "claim_focus": "The verified model reduces regional uncertainty.",
+                    "relative_weight": 3,
+                    "evidence_refs": [evidence_ref],
+                    "source_refs": [],
+                },
+                {
+                    "role": "section_support",
+                    "purpose": "Connect the result to the wider research context.",
+                    "claim_focus": "Remote sensing supports regional observation.",
+                    "relative_weight": 2,
+                    "evidence_refs": [],
+                    "source_refs": ["S002"],
+                },
+                {
+                    "role": "synthesis",
+                    "purpose": "Synthesize the core and supporting literature.",
+                    "claim_focus": "The evidence motivates regional retrieval workflows.",
+                    "relative_weight": 1,
+                    "evidence_refs": ["E001"],
+                    "source_refs": ["S002"],
+                },
+            ],
+        }
+    )
+
+
 def test_builds_section_packet_from_confirmed_handoff() -> None:
     packet = SectionEvidencePacketBuilder().build(handoff(), "method")
 
     assert packet.evidence_items[0].evidence_id == EVIDENCE_ID
     assert [source.doi for source in packet.sources] == [DOI, SUPPORTING_DOI]
     assert packet.sources[0].citation_key == "sun2025_core1"
+
+
+def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
+    client = FakeLLMClient(plan_response())
+
+    plan = GroundedWritingPlanner(client).plan(handoff())
+
+    section = plan.sections[0]
+    assert plan.status == "draft"
+    assert len(section.paragraphs) == 3
+    assert sum(item.target_words for item in section.paragraphs) == 300
+    assert section.paragraphs[0].evidence_card_ids == [EVIDENCE_ID]
+    assert section.paragraphs[0].source_dois == [DOI]
+    assert section.paragraphs[1].source_dois == [SUPPORTING_DOI]
+    assert len(client.calls) == 1
+    prompt_payload = json.loads(client.calls[0]["messages"][1]["content"])
+    assert prompt_payload["evidence_catalog"][0]["ref"] == "E001"
+    assert prompt_payload["source_catalog"][1]["ref"] == "S002"
+
+
+def test_planner_repairs_once_then_rejects_unknown_aliases() -> None:
+    client = SequenceLLMClient(
+        [
+            plan_response(evidence_ref="E999"),
+            plan_response(evidence_ref="E999"),
+        ]
+    )
+
+    with pytest.raises(WritingPlanError, match="unknown short"):
+        GroundedWritingPlanner(client).plan(handoff())
+
+    assert len(client.calls) == 2
+
+
+def test_planner_rejects_metadata_source_for_detailed_paragraph() -> None:
+    payload = json.loads(plan_response())
+    payload["paragraphs"][0]["source_refs"] = ["S002"]
+    invalid = json.dumps(payload)
+    client = SequenceLLMClient([invalid, invalid])
+
+    with pytest.raises(WritingPlanError, match="exceeds source permission"):
+        GroundedWritingPlanner(client).plan(handoff())
+
+
+def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    client = FakeLLMClient(
+        json.dumps(
+            {
+                "text": "The locked evidence supports the claim.",
+                "evidence_card_ids": ["ev_invented_001"],
+            }
+        )
+    )
+
+    with pytest.raises(GroundedWritingError, match="paragraph output"):
+        LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+
+def test_planner_cache_preserves_completed_section_plan(tmp_path: Path) -> None:
+    active_handoff = handoff()
+    cache = WritingPlanRuntimeCache(tmp_path, handoff=active_handoff)
+    first_client = FakeLLMClient(plan_response())
+    first = GroundedWritingPlanner(first_client, cache=cache).plan(active_handoff)
+    second_client = FakeLLMClient("not-json")
+
+    second = GroundedWritingPlanner(second_client, cache=cache).plan(active_handoff)
+
+    assert second == first
+    assert len(first_client.calls) == 1
+    assert second_client.calls == []
+
+
+def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
+    tmp_path: Path,
+) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_plan = plan.sections[0]
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    cache = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    first_client = FakeLLMClient(
+        json.dumps({"text": "The locked evidence supports this planned paragraph."})
+    )
+    service = PlannedSectionDraftService()
+
+    first = service.draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(first_client),
+        cache=cache,
+    )
+    second_client = FakeLLMClient("not-json")
+    second = service.draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(second_client),
+        cache=cache,
+    )
+
+    assert first.model_dump(exclude={"generated_at"}) == second.model_dump(
+        exclude={"generated_at"}
+    )
+    assert first.status == "draft"
+    assert len(first.paragraphs) == 3
+    assert first.paragraphs[0].evidence_card_ids == [EVIDENCE_ID]
+    assert "[@sun2025_core1, p. 4]" in first.markdown
+    assert len(first_client.calls) == 3
+    assert second_client.calls == []
+
+    project_service = WritingProjectService()
+    project = project_service.save_draft(
+        project_service.start(active_handoff),
+        first,
+    )
+    project = project_service.confirm_section(
+        project,
+        "method",
+        confirmed_by="student",
+    )
+    body = project_service.assemble_body(project)
+    assert project.status == "body_complete"
+    assert body.source_dois == [DOI, SUPPORTING_DOI]
+
+    targeted_client = FakeLLMClient(
+        json.dumps({"text": "Only the blocked paragraph is regenerated."})
+    )
+    targeted = service.draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(targeted_client),
+        cache=cache,
+        force_paragraph_numbers={2},
+    )
+    assert len(targeted_client.calls) == 1
+    assert targeted.paragraphs[0].text == first.paragraphs[0].text
+    assert targeted.paragraphs[1].text == "Only the blocked paragraph is regenerated."
+
+
+def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    cache = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    valid = json.dumps({"text": "A valid locked-evidence paragraph."})
+    interrupted_client = SequenceLLMClient([valid, "not-json"])
+    service = PlannedSectionDraftService()
+
+    with pytest.raises(GroundedWritingError, match="paragraph output"):
+        service.draft(
+            section_packet,
+            plan.sections[0],
+            LLMGroundedParagraphWriter(interrupted_client),
+            cache=cache,
+        )
+
+    resumed_client = FakeLLMClient(valid)
+    draft = service.draft(
+        section_packet,
+        plan.sections[0],
+        LLMGroundedParagraphWriter(resumed_client),
+        cache=cache,
+    )
+
+    assert draft.status == "draft"
+    assert len(interrupted_client.calls) == 2
+    assert len(resumed_client.calls) == 2
 
 
 def test_llm_writes_prose_but_code_adds_citation_and_page() -> None:

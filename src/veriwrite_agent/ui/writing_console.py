@@ -9,22 +9,31 @@ import streamlit as st
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.models.writing import V04WritingProject
+from veriwrite_agent.models.writing_plan import GroundedWritingPlan
 from veriwrite_agent.models.final_delivery import (
     FinalMatterProposal,
     FinalPaperPackage,
 )
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.services.grounded_writing import (
-    LLMGroundedSectionWriter,
     SectionEvidencePacketBuilder,
     WritingProjectService,
+)
+from veriwrite_agent.services.writing_planning import (
+    GroundedWritingPlanner,
+    LLMGroundedParagraphWriter,
+    ParagraphWritingRuntimeCache,
+    PlannedSectionDraftService,
+    WritingPlanRuntimeCache,
 )
 from veriwrite_agent.services.final_delivery import (
     FinalPaperAssembler,
     FinalPaperDocxExporter,
     LLMFinalMatterWriter,
 )
+from veriwrite_agent.ui.workbench import project_root
 
+WRITING_PLAN_KEY = "v04_writing_plan_json"
 V04_PROJECT_KEY = "v04_writing_project_json"
 FINAL_MATTER_KEY = "mvp_final_matter_json"
 FINAL_PACKAGE_KEY = "mvp_final_paper_json"
@@ -33,6 +42,7 @@ SECTION_SELECTION_REQUEST_KEY = "v04_selected_section_request"
 
 
 def clear_writing_state() -> None:
+    st.session_state.pop(WRITING_PLAN_KEY, None)
     st.session_state.pop(V04_PROJECT_KEY, None)
     st.session_state.pop(FINAL_MATTER_KEY, None)
     st.session_state.pop(FINAL_PACKAGE_KEY, None)
@@ -53,6 +63,20 @@ def render_grounded_writing_console(
         "DeepSeek只组织段落，不负责创建引用。DOI、引用键、证据卡和PDF页码"
         "由程序绑定；每章确认后才进入正文汇总。"
     )
+
+    legacy_project_json = st.session_state.get(V04_PROJECT_KEY)
+    if legacy_project_json:
+        legacy_project = V04WritingProject.model_validate_json(legacy_project_json)
+        if legacy_project.status == "body_complete":
+            _render_body_download(
+                legacy_project,
+                include_final_delivery=include_final_delivery,
+            )
+            return
+
+    writing_plan = _render_writing_plan(handoff)
+    if writing_plan is None:
+        return
 
     project = _load_or_start_project(handoff)
     confirmed_count = sum(state.status == "confirmed" for state in project.sections)
@@ -83,6 +107,9 @@ def render_grounded_writing_console(
         key=SECTION_SELECTION_KEY,
     )
     packet = SectionEvidencePacketBuilder().build(handoff, section_id)
+    section_plan = next(
+        section for section in writing_plan.sections if section.section_id == section_id
+    )
     _render_packet(packet)
 
     if packet.ai_writing_mode == "generation_blocked":
@@ -103,7 +130,13 @@ def render_grounded_writing_console(
 
     current_state = state_by_id[section_id]
     generate_label = (
-        "生成本章草稿" if current_state.draft is None else "重新生成本章草稿"
+        "生成本章草稿"
+        if current_state.draft is None
+        else (
+            "仅重写阻塞段落"
+            if current_state.status == "needs_review"
+            else "重新生成本章草稿"
+        )
     )
     if st.button(
         generate_label,
@@ -112,10 +145,30 @@ def render_grounded_writing_console(
         key=f"v04_generate_{section_id}",
     ):
         try:
-            with st.spinner("正在组织段落并执行引用审计……"):
-                draft = LLMGroundedSectionWriter(
-                    DeepSeekClient(LLMSettings().for_structured_output())
-                ).draft(packet)
+            blocking_paragraphs = {
+                issue.paragraph_number
+                for issue in (current_state.draft.issues if current_state.draft else [])
+                if issue.severity == "blocking" and issue.paragraph_number is not None
+            }
+            with st.spinner(
+                "正在按已锁定证据逐段写作；已完成段落会立即保存……"
+            ):
+                draft = PlannedSectionDraftService().draft(
+                    packet,
+                    section_plan,
+                    LLMGroundedParagraphWriter(
+                        DeepSeekClient(LLMSettings().for_structured_output())
+                    ),
+                    cache=ParagraphWritingRuntimeCache(
+                        project_root() / "runtime" / "writing_console",
+                        plan_fingerprint=writing_plan.plan_fingerprint,
+                    ),
+                    force=(
+                        current_state.draft is not None
+                        and not blocking_paragraphs
+                    ),
+                    force_paragraph_numbers=blocking_paragraphs,
+                )
                 project = WritingProjectService().save_draft(project, draft)
         except Exception as exc:
             st.error(_friendly_writing_error(exc))
@@ -142,6 +195,132 @@ def render_final_delivery_console(handoff: V04WritingHandoff) -> None:
         return
     body = WritingProjectService().assemble_body(project)
     _render_final_delivery(project, body)
+
+
+def _render_writing_plan(
+    handoff: V04WritingHandoff,
+) -> GroundedWritingPlan | None:
+    st.subheader("先锁定证据约束写作计划")
+    st.caption(
+        "系统会结合 V0.2 检索蓝图与 V0.3 实际证据，为每个段落预先分配用途、"
+        "字数和允许使用的证据；正文模型不再自行选卡。"
+    )
+    serialized = st.session_state.get(WRITING_PLAN_KEY)
+    if not serialized:
+        if st.button(
+            "根据实际证据生成写作计划",
+            type="primary",
+            width="stretch",
+            key="v04_generate_writing_plan",
+        ):
+            force = bool(
+                st.session_state.pop("v04_force_writing_plan_regeneration", False)
+            )
+            try:
+                with st.spinner(
+                    "正在逐章规划段落与证据；已完成章节会保存为检查点……"
+                ):
+                    plan = GroundedWritingPlanner(
+                        DeepSeekClient(LLMSettings().for_structured_output()),
+                        cache=WritingPlanRuntimeCache(
+                            project_root() / "runtime" / "writing_plan",
+                            handoff=handoff,
+                        ),
+                        reuse_cache=not force,
+                    ).plan(handoff)
+            except Exception as exc:
+                st.error(
+                    "写作计划尚未生成完成。已完成章节已经保存，重试时会继续。"
+                )
+                with st.expander("技术详情"):
+                    st.code(str(exc))
+            else:
+                st.session_state[WRITING_PLAN_KEY] = plan.model_dump_json(indent=2)
+                st.rerun()
+        return None
+
+    plan = GroundedWritingPlan.model_validate_json(serialized)
+    _render_writing_plan_summary(plan)
+    if plan.status == "draft":
+        existing_project = st.session_state.get(V04_PROJECT_KEY)
+        if existing_project:
+            st.warning(
+                "采用新计划后会重建当前尚未确认的 V0.4 草稿；V0.3 证据库和本地"
+                "运行缓存不会删除。"
+            )
+        left, right = st.columns(2)
+        if left.button(
+            "采用计划并开始逐段写作",
+            type="primary",
+            width="stretch",
+            key="v04_confirm_writing_plan",
+        ):
+            confirmed = plan.confirm(
+                confirmed_by=handoff.requirement.confirmed_by,
+            )
+            st.session_state[WRITING_PLAN_KEY] = confirmed.model_dump_json(indent=2)
+            st.session_state.pop(V04_PROJECT_KEY, None)
+            st.session_state.pop(FINAL_MATTER_KEY, None)
+            st.session_state.pop(FINAL_PACKAGE_KEY, None)
+            st.session_state["mvp_flash"] = (
+                "写作计划已锁定，正文将按段落证据包生成。"
+            )
+            st.rerun()
+        if right.button(
+            "重新规划",
+            width="stretch",
+            key="v04_regenerate_writing_plan",
+        ):
+            st.session_state.pop(WRITING_PLAN_KEY, None)
+            st.session_state["v04_force_writing_plan_regeneration"] = True
+            st.rerun()
+        return None
+
+    st.success(
+        f"写作计划已锁定：{len(plan.sections)} 个章节、"
+        f"{sum(len(section.paragraphs) for section in plan.sections)} 个段落。"
+    )
+    return plan
+
+
+def _render_writing_plan_summary(plan: GroundedWritingPlan) -> None:
+    metrics = st.columns(4)
+    metrics[0].metric("章节", len(plan.sections))
+    metrics[1].metric(
+        "计划段落",
+        sum(len(section.paragraphs) for section in plan.sections),
+    )
+    metrics[2].metric(
+        "证据卡绑定",
+        sum(
+            len(paragraph.evidence_card_ids)
+            for section in plan.sections
+            for paragraph in section.paragraphs
+        ),
+    )
+    metrics[3].metric(
+        "目标字数",
+        sum(section.target_words for section in plan.sections),
+    )
+    with st.expander("查看章节与段落证据分配", expanded=plan.status == "draft"):
+        st.dataframe(
+            [
+                {
+                    "章节": section.title,
+                    "段落": paragraph.paragraph_number,
+                    "角色": paragraph.role,
+                    "段落目的": paragraph.purpose,
+                    "计划论点": paragraph.claim_focus,
+                    "目标字数": paragraph.target_words,
+                    "证据卡": len(paragraph.evidence_card_ids),
+                    "来源": len(paragraph.source_dois),
+                }
+                for section in plan.sections
+                for paragraph in section.paragraphs
+            ],
+            hide_index=True,
+            width="stretch",
+        )
 
 
 def _load_or_start_project(

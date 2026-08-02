@@ -44,6 +44,7 @@ from veriwrite_agent.services.writing_handoff import (
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 from veriwrite_agent.ui.workbench import project_root
 from veriwrite_agent.ui.writing_console import (
+    clear_writing_state,
     render_grounded_writing_console,
 )
 
@@ -53,6 +54,7 @@ PDF_STATE_KEYS = (
     "v03_pdf_inspection_json",
     "v03_evidence_library_json",
     "v03_writing_handoff_json",
+    "v04_writing_plan_json",
     "v04_writing_project_json",
 )
 
@@ -146,6 +148,7 @@ def render_pdf_acquisition_console(
         st.session_state.pop("v03_pdf_inspection_json", None)
         st.session_state.pop("v03_evidence_library_json", None)
         st.session_state.pop("v03_writing_handoff_json", None)
+        clear_writing_state()
     st.session_state["v03_core_dois"] = selected_dois
 
     if not selected_dois:
@@ -196,6 +199,7 @@ def render_pdf_acquisition_console(
         st.session_state["v03_pdf_inspection_json"] = batch.model_dump_json(indent=2)
         st.session_state.pop("v03_evidence_library_json", None)
         st.session_state.pop("v03_writing_handoff_json", None)
+        clear_writing_state()
         st.rerun()
 
     serialized = st.session_state.get("v03_pdf_inspection_json")
@@ -296,6 +300,7 @@ def _render_evidence_pipeline(
             else:
                 st.session_state["v03_evidence_library_json"] = library.model_dump_json(indent=2)
                 st.session_state.pop("v03_writing_handoff_json", None)
+                clear_writing_state()
                 st.rerun()
 
     serialized = st.session_state.get("v03_evidence_library_json")
@@ -370,6 +375,7 @@ def _render_evidence_pipeline(
                         retried_library.model_dump_json(indent=2)
                     )
                     st.session_state.pop("v03_writing_handoff_json", None)
+                    clear_writing_state()
                     st.rerun()
         with st.expander("查看问题详情"):
             for blocker in blockers:
@@ -404,6 +410,7 @@ def _render_evidence_pipeline(
                 confirmed_library.model_dump_json(indent=2)
             )
             st.session_state["v03_writing_handoff_json"] = handoff.model_dump_json(indent=2)
+            clear_writing_state()
             st.session_state["mvp_flash"] = "证据与写作章节已锁定，可以开始正文。"
             st.session_state["mvp_navigation_request"] = "writing"
             st.rerun()

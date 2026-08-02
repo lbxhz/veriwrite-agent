@@ -61,6 +61,15 @@ from veriwrite_agent.models.writing import (
     V04WritingProject,
     WritingSectionState,
 )
+from veriwrite_agent.models.writing_plan import (
+    GroundedWritingPlan,
+    ParagraphEvidencePacket,
+    ParagraphPlanProposal,
+    ParagraphTextProposal,
+    SectionPlanProposal,
+    WritingParagraphPlan,
+    WritingSectionPlan,
+)
 from veriwrite_agent.models.literature_discovery import (
     CandidateDecision,
     JournalRankingLookup,
@@ -207,4 +216,11 @@ __all__ = [
     "UnboundSectionDraftProposal",
     "V04WritingProject",
     "WritingSectionState",
+    "GroundedWritingPlan",
+    "ParagraphEvidencePacket",
+    "ParagraphPlanProposal",
+    "ParagraphTextProposal",
+    "SectionPlanProposal",
+    "WritingParagraphPlan",
+    "WritingSectionPlan",
 ]

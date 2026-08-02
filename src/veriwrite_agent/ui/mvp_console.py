@@ -19,6 +19,7 @@ from veriwrite_agent.models.requirement_workflow import (
     RequirementReviewPackage,
 )
 from veriwrite_agent.models.writing import V04WritingProject
+from veriwrite_agent.models.writing_plan import GroundedWritingPlan
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.services.local_project_store import LocalProjectStore
 
@@ -63,6 +64,7 @@ MVP_STATE_KEYS = (
     "v03_pdf_inspection_json",
     "v03_evidence_library_json",
     "v03_writing_handoff_json",
+    "v04_writing_plan_json",
     "v04_writing_project_json",
     "mvp_final_matter_json",
     "mvp_final_paper_json",
@@ -463,7 +465,7 @@ def _evidence_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage
             "V0.3 全文证据",
             "complete",
             f"证据库已确认：{len(handoff.evidence_library.evidence_cards)} 张证据卡。",
-            "进入 V0.4，按确认大纲逐章写作。",
+            "进入 V0.4，根据实际证据生成并确认段落级写作计划。",
         )
     if not state.get("v03_pdf_inspection_json"):
         return MvpStage(
@@ -510,18 +512,53 @@ def _evidence_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage
 def _writing_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage:
     if dependency.state != "complete":
         return _locked("writing", "V0.4 逐章写作", "先确认 V0.3 证据库和最终写作大纲。")
-    if not state.get("v04_writing_project_json"):
+    legacy_project = None
+    if state.get("v04_writing_project_json"):
+        try:
+            legacy_project = V04WritingProject.model_validate_json(
+                state["v04_writing_project_json"]
+            )
+        except Exception as exc:
+            return _invalid_stage("writing", "V0.4 逐章写作", exc)
+        if legacy_project.status == "body_complete":
+            return MvpStage(
+                "writing",
+                "V0.4 逐章写作",
+                "complete",
+                f"{len(legacy_project.sections)}/{len(legacy_project.sections)} 个正文章节已确认。",
+                "组装标题、摘要、关键词、结论和参考文献。",
+            )
+    if not state.get("v04_writing_plan_json"):
         return MvpStage(
             "writing",
             "V0.4 逐章写作",
             "ready",
-            "写作交接包已就绪。",
-            "逐章生成证据约束草稿，并由用户逐章确认。",
+            "V0.3 写作交接包已就绪，尚未根据实际证据规划段落。",
+            "生成并确认一次证据约束写作计划。",
         )
     try:
-        project = V04WritingProject.model_validate_json(state["v04_writing_project_json"])
+        plan = GroundedWritingPlan.model_validate_json(state["v04_writing_plan_json"])
     except Exception as exc:
         return _invalid_stage("writing", "V0.4 逐章写作", exc)
+    if plan.status == "draft":
+        return MvpStage(
+            "writing",
+            "V0.4 逐章写作",
+            "in_progress",
+            f"写作计划草案包含 {len(plan.sections)} 个章节，等待一次性确认。",
+            "核对章节、段落和证据分配后采用计划。",
+        )
+    if not state.get("v04_writing_project_json"):
+        return MvpStage(
+            "writing",
+            "V0.4 逐章写作",
+            "in_progress",
+            "证据约束写作计划已确认。",
+            "按锁定的段落证据包生成并确认正文。",
+        )
+    project = legacy_project or V04WritingProject.model_validate_json(
+        state["v04_writing_project_json"]
+    )
     confirmed = sum(section.status == "confirmed" for section in project.sections)
     blockers = tuple(
         f"章节 {section.section_id} 的引用或证据审计未通过"
