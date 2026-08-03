@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from typing import Any, Literal, MutableMapping
 
 import streamlit as st
 
@@ -40,6 +41,7 @@ FINAL_MATTER_KEY = "mvp_final_matter_json"
 FINAL_PACKAGE_KEY = "mvp_final_paper_json"
 FINAL_REPAIR_CHECKPOINT_KEY = "mvp_final_repair_checkpoint_json"
 FINAL_SEMANTIC_ATTESTATION_KEY = "mvp_final_semantic_review_attestation"
+FINAL_REPAIR_AUTO_SUPPRESSION_KEY = "mvp_final_repair_auto_suppressed_id"
 SECTION_SELECTION_KEY = "v04_selected_section"
 SECTION_SELECTION_REQUEST_KEY = "v04_selected_section_request"
 REPAIR_DOWNSTREAM_KEYS = (
@@ -48,6 +50,13 @@ REPAIR_DOWNSTREAM_KEYS = (
     FINAL_MATTER_KEY,
     FINAL_PACKAGE_KEY,
 )
+WRITING_REPAIR_CODES = {
+    "reference_count_below_minimum",
+    "reference_count_below_target",
+    "reference_count_above_maximum",
+    "uncited_bibliography_item",
+    "unknown_citation_key",
+}
 
 
 def clear_writing_state() -> None:
@@ -57,8 +66,68 @@ def clear_writing_state() -> None:
     st.session_state.pop(FINAL_PACKAGE_KEY, None)
     st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
     st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
+    st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
     st.session_state.pop(SECTION_SELECTION_KEY, None)
     st.session_state.pop(SECTION_SELECTION_REQUEST_KEY, None)
+
+
+def final_delivery_repair_stage(
+    package: FinalPaperPackage,
+) -> Literal["writing", "delivery"] | None:
+    """Route final blockers to the earliest stage that can actually fix them."""
+
+    blocking_codes = {
+        issue.code for issue in package.audit.issues if issue.severity == "blocking"
+    }
+    if not blocking_codes:
+        return None
+    if any(
+        code in WRITING_REPAIR_CODES
+        or code.startswith("body_")
+        or code.startswith("citation_")
+        or code.startswith("length_")
+        for code in blocking_codes
+    ):
+        return "writing"
+    return "delivery"
+
+
+def rollback_blocked_delivery_to_v04(
+    state: MutableMapping[str, Any],
+) -> bool:
+    """Automatically reopen V0.4 when final audit blockers belong to writing."""
+
+    serialized = state.get(FINAL_PACKAGE_KEY)
+    if not serialized or state.get(FINAL_REPAIR_CHECKPOINT_KEY):
+        return False
+    try:
+        package = FinalPaperPackage.model_validate_json(serialized)
+    except Exception:
+        return False
+    if package.status != "needs_revision" or final_delivery_repair_stage(package) != "writing":
+        return False
+    repair_id = _final_repair_id(package)
+    if state.get(FINAL_REPAIR_AUTO_SUPPRESSION_KEY) == repair_id:
+        return False
+    blocking_codes = [
+        issue.code for issue in package.audit.issues if issue.severity == "blocking"
+    ]
+    _create_final_repair_checkpoint(
+        blocking_codes,
+        state=state,
+        package=package,
+    )
+    for key in REPAIR_DOWNSTREAM_KEYS:
+        state.pop(key, None)
+    state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
+    state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
+    state["mvp_navigation"] = "writing"
+    state.pop("mvp_navigation_request", None)
+    state["mvp_flash"] = (
+        "最终审计问题属于 V0.4。系统已保存旧版本检查点并自动回退；"
+        "V0.1–V0.3、PDF 和证据库均已保留。"
+    )
+    return True
 
 
 def render_grounded_writing_console(
@@ -276,6 +345,7 @@ def _render_writing_plan(
             st.session_state.pop(FINAL_MATTER_KEY, None)
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
             st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
+            st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
             st.session_state["mvp_flash"] = (
                 "写作计划已锁定，正文将按段落证据包生成。"
             )
@@ -699,11 +769,13 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
             )
             st.session_state[FINAL_PACKAGE_KEY] = package.model_dump_json(indent=2)
             st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
+            st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
             st.rerun()
         if actions[1].button("重新生成组成部分", width="stretch"):
             st.session_state.pop(FINAL_MATTER_KEY, None)
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
             st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
+            st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
             st.rerun()
         return
 
@@ -742,20 +814,7 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
     blocking = [issue for issue in package.audit.issues if issue.severity == "blocking"]
     if not blocking:
         return
-    source_codes = {
-        "reference_count_below_minimum",
-        "reference_count_below_target",
-        "reference_count_above_maximum",
-        "uncited_bibliography_item",
-        "unknown_citation_key",
-    }
-    needs_writing_repair = any(
-        issue.code in source_codes
-        or issue.code.startswith("body_")
-        or issue.code.startswith("citation_")
-        or issue.code.startswith("length_")
-        for issue in blocking
-    )
+    needs_writing_repair = final_delivery_repair_stage(package) == "writing"
     st.subheader("审计修复路由")
     st.caption(
         "回退只清理需要重建的下游产物；V0.1 需求、V0.2 文献、"
@@ -767,7 +826,7 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
                 "问题": issue.code,
                 "责任阶段": (
                     "V0.4 写作计划与正文"
-                    if issue.code in source_codes
+                    if issue.code in WRITING_REPAIR_CODES
                     or issue.code.startswith("body_")
                     or issue.code.startswith("citation_")
                     or issue.code.startswith("length_")
@@ -775,7 +834,7 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
                 ),
                 "修复动作": (
                     "重新分配必引来源并按新计划逐章重建正文"
-                    if issue.code in source_codes
+                    if issue.code in WRITING_REPAIR_CODES
                     else (
                         "补齐必需结构并重新审计"
                         if issue.code == "required_section_missing"
@@ -799,27 +858,45 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
         target_stage = "delivery"
         flash = "正文已保留，正在重建最终结构并重新审计。"
     if st.button(label, type="primary", width="stretch", key="final_audit_repair"):
-        _create_final_repair_checkpoint([issue.code for issue in blocking])
+        _create_final_repair_checkpoint(
+            [issue.code for issue in blocking],
+            package=package,
+        )
         for key in keys_to_clear:
             st.session_state.pop(key, None)
         st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
+        st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
         st.session_state["mvp_navigation_request"] = target_stage
         st.session_state["mvp_flash"] = flash
         st.rerun()
 
 
-def _create_final_repair_checkpoint(reason_codes: list[str]) -> None:
-    if FINAL_REPAIR_CHECKPOINT_KEY in st.session_state:
+def _create_final_repair_checkpoint(
+    reason_codes: list[str],
+    *,
+    state: MutableMapping[str, Any] | None = None,
+    package: FinalPaperPackage | None = None,
+) -> None:
+    target_state = st.session_state if state is None else state
+    if FINAL_REPAIR_CHECKPOINT_KEY in target_state:
         return
+    if package is None and target_state.get(FINAL_PACKAGE_KEY):
+        try:
+            package = FinalPaperPackage.model_validate_json(
+                target_state[FINAL_PACKAGE_KEY]
+            )
+        except Exception:
+            package = None
     payload = {
         "schema_version": "mvp-final-repair-1.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "repair_id": _final_repair_id(package) if package is not None else None,
         "reason_codes": list(dict.fromkeys(reason_codes)),
         "state": {
-            key: st.session_state.get(key) for key in REPAIR_DOWNSTREAM_KEYS
+            key: target_state.get(key) for key in REPAIR_DOWNSTREAM_KEYS
         },
     }
-    st.session_state[FINAL_REPAIR_CHECKPOINT_KEY] = json.dumps(
+    target_state[FINAL_REPAIR_CHECKPOINT_KEY] = json.dumps(
         payload,
         ensure_ascii=False,
         indent=2,
@@ -854,9 +931,25 @@ def _render_repair_checkpoint_restore() -> None:
                 else:
                     st.session_state[key] = value
             st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
+            repair_id = payload.get("repair_id")
+            if repair_id:
+                st.session_state[FINAL_REPAIR_AUTO_SUPPRESSION_KEY] = repair_id
             st.session_state["mvp_navigation_request"] = "delivery"
             st.session_state["mvp_flash"] = "已恢复审计修复前的版本。"
             st.rerun()
+
+
+def _final_repair_id(package: FinalPaperPackage) -> str:
+    blocking_codes = sorted(
+        issue.code for issue in package.audit.issues if issue.severity == "blocking"
+    )
+    return ":".join(
+        [
+            package.audit.policy_fingerprint,
+            package.generated_at.isoformat(),
+            *blocking_codes,
+        ]
+    )
 
 
 def _next_actionable_section(project: V04WritingProject) -> str:

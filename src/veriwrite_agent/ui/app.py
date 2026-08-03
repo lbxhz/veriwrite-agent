@@ -46,6 +46,7 @@ from veriwrite_agent.ui.mvp_console import (
 from veriwrite_agent.ui.writing_console import (
     render_final_delivery_console,
     render_grounded_writing_console,
+    rollback_blocked_delivery_to_v04,
 )
 from veriwrite_agent.ui.workbench import (
     WorkbenchResult,
@@ -79,6 +80,7 @@ def run() -> None:
             st.session_state,
             local_store,
         )
+        rollback_blocked_delivery_to_v04(st.session_state)
         autosave_local_project(st.session_state, local_store)
     except (OSError, ValueError) as exc:
         autosave_error = str(exc)

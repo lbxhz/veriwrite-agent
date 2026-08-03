@@ -69,6 +69,7 @@ MVP_STATE_KEYS = (
     "mvp_final_matter_json",
     "mvp_final_paper_json",
     "mvp_final_repair_checkpoint_json",
+    "mvp_final_repair_auto_suppressed_id",
     "mvp_ai_declaration",
     "mvp_final_semantic_review_attestation",
 )

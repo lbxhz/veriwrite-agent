@@ -32,7 +32,10 @@ from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftProposal,
 )
-from veriwrite_agent.models.final_delivery import FinalMatterProposal
+from veriwrite_agent.models.final_delivery import (
+    FinalMatterProposal,
+    FinalPaperAuditIssue,
+)
 from veriwrite_agent.services.evidence_card_extraction import (
     LLMEvidenceCardExtractor,
 )
@@ -79,6 +82,7 @@ from veriwrite_agent.services.writing_handoff import (
     WritingOutlineBuilder,
 )
 from veriwrite_agent.ui.literature_workbench import LiteratureWorkbench
+from veriwrite_agent.ui.writing_console import rollback_blocked_delivery_to_v04
 
 
 DOIS = ["10.1000/gold.1", "10.1000/gold.2"]
@@ -378,6 +382,39 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
     assert docx_bytes.startswith(b"PK")
     rendered_doc = Document(BytesIO(docx_bytes))
     assert rendered_doc.paragraphs[0].text == confirmed_package.title
+
+    repair_issue = FinalPaperAuditIssue(
+        code="reference_count_below_minimum",
+        severity="blocking",
+        requirement_path="references.minimum_total",
+        detail="required=60; actual=20",
+    )
+    blocked_package = package.model_copy(
+        update={
+            "status": "needs_revision",
+            "audit": package.audit.model_copy(
+                update={"issues": [*package.audit.issues, repair_issue]}
+            ),
+        }
+    )
+    repair_state = {
+        "v03_writing_handoff_json": handoff.model_dump_json(indent=2),
+        "v04_writing_plan_json": "old-plan",
+        "v04_writing_project_json": project.model_dump_json(indent=2),
+        "mvp_final_matter_json": final_matter.model_dump_json(indent=2),
+        "mvp_final_paper_json": blocked_package.model_dump_json(indent=2),
+        "mvp_navigation": "delivery",
+    }
+
+    assert rollback_blocked_delivery_to_v04(repair_state) is True
+    assert repair_state["mvp_navigation"] == "writing"
+    assert "v03_writing_handoff_json" in repair_state
+    assert "v04_writing_plan_json" not in repair_state
+    assert "v04_writing_project_json" not in repair_state
+    assert "mvp_final_paper_json" not in repair_state
+    checkpoint = json.loads(repair_state["mvp_final_repair_checkpoint_json"])
+    assert checkpoint["state"]["v04_writing_plan_json"] == "old-plan"
+    assert checkpoint["reason_codes"] == ["reference_count_below_minimum"]
 
 
 def _candidate(doi: str, title: str, year: int) -> LiteratureCandidate:
