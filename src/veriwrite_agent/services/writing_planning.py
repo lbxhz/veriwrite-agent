@@ -82,6 +82,7 @@ class GroundedWritingPlanner:
 
     def _plan_section(self, packet: SectionEvidencePacket) -> WritingSectionPlan:
         paragraph_count = _paragraph_count(packet.target_words)
+        sources_by_doi = {source.doi: source for source in packet.sources}
         evidence_aliases = {
             f"E{index:03d}": item
             for index, item in enumerate(packet.evidence_items, 1)
@@ -106,6 +107,9 @@ class GroundedWritingPlanner:
                     "evidence_type": item.evidence_type,
                     "support_strength": item.support_strength,
                     "normalized_claim": item.normalized_claim,
+                    "allowed_roles": _allowed_roles(
+                        sources_by_doi[item.doi].permitted_use
+                    ),
                     "page_numbers": [
                         quote.page_number for quote in item.supporting_quotes
                     ],
@@ -121,10 +125,34 @@ class GroundedWritingPlanner:
                     "year": source.year,
                     "evidence_tier": source.evidence_tier,
                     "permitted_use": source.permitted_use,
+                    "allowed_roles": _allowed_roles(source.permitted_use),
                     "abstract": (source.abstract or "")[:400],
                 }
                 for alias, source in source_aliases.items()
             ],
+            "allowed_support_refs_by_role": {
+                role: {
+                    "evidence_refs": [
+                        alias
+                        for alias, item in evidence_aliases.items()
+                        if _permission_allows(
+                            sources_by_doi[item.doi].permitted_use,
+                            role,
+                        )
+                    ],
+                    "source_refs": [
+                        alias
+                        for alias, source in source_aliases.items()
+                        if _permission_allows(source.permitted_use, role)
+                    ],
+                }
+                for role in (
+                    "detailed_evidence",
+                    "section_support",
+                    "background",
+                    "synthesis",
+                )
+            },
         }
         schema = json.dumps(
             SectionPlanProposal.model_json_schema(),
@@ -138,11 +166,12 @@ class GroundedWritingPlanner:
                     "You plan one scholarly section before prose is written. Return JSON "
                     "only and do not write body paragraphs. Return exactly the requested "
                     "number of paragraph plans in a coherent order. Use only the short "
-                    "E### and S### aliases supplied by the application. detailed_evidence "
-                    "requires one to five evidence_refs. Metadata-only or background-only "
-                    "sources may support only general section_support, background, or "
-                    "synthesis claims; never use them for specific results, methods, or "
-                    "numbers. Every paragraph needs at least one evidence_ref or source_ref. "
+                    "E### and S### aliases supplied by the application. For each paragraph "
+                    "role, use refs only from allowed_support_refs_by_role[role]. "
+                    "detailed_evidence requires one to five evidence_refs. A source whose "
+                    "permitted_use is background_only may support only background or "
+                    "synthesis, never section_support or detailed_evidence. Every paragraph "
+                    "needs at least one permitted evidence_ref or source_ref. "
                     "Keep claim_focus narrow enough for one paragraph. relative_weight is "
                     "an integer from 1 to 10; code assigns exact word budgets. "
                     f"The response must satisfy this JSON Schema: {schema}"
@@ -178,7 +207,9 @@ class GroundedWritingPlanner:
                             "role": "user",
                             "content": (
                                 "Repair only the plan JSON. Do not write prose. The previous "
-                                f"plan failed deterministic validation: {_short_error(exc)}"
+                                f"plan failed deterministic validation: {_short_error(exc)}. "
+                                "For every paragraph, choose refs only from "
+                                "allowed_support_refs_by_role for its role."
                             ),
                         },
                     ]
@@ -451,28 +482,54 @@ def _compile_paragraph(
     evidence_items = [evidence_aliases[ref] for ref in proposal.evidence_refs]
     selected_sources = [source_aliases[ref] for ref in proposal.source_refs]
     evidence_ids = [item.evidence_id for item in evidence_items]
+    sources_by_doi = {source.doi: source for source in packet.sources}
+    invalid_evidence_sources = [
+        item.doi
+        for item in evidence_items
+        if not _permission_allows(
+            sources_by_doi[item.doi].permitted_use,
+            proposal.role,
+        )
+    ]
+    if invalid_evidence_sources:
+        raise WritingPlanError(
+            f"paragraph {number} used evidence outside the permission for "
+            f"{proposal.role}: {', '.join(invalid_evidence_sources)}"
+        )
+
+    permitted_sources = [
+        source
+        for source in selected_sources
+        if _permission_allows(source.permitted_use, proposal.role)
+    ]
+    rejected_source_refs = [
+        ref
+        for ref, source in zip(proposal.source_refs, selected_sources, strict=True)
+        if not _permission_allows(source.permitted_use, proposal.role)
+    ]
     source_dois = list(
         dict.fromkeys(
             [
                 *(item.doi for item in evidence_items),
-                *(source.doi for source in selected_sources),
+                *(source.doi for source in permitted_sources),
             ]
         )
     )
     if not evidence_ids and not source_dois:
-        raise WritingPlanError(f"paragraph {number} has no planned support")
+        rejected = ", ".join(rejected_source_refs)
+        detail = (
+            f" after removing disallowed refs {rejected}"
+            if rejected_source_refs
+            else ""
+        )
+        raise WritingPlanError(
+            f"paragraph {number} has no permitted support for {proposal.role}{detail}"
+        )
     if proposal.role == "detailed_evidence" and not evidence_ids:
         raise WritingPlanError(
             f"paragraph {number} is detailed_evidence but has no evidence card"
         )
 
-    sources_by_doi = {source.doi: source for source in packet.sources}
-    for doi in source_dois:
-        source = sources_by_doi[doi]
-        if not _permission_allows(source.permitted_use, proposal.role):
-            raise WritingPlanError(
-                f"paragraph {number} exceeds source permission for {doi}"
-            )
     return WritingParagraphPlan(
         paragraph_id=f"{packet.section_id}_p{number:02d}",
         section_id=packet.section_id,
@@ -496,6 +553,19 @@ def _permission_allows(permitted_use: str, role: str) -> bool:
         "section_support",
         "background_only",
     }
+
+
+def _allowed_roles(permitted_use: str) -> list[str]:
+    return [
+        role
+        for role in (
+            "detailed_evidence",
+            "section_support",
+            "background",
+            "synthesis",
+        )
+        if _permission_allows(permitted_use, role)
+    ]
 
 
 def _paragraph_count(target_words: int) -> int:

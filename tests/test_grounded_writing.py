@@ -44,6 +44,7 @@ from veriwrite_agent.services.writing_planning import (
 
 DOI = "10.1000/core.1"
 SUPPORTING_DOI = "10.1000/support.1"
+BACKGROUND_DOI = "10.1000/background.1"
 SHA = "a" * 64
 EVIDENCE_ID = "ev_method_direct_001"
 
@@ -193,6 +194,39 @@ def blocked_handoff() -> V04WritingHandoff:
     )
 
 
+def handoff_with_background_source() -> V04WritingHandoff:
+    active = handoff()
+    background = LiteratureLibraryRecord(
+        doi=BACKGROUND_DOI,
+        title="Metadata-only background record",
+        authors=["Park, Min"],
+        year=2025,
+        journal="Background Journal",
+        abstract="Remote sensing and AI are used in environmental monitoring.",
+        source_url=f"https://doi.org/{BACKGROUND_DOI}",
+        theme_ids=["method"],
+        evidence_tier="C_background",
+        evidence_status="metadata_verified",
+        permitted_use="background_only",
+    )
+    library = active.evidence_library.model_copy(
+        update={"records": [*active.evidence_library.records, background]}
+    )
+    section = active.outline.outline.sections[0].model_copy(
+        update={
+            "supporting_dois": [
+                SUPPORTING_DOI,
+                BACKGROUND_DOI,
+            ]
+        }
+    )
+    outline_draft = active.outline.outline.model_copy(update={"sections": [section]})
+    outline = active.outline.model_copy(update={"outline": outline_draft})
+    return active.model_copy(
+        update={"evidence_library": library, "outline": outline}
+    )
+
+
 def proposal(
     *,
     role: str = "detailed_evidence",
@@ -273,6 +307,11 @@ def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
     prompt_payload = json.loads(client.calls[0]["messages"][1]["content"])
     assert prompt_payload["evidence_catalog"][0]["ref"] == "E001"
     assert prompt_payload["source_catalog"][1]["ref"] == "S002"
+    assert prompt_payload["source_catalog"][1]["allowed_roles"] == [
+        "section_support",
+        "background",
+        "synthesis",
+    ]
 
 
 def test_planner_repairs_once_then_rejects_unknown_aliases() -> None:
@@ -289,14 +328,49 @@ def test_planner_repairs_once_then_rejects_unknown_aliases() -> None:
     assert len(client.calls) == 2
 
 
-def test_planner_rejects_metadata_source_for_detailed_paragraph() -> None:
+def test_planner_drops_unneeded_low_permission_source_from_supported_paragraph() -> None:
+    active_handoff = handoff_with_background_source()
     payload = json.loads(plan_response())
-    payload["paragraphs"][0]["source_refs"] = ["S002"]
-    invalid = json.dumps(payload)
-    client = SequenceLLMClient([invalid, invalid])
+    payload["paragraphs"][0]["source_refs"] = ["S003"]
+    client = FakeLLMClient(json.dumps(payload))
 
-    with pytest.raises(WritingPlanError, match="exceeds source permission"):
-        GroundedWritingPlanner(client).plan(handoff())
+    plan = GroundedWritingPlanner(client).plan(active_handoff)
+
+    assert plan.sections[0].paragraphs[0].source_dois == [DOI]
+
+
+def test_planner_repairs_background_source_used_for_section_support() -> None:
+    active_handoff = handoff_with_background_source()
+    invalid_payload = json.loads(plan_response())
+    invalid_payload["paragraphs"][1]["source_refs"] = ["S003"]
+    valid_payload = json.loads(plan_response())
+    valid_payload["paragraphs"][1].update(
+        {
+            "role": "background",
+            "source_refs": ["S003"],
+        }
+    )
+    client = SequenceLLMClient(
+        [json.dumps(invalid_payload), json.dumps(valid_payload)]
+    )
+
+    plan = GroundedWritingPlanner(client).plan(active_handoff)
+
+    repaired = plan.sections[0].paragraphs[1]
+    assert repaired.role == "background"
+    assert repaired.source_dois == [BACKGROUND_DOI]
+    assert len(client.calls) == 2
+    prompt_payload = json.loads(client.calls[0]["messages"][1]["content"])
+    assert prompt_payload["source_catalog"][2]["allowed_roles"] == [
+        "background",
+        "synthesis",
+    ]
+    assert "S003" not in prompt_payload["allowed_support_refs_by_role"][
+        "section_support"
+    ]["source_refs"]
+    assert "S003" in prompt_payload["allowed_support_refs_by_role"]["background"][
+        "source_refs"
+    ]
 
 
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
