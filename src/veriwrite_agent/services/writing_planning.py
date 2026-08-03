@@ -307,15 +307,15 @@ class LLMGroundedParagraphWriter:
             },
         ]
         last_error: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(3):
             raw = self._client.complete(
                 messages,
                 response_format={"type": "json_object"},
             )
             try:
                 proposal = _parse_paragraph_text(raw)
-                _ensure_paragraph_not_too_long(packet, proposal)
                 _ensure_paragraph_has_no_authored_citation(proposal)
+                _ensure_paragraph_not_too_long(packet, proposal)
                 return proposal
             except (
                 ValidationError,
@@ -340,8 +340,40 @@ class LLMGroundedParagraphWriter:
                             ),
                         },
                     ]
+                    continue
+                if attempt == 1 and isinstance(exc, ParagraphLengthError):
+                    safe_maximum = max(
+                        packet.paragraph.target_words,
+                        int(maximum_units * 0.82),
+                    )
+                    messages = [
+                        *messages,
+                        {"role": "assistant", "content": raw},
+                        {
+                            "role": "user",
+                            "content": (
+                                "The previous compression is still too long. Rewrite the "
+                                "same evidence-bound paragraph to no more than "
+                                f"{safe_maximum} counted units, leaving safety margin below "
+                                f"the hard limit of {maximum_units}. Preserve the central "
+                                "comparison and every locked source at its permitted level. "
+                                "Return exactly one text field without citations or IDs."
+                            ),
+                        },
+                    ]
+                    continue
+                if attempt == 2 and isinstance(exc, ParagraphLengthError):
+                    compacted = _compact_paragraph_to_limit(
+                        proposal,
+                        maximum_units=maximum_units,
+                        counting_policy=packet.counting_policy,
+                    )
+                    _ensure_paragraph_has_no_authored_citation(compacted)
+                    _ensure_paragraph_not_too_long(packet, compacted)
+                    return compacted
+                break
         raise GroundedWritingError(
-            "LLM paragraph output violates the data contract after one repair: "
+            "LLM paragraph output violates the data contract after adaptive repair: "
             f"{_short_error(last_error)}"
         ) from last_error
 
@@ -996,6 +1028,74 @@ def _paragraph_repair_instruction(
         "Repair only the JSON encoding and schema. Preserve the paragraph meaning, return "
         "exactly one text field, and escape all line breaks or control characters."
     )
+
+
+def _compact_paragraph_to_limit(
+    proposal: ParagraphTextProposal,
+    *,
+    maximum_units: int,
+    counting_policy: str,
+) -> ParagraphTextProposal:
+    """Keep complete leading sentences, then safely clip only as a last resort."""
+
+    sentences = re.findall(
+        r".+?(?:[。！？]|[.!?](?=\s|$)|$)",
+        proposal.text,
+    )
+    accepted: list[str] = []
+    for sentence in sentences:
+        candidate = " ".join([*accepted, sentence.strip()]).strip()
+        if count_writing_units(candidate, counting_policy=counting_policy) > maximum_units:
+            break
+        accepted.append(sentence.strip())
+    if accepted:
+        compacted_text = " ".join(accepted).strip()
+    else:
+        compacted_text = _maximum_prefix_within_limit(
+            proposal.text,
+            maximum_units=maximum_units,
+            counting_policy=counting_policy,
+        )
+    if not compacted_text:
+        raise ParagraphLengthError(
+            "paragraph could not be compacted without becoming blank"
+        )
+    return ParagraphTextProposal(text=compacted_text)
+
+
+def _maximum_prefix_within_limit(
+    text: str,
+    *,
+    maximum_units: int,
+    counting_policy: str,
+) -> str:
+    low = 0
+    high = len(text)
+    while low < high:
+        midpoint = (low + high + 1) // 2
+        if (
+            count_writing_units(
+                text[:midpoint],
+                counting_policy=counting_policy,
+            )
+            <= maximum_units
+        ):
+            low = midpoint
+        else:
+            high = midpoint - 1
+    prefix = text[:low].rstrip()
+    if (
+        prefix
+        and re.fullmatch(r"[A-Za-z0-9_]", prefix[-1])
+        and low < len(text)
+        and re.fullmatch(r"[A-Za-z0-9_]", text[low])
+    ):
+        prefix = re.sub(r"[A-Za-z0-9_'-]+$", "", prefix).rstrip()
+    prefix = prefix.rstrip("，,;:；：")
+    if not prefix or prefix.endswith((".", "!", "?", "。", "！", "？")):
+        return prefix
+    ending = "。" if re.search(r"[一-鿿]", prefix) else "."
+    return prefix + ending
 
 
 def _short_error(exc: Exception | None) -> str:

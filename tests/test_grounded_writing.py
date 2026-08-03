@@ -36,6 +36,7 @@ from veriwrite_agent.services.grounded_writing import (
     LLMGroundedSectionWriter,
     SectionEvidencePacketBuilder,
     WritingProjectService,
+    count_writing_units,
 )
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 from veriwrite_agent.services.writing_planning import (
@@ -520,6 +521,30 @@ def test_paragraph_writer_shortens_runaway_output_once() -> None:
     repair_message = client.calls[1]["messages"][-1]["content"]
     assert "Rewrite only the paragraph text" in repair_message
     assert "no more than 176 counted units" in repair_message
+
+
+def test_paragraph_writer_compacts_repeated_overrun_at_sentence_boundary() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    sentence = " ".join(["grounded"] * 20) + "."
+    still_too_long = " ".join([sentence] * 10)
+    client = SequenceLLMClient(
+        [json.dumps({"text": still_too_long})] * 3
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    counted = count_writing_units(result.text, counting_policy="words")
+    assert counted == 160
+    assert result.text.endswith(".")
+    assert len(client.calls) == 3
+    final_repair_message = client.calls[2]["messages"][-1]["content"]
+    assert "safety margin below the hard limit of 176" in final_repair_message
 
 
 def test_paragraph_writer_removes_self_authored_citation_once() -> None:
