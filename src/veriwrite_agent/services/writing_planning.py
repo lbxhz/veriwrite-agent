@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -31,11 +32,20 @@ from veriwrite_agent.services.grounded_writing import (
     GroundedSectionDraftService,
     GroundedWritingError,
     SectionEvidencePacketBuilder,
+    count_writing_units,
 )
 
 
 class WritingPlanError(ValueError):
     """Raised when semantic planning cannot compile to real evidence authority."""
+
+
+class ParagraphLengthError(ValueError):
+    """Raised when one model paragraph greatly exceeds its locked word budget."""
+
+
+class ParagraphCitationError(ValueError):
+    """Raised when paragraph prose attempts to create its own citation."""
 
 
 class GroundedWritingPlanner:
@@ -262,34 +272,67 @@ class LLMGroundedParagraphWriter:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        raw = self._client.complete(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Write exactly one scholarly paragraph from the locked evidence "
-                        "packet. Return JSON only. The application already selected and "
-                        "locked all evidence and sources; do not output IDs, DOI values, "
-                        "references, or citation markers. Do not introduce claims, numbers, "
-                        "methods, or papers outside the packet. Follow purpose and claim_focus "
-                        "and stay close to target_words. Metadata-only sources permit only "
-                        "general statements. "
-                        f"The response must satisfy this JSON Schema: {schema}"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(packet.model_dump(mode="json"), ensure_ascii=False),
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
-        try:
-            return ParagraphTextProposal.model_validate_json(raw)
-        except ValidationError as exc:
-            raise GroundedWritingError(
-                f"LLM paragraph output violates the data contract: {_short_error(exc)}"
-            ) from exc
+        maximum_units = _paragraph_maximum_units(packet)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Write exactly one scholarly paragraph from the locked evidence "
+                    "packet. Return JSON only. The application already selected and "
+                    "locked all evidence and sources; do not output IDs, DOI values, "
+                    "references, or citation markers. Do not introduce claims, numbers, "
+                    "methods, or papers outside the packet. Follow purpose and claim_focus "
+                    f"and stay close to target_words={packet.paragraph.target_words}; the "
+                    f"paragraph must not exceed {maximum_units} counted units under "
+                    f"counting_policy={packet.counting_policy}. Metadata-only sources permit "
+                    "only general statements. Encode line breaks and control characters "
+                    "legally inside the JSON string. "
+                    f"The response must satisfy this JSON Schema: {schema}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(packet.model_dump(mode="json"), ensure_ascii=False),
+            },
+        ]
+        last_error: Exception | None = None
+        for attempt in range(2):
+            raw = self._client.complete(
+                messages,
+                response_format={"type": "json_object"},
+            )
+            try:
+                proposal = _parse_paragraph_text(raw)
+                _ensure_paragraph_not_too_long(packet, proposal)
+                _ensure_paragraph_has_no_authored_citation(proposal)
+                return proposal
+            except (
+                ValidationError,
+                ParagraphLengthError,
+                ParagraphCitationError,
+            ) as exc:
+                last_error = exc
+                if attempt == 0:
+                    repair_instruction = _paragraph_repair_instruction(
+                        exc,
+                        maximum_units=maximum_units,
+                    )
+                    messages = [
+                        *messages,
+                        {"role": "assistant", "content": raw},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"{repair_instruction} Do not add IDs, DOI values, references, "
+                                "or citation markers. The previous output failed validation: "
+                                f"{_short_error(exc)}"
+                            ),
+                        },
+                    ]
+        raise GroundedWritingError(
+            "LLM paragraph output violates the data contract after one repair: "
+            f"{_short_error(last_error)}"
+        ) from last_error
 
 
 class PlannedSectionDraftService:
@@ -391,7 +434,10 @@ class ParagraphWritingRuntimeCache:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if payload.get("signature") != _paragraph_signature(packet):
                 return None
-            return ParagraphTextProposal.model_validate(payload["proposal"])
+            proposal = ParagraphTextProposal.model_validate(payload["proposal"])
+            _ensure_paragraph_not_too_long(packet, proposal)
+            _ensure_paragraph_has_no_authored_citation(proposal)
+            return proposal
         except Exception:
             return None
 
@@ -400,6 +446,8 @@ class ParagraphWritingRuntimeCache:
         packet: ParagraphEvidencePacket,
         proposal: ParagraphTextProposal,
     ) -> None:
+        _ensure_paragraph_not_too_long(packet, proposal)
+        _ensure_paragraph_has_no_authored_citation(proposal)
         path = self._path(packet)
         path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(
@@ -651,6 +699,72 @@ def _paragraph_signature(packet: ParagraphEvidencePacket) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _parse_paragraph_text(raw: str) -> ParagraphTextProposal:
+    try:
+        return ParagraphTextProposal.model_validate_json(raw)
+    except ValidationError as strict_error:
+        try:
+            payload = json.loads(raw, strict=False)
+        except json.JSONDecodeError:
+            raise strict_error
+        return ParagraphTextProposal.model_validate(payload)
+
+
+def _paragraph_maximum_units(packet: ParagraphEvidencePacket) -> int:
+    return max(packet.paragraph.target_words, int(packet.paragraph.target_words * 1.6))
+
+
+def _ensure_paragraph_not_too_long(
+    packet: ParagraphEvidencePacket,
+    proposal: ParagraphTextProposal,
+) -> None:
+    counted_units = count_writing_units(
+        proposal.text,
+        counting_policy=packet.counting_policy,
+    )
+    maximum_units = _paragraph_maximum_units(packet)
+    if counted_units > maximum_units:
+        raise ParagraphLengthError(
+            f"paragraph has {counted_units} counted units; maximum is {maximum_units}"
+        )
+
+
+def _ensure_paragraph_has_no_authored_citation(
+    proposal: ParagraphTextProposal,
+) -> None:
+    if re.search(
+        r"\[@|https?://(?:dx\.)?doi\.org/|doi\s*:",
+        proposal.text,
+        re.I,
+    ):
+        raise ParagraphCitationError(
+            "paragraph text attempted to author a citation or DOI marker"
+        )
+
+
+def _paragraph_repair_instruction(
+    exc: Exception,
+    *,
+    maximum_units: int,
+) -> str:
+    if isinstance(exc, ParagraphLengthError):
+        return (
+            "Rewrite only the paragraph text and shorten it to no more than "
+            f"{maximum_units} counted units while preserving its evidence-bound meaning. "
+            "Return exactly one text field."
+        )
+    if isinstance(exc, ParagraphCitationError):
+        return (
+            "Remove every citation marker, DOI value, DOI URL, and reference label from "
+            "the paragraph text while preserving the evidence-bound prose. Return exactly "
+            "one text field."
+        )
+    return (
+        "Repair only the JSON encoding and schema. Preserve the paragraph meaning, return "
+        "exactly one text field, and escape all line breaks or control characters."
+    )
 
 
 def _short_error(exc: Exception | None) -> str:

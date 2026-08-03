@@ -19,6 +19,7 @@ from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftProposal,
 )
+from veriwrite_agent.models.writing_plan import ParagraphTextProposal
 from veriwrite_agent.models.writing_handoff import (
     ConfirmedWritingOutline,
     V04WritingHandoff,
@@ -392,6 +393,131 @@ def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
 
     with pytest.raises(GroundedWritingError, match="paragraph output"):
         LLMGroundedParagraphWriter(client).write(paragraph_packet)
+    assert len(client.calls) == 2
+
+
+def test_paragraph_writer_recovers_literal_json_control_characters() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    client = FakeLLMClient(
+        '{"text":"First line\nsecond line\twith a control\u0001 character."}'
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert result.text == "First line second line with a control character."
+    assert len(client.calls) == 1
+
+
+def test_paragraph_writer_repairs_malformed_json_once() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    client = SequenceLLMClient(
+        [
+            "not-json",
+            json.dumps({"text": "The repaired paragraph remains evidence-bound."}),
+        ]
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert result.text == "The repaired paragraph remains evidence-bound."
+    assert len(client.calls) == 2
+    repair_message = client.calls[1]["messages"][-1]["content"]
+    assert "Repair only the JSON encoding" in repair_message
+
+
+def test_paragraph_writer_shortens_runaway_output_once() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    runaway = " ".join(["runaway"] * 200)
+    shortened = " ".join(["grounded"] * 70)
+    client = SequenceLLMClient(
+        [
+            json.dumps({"text": runaway}),
+            json.dumps({"text": shortened}),
+        ]
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert result.text == shortened
+    assert len(client.calls) == 2
+    repair_message = client.calls[1]["messages"][-1]["content"]
+    assert "Rewrite only the paragraph text" in repair_message
+    assert "no more than 176 counted units" in repair_message
+
+
+def test_paragraph_writer_removes_self_authored_citation_once() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    invalid = " ".join(["grounded"] * 65) + " [@invented2025]"
+    repaired = " ".join(["grounded"] * 70)
+    client = SequenceLLMClient(
+        [
+            json.dumps({"text": invalid}),
+            json.dumps({"text": repaired}),
+        ]
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert result.text == repaired
+    assert len(client.calls) == 2
+    repair_message = client.calls[1]["messages"][-1]["content"]
+    assert "Remove every citation marker" in repair_message
+
+
+def test_paragraph_cache_rejects_runaway_cached_text(tmp_path: Path) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    cache = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    valid = ParagraphTextProposal(text=" ".join(["grounded"] * 70))
+    cache.save(paragraph_packet, valid)
+    path = (
+        tmp_path
+        / plan.plan_fingerprint[:16]
+        / "method"
+        / "method_p01.json"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["proposal"]["text"] = " ".join(["runaway"] * 200)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert cache.load(paragraph_packet) is None
+
+    payload["proposal"]["text"] = " ".join(["grounded"] * 70) + " [@invented]"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert cache.load(paragraph_packet) is None
 
 
 def test_planner_cache_preserves_completed_section_plan(tmp_path: Path) -> None:
@@ -486,7 +612,7 @@ def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> No
         plan_fingerprint=plan.plan_fingerprint,
     )
     valid = json.dumps({"text": "A valid locked-evidence paragraph."})
-    interrupted_client = SequenceLLMClient([valid, "not-json"])
+    interrupted_client = SequenceLLMClient([valid, "not-json", "not-json"])
     service = PlannedSectionDraftService()
 
     with pytest.raises(GroundedWritingError, match="paragraph output"):
@@ -506,7 +632,7 @@ def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> No
     )
 
     assert draft.status == "draft"
-    assert len(interrupted_client.calls) == 2
+    assert len(interrupted_client.calls) == 3
     assert len(resumed_client.calls) == 2
 
 

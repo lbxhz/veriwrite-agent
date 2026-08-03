@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -150,6 +151,17 @@ class ParagraphTextProposal(StrictModel):
     """LLM paragraph prose without any citation-selection authority."""
 
     text: str = Field(min_length=1)
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def normalize_control_characters(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = re.sub(r"[\x00-\x1f\x7f]+", " ", value)
+        normalized = " ".join(normalized.split())
+        if not normalized:
+            raise ValueError("paragraph text cannot be blank after normalization")
+        return normalized
 
 
 class ParagraphEvidencePacket(StrictModel):
