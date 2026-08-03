@@ -18,6 +18,10 @@ class FinalMatterProposal(StrictModel):
     title: str = Field(min_length=1)
     abstract: str = Field(min_length=80)
     keywords: list[str] = Field(min_length=3, max_length=8)
+    introduction: str | None = Field(default=None, min_length=80)
+    current_status_analysis: str | None = Field(default=None, min_length=80)
+    problems: str | None = Field(default=None, min_length=80)
+    technology_trends: str | None = Field(default=None, min_length=80)
     conclusion: str = Field(min_length=80)
 
     @field_validator("keywords", mode="after")
@@ -77,12 +81,17 @@ class FinalPaperPackage(StrictModel):
     title: str = Field(min_length=1)
     abstract: str = Field(min_length=1)
     keywords: list[str] = Field(min_length=1)
+    introduction: str | None = None
+    current_status_analysis: str | None = None
+    problems: str | None = None
+    technology_trends: str | None = None
     body_markdown: str = Field(min_length=1)
     conclusion: str = Field(min_length=1)
     ai_declaration: str | None = None
     references: list[FinalReferenceEntry] = Field(default_factory=list)
     markdown: str = Field(min_length=1)
     audit: FinalPaperAudit
+    user_review_attestations: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confirmed_by: str | None = None
     confirmed_at: datetime | None = None

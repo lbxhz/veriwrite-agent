@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import streamlit as st
 
@@ -37,8 +38,16 @@ WRITING_PLAN_KEY = "v04_writing_plan_json"
 V04_PROJECT_KEY = "v04_writing_project_json"
 FINAL_MATTER_KEY = "mvp_final_matter_json"
 FINAL_PACKAGE_KEY = "mvp_final_paper_json"
+FINAL_REPAIR_CHECKPOINT_KEY = "mvp_final_repair_checkpoint_json"
+FINAL_SEMANTIC_ATTESTATION_KEY = "mvp_final_semantic_review_attestation"
 SECTION_SELECTION_KEY = "v04_selected_section"
 SECTION_SELECTION_REQUEST_KEY = "v04_selected_section_request"
+REPAIR_DOWNSTREAM_KEYS = (
+    WRITING_PLAN_KEY,
+    V04_PROJECT_KEY,
+    FINAL_MATTER_KEY,
+    FINAL_PACKAGE_KEY,
+)
 
 
 def clear_writing_state() -> None:
@@ -46,6 +55,8 @@ def clear_writing_state() -> None:
     st.session_state.pop(V04_PROJECT_KEY, None)
     st.session_state.pop(FINAL_MATTER_KEY, None)
     st.session_state.pop(FINAL_PACKAGE_KEY, None)
+    st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
+    st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
     st.session_state.pop(SECTION_SELECTION_KEY, None)
     st.session_state.pop(SECTION_SELECTION_REQUEST_KEY, None)
 
@@ -56,6 +67,8 @@ def render_grounded_writing_console(
     include_final_delivery: bool = True,
 ) -> None:
     """Render the staged V0.4 body-writing workflow."""
+
+    _render_repair_checkpoint_restore()
 
     st.divider()
     st.header("V0.4 按证据逐章写作")
@@ -262,6 +275,7 @@ def _render_writing_plan(
             st.session_state.pop(V04_PROJECT_KEY, None)
             st.session_state.pop(FINAL_MATTER_KEY, None)
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
+            st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
             st.session_state["mvp_flash"] = (
                 "写作计划已锁定，正文将按段落证据包生成。"
             )
@@ -284,6 +298,13 @@ def _render_writing_plan(
 
 
 def _render_writing_plan_summary(plan: GroundedWritingPlan) -> None:
+    covered_source_dois = {
+        doi
+        for section in plan.sections
+        for paragraph in section.paragraphs
+        for doi in paragraph.source_dois
+    }
+    required_source_dois = set(plan.required_source_dois)
     metrics = st.columns(4)
     metrics[0].metric("章节", len(plan.sections))
     metrics[1].metric(
@@ -291,11 +312,12 @@ def _render_writing_plan_summary(plan: GroundedWritingPlan) -> None:
         sum(len(section.paragraphs) for section in plan.sections),
     )
     metrics[2].metric(
-        "证据卡绑定",
-        sum(
-            len(paragraph.evidence_card_ids)
-            for section in plan.sections
-            for paragraph in section.paragraphs
+        "必引来源覆盖",
+        (
+            f"{len(required_source_dois & covered_source_dois)}/"
+            f"{len(required_source_dois)}"
+            if required_source_dois
+            else str(len(covered_source_dois))
         ),
     )
     metrics[3].metric(
@@ -619,26 +641,69 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
                 width="stretch",
             )
     if package.status == "needs_revision":
+        _render_final_audit_repair(package)
         st.error("最终交付审计未通过。系统不会把不符合 V0.1 要求的结果伪装成完成品。")
         return
 
     if package.status == "ready_for_confirmation":
         st.caption("确认会冻结当前预览并解锁 Markdown、DOCX 与完整审计包。")
+        review_warnings = [
+            issue
+            for issue in package.audit.issues
+            if issue.severity == "warning"
+            and issue.code
+            in {
+                "theme_element_requires_user_review",
+                "original_analysis_requires_user_review",
+                "reference_tool_usage_requires_attestation",
+            }
+        ]
+        review_attested = True
+        if review_warnings:
+            st.warning(
+                "以下语义性要求无法仅靠字符和 DOI 自动判定，需要你在最终预览中一次性确认："
+                + "、".join(
+                    (
+                        f"主题要素“{issue.detail}”已在正文中实质体现"
+                        if issue.code == "theme_element_requires_user_review"
+                        else (
+                            "综合部分包含学生自己的分析、认识和评价"
+                            if issue.code == "original_analysis_requires_user_review"
+                            else f"已按要求使用参考文献工具：{issue.detail}"
+                        )
+                    )
+                    for issue in review_warnings
+                )
+            )
+            review_attested = st.checkbox(
+                "我已检查上述主题体现、原创分析或工具使用要求",
+                key=FINAL_SEMANTIC_ATTESTATION_KEY,
+            )
         actions = st.columns([2, 1])
         if actions[0].button(
             "确认当前论文并解锁下载",
             type="primary",
             width="stretch",
+            disabled=not review_attested,
         ):
+            package = package.model_copy(
+                update={
+                    "user_review_attestations": [
+                        issue.code for issue in review_warnings
+                    ]
+                }
+            )
             package = FinalPaperAssembler().confirm(
                 package,
                 confirmed_by=project.handoff.requirement.confirmed_by,
             )
             st.session_state[FINAL_PACKAGE_KEY] = package.model_dump_json(indent=2)
+            st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
             st.rerun()
         if actions[1].button("重新生成组成部分", width="stretch"):
             st.session_state.pop(FINAL_MATTER_KEY, None)
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
+            st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
             st.rerun()
         return
 
@@ -671,6 +736,127 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
         "MVP 已验证引用身份、引用绑定和 PDF 页码来源；逐句语义蕴含验证 "
         "（这句话是否真的被引文支持）明确保留为 MVP 后续优化项。"
     )
+
+
+def _render_final_audit_repair(package: FinalPaperPackage) -> None:
+    blocking = [issue for issue in package.audit.issues if issue.severity == "blocking"]
+    if not blocking:
+        return
+    source_codes = {
+        "reference_count_below_minimum",
+        "reference_count_below_target",
+        "reference_count_above_maximum",
+        "uncited_bibliography_item",
+        "unknown_citation_key",
+    }
+    needs_writing_repair = any(
+        issue.code in source_codes
+        or issue.code.startswith("body_")
+        or issue.code.startswith("citation_")
+        or issue.code.startswith("length_")
+        for issue in blocking
+    )
+    st.subheader("审计修复路由")
+    st.caption(
+        "回退只清理需要重建的下游产物；V0.1 需求、V0.2 文献、"
+        "V0.3 PDF 和证据库均保留。回退前会保存一份可撤销检查点。"
+    )
+    st.dataframe(
+        [
+            {
+                "问题": issue.code,
+                "责任阶段": (
+                    "V0.4 写作计划与正文"
+                    if issue.code in source_codes
+                    or issue.code.startswith("body_")
+                    or issue.code.startswith("citation_")
+                    or issue.code.startswith("length_")
+                    else "最终结构组装"
+                ),
+                "修复动作": (
+                    "重新分配必引来源并按新计划逐章重建正文"
+                    if issue.code in source_codes
+                    else (
+                        "补齐必需结构并重新审计"
+                        if issue.code == "required_section_missing"
+                        else "重建相关下游产物并重新审计"
+                    )
+                ),
+            }
+            for issue in blocking
+        ],
+        hide_index=True,
+        width="stretch",
+    )
+    if needs_writing_repair:
+        label = "创建检查点并回退到 V0.4 修复"
+        keys_to_clear = REPAIR_DOWNSTREAM_KEYS
+        target_stage = "writing"
+        flash = "已保留 V0.1–V0.3，并回退到 V0.4 重建引用覆盖计划。"
+    else:
+        label = "创建检查点并重建最终结构"
+        keys_to_clear = (FINAL_MATTER_KEY, FINAL_PACKAGE_KEY)
+        target_stage = "delivery"
+        flash = "正文已保留，正在重建最终结构并重新审计。"
+    if st.button(label, type="primary", width="stretch", key="final_audit_repair"):
+        _create_final_repair_checkpoint([issue.code for issue in blocking])
+        for key in keys_to_clear:
+            st.session_state.pop(key, None)
+        st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
+        st.session_state["mvp_navigation_request"] = target_stage
+        st.session_state["mvp_flash"] = flash
+        st.rerun()
+
+
+def _create_final_repair_checkpoint(reason_codes: list[str]) -> None:
+    if FINAL_REPAIR_CHECKPOINT_KEY in st.session_state:
+        return
+    payload = {
+        "schema_version": "mvp-final-repair-1.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "reason_codes": list(dict.fromkeys(reason_codes)),
+        "state": {
+            key: st.session_state.get(key) for key in REPAIR_DOWNSTREAM_KEYS
+        },
+    }
+    st.session_state[FINAL_REPAIR_CHECKPOINT_KEY] = json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _render_repair_checkpoint_restore() -> None:
+    serialized = st.session_state.get(FINAL_REPAIR_CHECKPOINT_KEY)
+    if not serialized:
+        return
+    try:
+        payload = json.loads(serialized)
+    except (TypeError, json.JSONDecodeError):
+        st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
+        return
+    with st.expander("已保存最终审计修复检查点"):
+        st.caption(
+            f"创建时间：{payload.get('created_at', '未知')}；"
+            f"触发问题：{', '.join(payload.get('reason_codes', [])) or '未记录'}。"
+        )
+        st.caption("恢复会覆盖本次修复产生的 V0.4 和最终交付状态。")
+        if st.button(
+            "撤销本次修复并恢复旧版本",
+            width="stretch",
+            key="restore_final_repair_checkpoint",
+        ):
+            saved_state = payload.get("state", {})
+            for key in REPAIR_DOWNSTREAM_KEYS:
+                value = saved_state.get(key)
+                if value is None:
+                    st.session_state.pop(key, None)
+                else:
+                    st.session_state[key] = value
+            st.session_state.pop(FINAL_REPAIR_CHECKPOINT_KEY, None)
+            st.session_state["mvp_navigation_request"] = "delivery"
+            st.session_state["mvp_flash"] = "已恢复审计修复前的版本。"
+            st.rerun()
 
 
 def _next_actionable_section(project: V04WritingProject) -> str:

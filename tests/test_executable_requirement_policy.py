@@ -55,3 +55,31 @@ def test_compiles_one_policy_and_enforces_source_restrictions() -> None:
         source_provider="crossref",
     )
     assert candidate_source_restriction_reasons(policy, candidate) == ["source_restriction_rule_0"]
+
+
+def test_resolved_length_ambiguity_is_not_reported_as_unresolved() -> None:
+    confirmed = ConfirmedRequirementSpec(
+        confirmed_by="student",
+        requirement=RequirementSpec(
+            document_type="research_direction_literature_review",
+            output_language="Chinese",
+            topic="大气遥感",
+            length=LengthRequirement(
+                minimum_chars=15000,
+                target_chars=15000,
+                counting_policy="chinese_chars_and_english_words",
+            ),
+            references=ReferenceRequirement(bibliography_style="GB/T 7714—2015"),
+            ambiguities=[
+                "同一文件同时使用“至少/以上”和“左右”描述字数，默认采用更严格的最低字数。"
+            ],
+        ),
+    )
+
+    policy = RequirementPolicyCompiler(current_year=2026).compile(confirmed)
+
+    assert policy.unresolved_requirements == []
+    assert any(
+        "resolved by enforcing the stricter confirmed minimum" in note
+        for note in policy.resolution_notes
+    )

@@ -14,7 +14,11 @@ from veriwrite_agent.models.evidence import (
     LiteratureLibraryRecord,
 )
 from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
-from veriwrite_agent.models.requirements import AIUsagePolicy, RequirementSpec
+from veriwrite_agent.models.requirements import (
+    AIUsagePolicy,
+    ReferenceRequirement,
+    RequirementSpec,
+)
 from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftProposal,
@@ -33,6 +37,7 @@ from veriwrite_agent.services.grounded_writing import (
     SectionEvidencePacketBuilder,
     WritingProjectService,
 )
+from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 from veriwrite_agent.services.writing_planning import (
     GroundedWritingPlanner,
     LLMGroundedParagraphWriter,
@@ -372,6 +377,60 @@ def test_planner_repairs_background_source_used_for_section_support() -> None:
     assert "S003" in prompt_payload["allowed_support_refs_by_role"]["background"][
         "source_refs"
     ]
+
+
+def test_planner_covers_every_source_required_by_reference_policy() -> None:
+    active_handoff = handoff_with_background_source()
+    requirement_spec = active_handoff.requirement.requirement.model_copy(
+        update={
+            "references": ReferenceRequirement(
+                minimum_total=3,
+                target_total=3,
+                bibliography_style="APA 7th",
+                max_references_per_citation_cluster=4,
+                all_bibliography_items_must_be_cited_and_discussed=True,
+            )
+        }
+    )
+    confirmed_requirement = active_handoff.requirement.model_copy(
+        update={"requirement": requirement_spec}
+    )
+    policy = RequirementPolicyCompiler(current_year=2026).compile(
+        confirmed_requirement
+    )
+    active_handoff = active_handoff.model_copy(
+        update={
+            "requirement": confirmed_requirement,
+            "requirement_policy": policy,
+        }
+    )
+
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+
+    planned_dois = {
+        doi
+        for section in plan.sections
+        for paragraph in section.paragraphs
+        for doi in paragraph.source_dois
+    }
+    assert set(plan.required_source_dois) == {
+        DOI,
+        SUPPORTING_DOI,
+        BACKGROUND_DOI,
+    }
+    assert planned_dois == set(plan.required_source_dois)
+    assert max(
+        len(paragraph.source_dois)
+        for section in plan.sections
+        for paragraph in section.paragraphs
+    ) <= 4
+    background_paragraph = next(
+        paragraph
+        for section in plan.sections
+        for paragraph in section.paragraphs
+        if BACKGROUND_DOI in paragraph.source_dois
+    )
+    assert background_paragraph.role in {"background", "synthesis"}
 
 
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:

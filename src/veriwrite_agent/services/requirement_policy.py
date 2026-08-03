@@ -40,14 +40,19 @@ class RequirementPolicyCompiler:
             )
 
         counting_policy = requirement.length.counting_policy
-        unresolved = list(requirement.ambiguities)
+        unresolved: list[str] = []
+        resolution_notes: list[str] = []
         if counting_policy == "pending_confirmation":
             if requirement.length.minimum_chars or requirement.length.target_chars:
                 counting_policy = "chinese_chars_and_english_words"
-                unresolved.append("length.counting_policy was inferred from character-based limits")
+                resolution_notes.append(
+                    "length.counting_policy inferred from character-based limits"
+                )
             else:
                 counting_policy = "words"
-                unresolved.append("length.counting_policy was inferred from word-based limits")
+                resolution_notes.append(
+                    "length.counting_policy inferred from word-based limits"
+                )
 
         if counting_policy == "chinese_chars_and_english_words":
             minimum_units = requirement.length.minimum_chars
@@ -71,6 +76,18 @@ class RequirementPolicyCompiler:
                 or 4000
             )
             maximum_units = requirement.length.maximum_words
+
+        for ambiguity in requirement.ambiguities:
+            compact = re.sub(r"\s+", "", ambiguity)
+            has_minimum_wording = any(token in compact for token in ("至少", "以上"))
+            has_approximate_wording = any(token in compact for token in ("左右", "约"))
+            if minimum_units is not None and has_minimum_wording and has_approximate_wording:
+                resolution_notes.append(
+                    "length ambiguity resolved by enforcing the stricter confirmed "
+                    f"minimum ({minimum_units}): {ambiguity}"
+                )
+            else:
+                unresolved.append(ambiguity)
 
         references = requirement.references
         minimum_total = references.minimum_total or 1
@@ -190,6 +207,7 @@ class RequirementPolicyCompiler:
             ai_usage=requirement.ai_policy,
             acknowledged_issue_ids=confirmed.acknowledged_issue_ids,
             remaining_warning_ids=[issue.issue_id for issue in confirmed.remaining_warnings],
+            resolution_notes=list(dict.fromkeys(resolution_notes)),
             unresolved_requirements=list(dict.fromkeys(unresolved)),
             coverage=_coverage_map(),
         )

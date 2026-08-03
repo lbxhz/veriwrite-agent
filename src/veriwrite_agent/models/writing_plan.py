@@ -118,6 +118,7 @@ class GroundedWritingPlan(StrictModel):
     status: Literal["draft", "confirmed"] = "draft"
     topic: str = Field(min_length=1)
     plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    required_source_dois: list[str] = Field(default_factory=list)
     sections: list[WritingSectionPlan] = Field(min_length=1)
     confirmed_by: str | None = None
     confirmed_at: datetime | None = None
@@ -132,6 +133,19 @@ class GroundedWritingPlan(StrictModel):
                 raise ValueError("confirmed writing plans need confirmation audit fields")
         elif self.confirmed_by is not None or self.confirmed_at is not None:
             raise ValueError("draft writing plans cannot claim confirmation")
+        required = [canonicalize_doi(doi) for doi in self.required_source_dois]
+        if len(required) != len(set(required)):
+            raise ValueError("required writing-plan source DOI values must be unique")
+        planned = {
+            doi
+            for section in self.sections
+            for paragraph in section.paragraphs
+            for doi in paragraph.source_dois
+        }
+        missing = [doi for doi in required if doi not in planned]
+        if missing:
+            raise ValueError("writing plan does not cover every required source DOI")
+        self.required_source_dois = required
         return self
 
     def confirm(self, *, confirmed_by: str) -> GroundedWritingPlan:

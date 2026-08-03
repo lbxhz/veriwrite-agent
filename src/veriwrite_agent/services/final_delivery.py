@@ -55,28 +55,65 @@ class LLMFinalMatterWriter:
             ensure_ascii=False,
             separators=(",", ":"),
         )
+        required_fields = _required_final_matter_fields(
+            policy.structure.required_sections,
+            body.markdown,
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Return JSON only. Using only the confirmed body, write a final "
+                    "paper title, abstract, 3-8 keywords, and conclusion. When required, "
+                    "also populate introduction, current_status_analysis, problems, and "
+                    "technology_trends from the confirmed body. Each structural field must "
+                    "synthesize the body rather than introduce new evidence. Do not add "
+                    "citations, DOI values, papers, methods, results, numbers, or claims "
+                    "that are absent from the body. "
+                    f"The required optional fields for this paper are: {required_fields}. "
+                    f"Use the requested output language: {policy.output_language}. "
+                    "Required structural sections: "
+                    f"{json.dumps(policy.structure.required_sections, ensure_ascii=False)}. "
+                    f"Satisfy this schema: {schema}"
+                ),
+            },
+            {"role": "user", "content": body.markdown},
+        ]
         raw = self._client.complete(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Return JSON only. Using only the confirmed body, write a final "
-                        "paper title, abstract, 3-8 keywords, and conclusion. Do not add "
-                        "citations, DOI values, papers, methods, results, numbers, or claims "
-                        "that are absent from the body. The conclusion must synthesize the "
-                        "body rather than introduce new evidence. Use the requested output "
-                        f"language: {policy.output_language}. Satisfy this schema: {schema}"
-                    ),
-                },
-                {"role": "user", "content": body.markdown},
-            ],
+            messages,
             response_format={"type": "json_object"},
         )
         try:
-            return FinalMatterProposal.model_validate_json(raw)
-        except ValidationError as exc:
+            proposal = _parse_final_matter(raw)
+            _validate_required_final_matter_fields(proposal, required_fields)
+            _validate_final_matter_has_no_self_authored_citations(proposal)
+            return proposal
+        except (ValidationError, FinalDeliveryError) as first_error:
+            repaired_raw = self._client.complete(
+                [
+                    *messages,
+                    {"role": "assistant", "content": raw},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Repair the JSON so it satisfies the schema and contains every "
+                            f"required optional field: {required_fields}. Preserve all "
+                            "supported content and return JSON only. Error: "
+                            f"{str(first_error)[:1600]}"
+                        ),
+                    },
+                ],
+                response_format={"type": "json_object"},
+            )
+        try:
+            proposal = _parse_final_matter(repaired_raw)
+            _validate_required_final_matter_fields(proposal, required_fields)
+            _validate_final_matter_has_no_self_authored_citations(proposal)
+            return proposal
+        except (ValidationError, FinalDeliveryError) as exc:
             raise FinalDeliveryError(
-                f"LLM final matter violates the data contract: {exc.errors(include_url=False)[:8]}"
+                "LLM final matter violates the data contract after one repair: "
+                + _final_matter_error_detail(exc)
             ) from exc
 
 
@@ -127,6 +164,7 @@ class FinalPaperAssembler:
             references,
             ai_declaration=ai_declaration,
             output_language=policy.output_language,
+            required_sections=policy.structure.required_sections,
         )
         audit = _audit_final_paper(
             policy=policy,
@@ -144,6 +182,10 @@ class FinalPaperAssembler:
             title=final_matter.title,
             abstract=final_matter.abstract,
             keywords=final_matter.keywords,
+            introduction=final_matter.introduction,
+            current_status_analysis=final_matter.current_status_analysis,
+            problems=final_matter.problems,
+            technology_trends=final_matter.technology_trends,
             body_markdown=transformed_body,
             conclusion=final_matter.conclusion,
             ai_declaration=ai_declaration,
@@ -160,6 +202,23 @@ class FinalPaperAssembler:
     ) -> FinalPaperPackage:
         if package.status != "ready_for_confirmation":
             raise FinalDeliveryError("final paper still has blocking audit issues")
+        review_codes = {
+            issue.code
+            for issue in package.audit.issues
+            if issue.severity == "warning"
+            and issue.code
+            in {
+                "theme_element_requires_user_review",
+                "original_analysis_requires_user_review",
+                "reference_tool_usage_requires_attestation",
+            }
+        }
+        missing_attestations = review_codes - set(package.user_review_attestations)
+        if missing_attestations:
+            raise FinalDeliveryError(
+                "final paper still needs semantic user review: "
+                + ", ".join(sorted(missing_attestations))
+            )
         name = confirmed_by.strip()
         if not name:
             raise FinalDeliveryError("confirmed_by cannot be blank")
@@ -255,10 +314,63 @@ class FinalPaperDocxExporter:
             (", " if english else "；").join(package.keywords)
         )
         _set_run_font(keyword_values, body_font, body_size)
-        _append_markdown(document, package.body_markdown, body_font, body_size)
+        required_kinds = {
+            kind
+            for required in policy.structure.required_sections
+            if (kind := _canonical_section_kind(required)) is not None
+        }
+        if package.introduction:
+            _add_section(
+                document,
+                "Introduction" if english else "引言",
+                package.introduction,
+                level=1,
+            )
+        if "research_status" in required_kinds:
+            document.add_heading(
+                "Research Status" if english else "国内外研究现状",
+                level=1,
+            )
+            _append_markdown(
+                document,
+                _demote_body_headings(package.body_markdown),
+                body_font,
+                body_size,
+            )
+        else:
+            _append_markdown(document, package.body_markdown, body_font, body_size)
+        if package.current_status_analysis:
+            _add_section(
+                document,
+                "Current Status Analysis" if english else "现状分析",
+                package.current_status_analysis,
+                level=1,
+            )
+        if package.problems:
+            _add_section(
+                document,
+                "Existing Problems" if english else "存在问题",
+                package.problems,
+                level=1,
+            )
+        if package.technology_trends and not _section_present(
+            "技术发展趋势", package.body_markdown
+        ):
+            _add_section(
+                document,
+                "Technology Trends" if english else "技术发展趋势",
+                package.technology_trends,
+                level=1,
+            )
+        conclusion_heading = "Conclusion" if english else "结论"
+        if not english and any(
+            re.sub(r"\s+", "", required) == "结语"
+            for required in policy.structure.required_sections
+        ):
+            conclusion_heading = "结语"
         _add_section(
             document,
-            "Conclusion" if english else "结论",
+            conclusion_heading,
             package.conclusion,
             level=1,
         )
@@ -484,6 +596,8 @@ def _audit_final_paper(
             )
         )
     for unresolved in policy.unresolved_requirements:
+        if _resolved_by_executable_policy(policy, unresolved):
+            continue
         severity = (
             "blocking"
             if (
@@ -511,6 +625,17 @@ def _audit_final_paper(
         reference_count=len(references),
         foreign_reference_count=foreign_count,
         issues=issues,
+    )
+
+
+def _resolved_by_executable_policy(policy, unresolved: str) -> bool:
+    compact = re.sub(r"\s+", "", unresolved)
+    has_minimum_wording = any(token in compact for token in ("至少", "以上"))
+    has_approximate_wording = any(token in compact for token in ("左右", "约"))
+    return (
+        policy.length.minimum_units is not None
+        and has_minimum_wording
+        and has_approximate_wording
     )
 
 
@@ -596,6 +721,7 @@ def _assemble_markdown(
     *,
     ai_declaration: str | None,
     output_language: str,
+    required_sections: list[str],
 ) -> str:
     english = output_language == "English"
     abstract_heading = "Abstract" if english else "摘要"
@@ -603,17 +729,68 @@ def _assemble_markdown(
     keyword_separator = ", " if english else "；"
     conclusion_heading = "Conclusion" if english else "结论"
     references_heading = "References" if english else "参考文献"
+    required_kinds = {
+        kind
+        for section in required_sections
+        if (kind := _canonical_section_kind(section)) is not None
+    }
+    if not english and any(
+        re.sub(r"\s+", "", section) == "结语" for section in required_sections
+    ):
+        conclusion_heading = "结语"
     parts = [
         f"# {final_matter.title}",
         f"## {abstract_heading}",
         final_matter.abstract,
         f"**{keyword_label}** {keyword_separator.join(final_matter.keywords)}",
-        body,
-        f"## {conclusion_heading}",
-        final_matter.conclusion,
-        f"## {references_heading}",
-        "\n".join(entry.formatted_text for entry in references),
     ]
+    if final_matter.introduction:
+        parts.extend(
+            [
+                "## Introduction" if english else "## 引言",
+                final_matter.introduction,
+            ]
+        )
+    if "research_status" in required_kinds:
+        parts.extend(
+            [
+                "## Research Status" if english else "## 国内外研究现状",
+                _demote_body_headings(body),
+            ]
+        )
+    else:
+        parts.append(body)
+    if final_matter.current_status_analysis:
+        parts.extend(
+            [
+                "## Current Status Analysis" if english else "## 现状分析",
+                final_matter.current_status_analysis,
+            ]
+        )
+    if final_matter.problems:
+        parts.extend(
+            [
+                "## Existing Problems" if english else "## 存在问题",
+                final_matter.problems,
+            ]
+        )
+    if final_matter.technology_trends and not _section_present(
+        "技术发展趋势", body
+    ):
+        parts.extend(
+            [
+                "## Technology Trends" if english else "## 技术发展趋势",
+                final_matter.technology_trends,
+            ]
+        )
+    parts.extend(
+        [
+            f"## {conclusion_heading}",
+            final_matter.conclusion,
+            f"## {references_heading}",
+            "\n".join(entry.formatted_text for entry in references),
+        ]
+    )
     if ai_declaration:
         parts.extend(
             [
@@ -626,6 +803,11 @@ def _assemble_markdown(
 
 def _section_present(required: str, markdown: str) -> bool:
     normalized = re.sub(r"\s+", "", required.casefold())
+    canonical = _canonical_section_kind(required)
+    if canonical == "problems_and_trends":
+        return _section_present("存在问题", markdown) and _section_present(
+            "技术发展趋势", markdown
+        )
     aliases = {
         "标题": "#",
         "title": "#",
@@ -662,7 +844,129 @@ def _section_present(required: str, markdown: str) -> bool:
         re.sub(r"\s+", "", value.casefold())
         for value in re.findall(r"^#{1,3}\s+(.+)$", markdown, re.MULTILINE)
     ]
+    canonical_aliases = {
+        "introduction": ("引言", "introduction"),
+        "research_status": ("研究现状", "researchstatus", "literaturereview"),
+        "current_status_analysis": ("现状分析", "currentstatusanalysis"),
+        "problems": ("存在问题", "existingproblems", "problems"),
+        "trends": ("技术发展趋势", "发展趋势", "technologytrends"),
+        "conclusion": ("结语", "结论", "conclusion"),
+    }
+    if canonical in canonical_aliases:
+        return any(
+            alias in heading
+            for heading in headings
+            for alias in canonical_aliases[canonical]
+        )
     return any(normalized in heading or heading in normalized for heading in headings)
+
+
+def _parse_final_matter(raw: str) -> FinalMatterProposal:
+    try:
+        return FinalMatterProposal.model_validate_json(raw)
+    except ValidationError as strict_error:
+        try:
+            payload = json.loads(raw, strict=False)
+        except json.JSONDecodeError:
+            raise strict_error
+        return FinalMatterProposal.model_validate(payload)
+
+
+def _required_final_matter_fields(
+    required_sections: list[str],
+    body_markdown: str,
+) -> list[str]:
+    kinds = {
+        kind
+        for section in required_sections
+        if (kind := _canonical_section_kind(section)) is not None
+    }
+    required: list[str] = []
+    if "introduction" in kinds and not _section_present("引言", body_markdown):
+        required.append("introduction")
+    if "current_status_analysis" in kinds and not _section_present(
+        "现状分析", body_markdown
+    ):
+        required.append("current_status_analysis")
+    if (
+        "problems" in kinds or "problems_and_trends" in kinds
+    ) and not _section_present("存在问题", body_markdown):
+        required.append("problems")
+    if (
+        "trends" in kinds or "problems_and_trends" in kinds
+    ) and not _section_present("技术发展趋势", body_markdown):
+        required.append("technology_trends")
+    return required
+
+
+def _validate_required_final_matter_fields(
+    proposal: FinalMatterProposal,
+    required_fields: list[str],
+) -> None:
+    missing = [field for field in required_fields if not getattr(proposal, field)]
+    if missing:
+        raise FinalDeliveryError(
+            "final matter is missing required structural fields: " + ", ".join(missing)
+        )
+
+
+def _validate_final_matter_has_no_self_authored_citations(
+    proposal: FinalMatterProposal,
+) -> None:
+    text_fields = [
+        proposal.title,
+        proposal.abstract,
+        proposal.introduction,
+        proposal.current_status_analysis,
+        proposal.problems,
+        proposal.technology_trends,
+        proposal.conclusion,
+    ]
+    if any(
+        value
+        and re.search(
+            r"\[@|https?://(?:dx\.)?doi\.org/|doi\s*:|10\.\d{4,9}/\S+",
+            value,
+            re.IGNORECASE,
+        )
+        for value in text_fields
+    ):
+        raise FinalDeliveryError(
+            "final matter contains a self-authored citation marker or DOI value"
+        )
+
+
+def _final_matter_error_detail(exc: ValidationError | FinalDeliveryError) -> str:
+    if isinstance(exc, ValidationError):
+        return str(exc.errors(include_url=False)[:8])
+    return str(exc)
+
+
+def _canonical_section_kind(value: str) -> str | None:
+    normalized = re.sub(r"\s+", "", value.casefold())
+    if "存在问题" in normalized and "技术发展趋势" in normalized:
+        return "problems_and_trends"
+    aliases = {
+        "引言": "introduction",
+        "introduction": "introduction",
+        "国内外研究现状": "research_status",
+        "研究现状": "research_status",
+        "researchstatus": "research_status",
+        "现状分析": "current_status_analysis",
+        "currentstatusanalysis": "current_status_analysis",
+        "存在问题": "problems",
+        "existingproblems": "problems",
+        "技术发展趋势": "trends",
+        "technologytrends": "trends",
+        "结语": "conclusion",
+        "结论": "conclusion",
+        "conclusion": "conclusion",
+    }
+    return aliases.get(normalized)
+
+
+def _demote_body_headings(body: str) -> str:
+    return re.sub(r"^##\s+", "### ", body, flags=re.MULTILINE)
 
 
 def _font_size(value: str | None) -> float:

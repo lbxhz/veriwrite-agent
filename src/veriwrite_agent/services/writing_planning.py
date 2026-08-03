@@ -34,6 +34,7 @@ from veriwrite_agent.services.grounded_writing import (
     SectionEvidencePacketBuilder,
     count_writing_units,
 )
+from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 
 
 class WritingPlanError(ValueError):
@@ -80,13 +81,21 @@ class GroundedWritingPlanner:
                     self._cache.save_section(packet, cached)
             section_plans.append(cached)
 
+        required_source_dois = _required_source_dois(handoff)
+        section_plans = _apply_required_source_coverage(
+            handoff,
+            section_plans,
+            required_source_dois=required_source_dois,
+        )
         fingerprint = _writing_plan_fingerprint(
             handoff.outline.outline.topic,
             section_plans,
+            required_source_dois=required_source_dois,
         )
         return GroundedWritingPlan(
             topic=handoff.outline.outline.topic,
             plan_fingerprint=fingerprint,
+            required_source_dois=required_source_dois,
             sections=section_plans,
         )
 
@@ -286,7 +295,9 @@ class LLMGroundedParagraphWriter:
                     f"paragraph must not exceed {maximum_units} counted units under "
                     f"counting_policy={packet.counting_policy}. Metadata-only sources permit "
                     "only general statements. Encode line breaks and control characters "
-                    "legally inside the JSON string. "
+                    "legally inside the JSON string. Substantively discuss every locked "
+                    "source in the packet at the level allowed by its permitted_use; do not "
+                    "merely list titles or authors. "
                     f"The response must satisfy this JSON Schema: {schema}"
                 ),
             },
@@ -674,11 +685,14 @@ def _section_plan_signature(packet: SectionEvidencePacket) -> str:
 def _writing_plan_fingerprint(
     topic: str,
     sections: list[WritingSectionPlan],
+    *,
+    required_source_dois: list[str],
 ) -> str:
     canonical = json.dumps(
         {
             "pipeline_version": "grounded-writing-plan-v1",
             "topic": topic,
+            "required_source_dois": required_source_dois,
             "sections": [section.model_dump(mode="json") for section in sections],
         },
         ensure_ascii=False,
@@ -686,6 +700,223 @@ def _writing_plan_fingerprint(
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _required_source_dois(handoff: V04WritingHandoff) -> list[str]:
+    policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
+        handoff.requirement
+    )
+    records = handoff.evidence_library.records
+    required_count = (
+        len(records)
+        if policy.references.all_bibliography_items_must_be_cited_and_discussed
+        else (
+            policy.references.minimum_total
+            if policy.references.target_is_approximate
+            else policy.references.target_total
+        )
+    )
+    if len(records) < required_count:
+        raise WritingPlanError(
+            "confirmed evidence library contains fewer sources than the required "
+            f"writing coverage: required={required_count}; available={len(records)}"
+        )
+    return [record.doi for record in records[:required_count]]
+
+
+def _apply_required_source_coverage(
+    handoff: V04WritingHandoff,
+    sections: list[WritingSectionPlan],
+    *,
+    required_source_dois: list[str],
+) -> list[WritingSectionPlan]:
+    if not required_source_dois:
+        return sections
+    policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
+        handoff.requirement
+    )
+    cluster_limit = min(
+        policy.references.max_references_per_citation_cluster or 4,
+        8,
+    )
+    records = {record.doi: record for record in handoff.evidence_library.records}
+    section_payloads = {
+        section.section_id: section.model_dump(mode="json") for section in sections
+    }
+    section_order = [section.section_id for section in sections]
+    covered = {
+        doi
+        for section in sections
+        for paragraph in section.paragraphs
+        for doi in paragraph.source_dois
+    }
+    missing_required = [doi for doi in required_source_dois if doi not in covered]
+    if not missing_required:
+        return sections
+    original_paragraph_counts = {
+        section.section_id: len(section.paragraphs) for section in sections
+    }
+
+    for doi in missing_required:
+        record = records[doi]
+        candidate_section_ids = [
+            section_id
+            for section_id in section_order
+            if section_id in record.theme_ids
+        ] or section_order
+        placement = _place_source_in_existing_paragraph(
+            section_payloads,
+            candidate_section_ids,
+            doi=doi,
+            permitted_use=record.permitted_use,
+            cluster_limit=cluster_limit,
+        )
+        if placement is None and record.permitted_use == "background_only":
+            placement = _convert_support_paragraph_and_place(
+                section_payloads,
+                candidate_section_ids,
+                doi=doi,
+                cluster_limit=cluster_limit,
+            )
+        if placement is None:
+            placement = _add_coverage_paragraph(
+                section_payloads,
+                candidate_section_ids[0],
+                doi=doi,
+                cluster_limit=cluster_limit,
+            )
+        covered.add(doi)
+
+    rebuilt: list[WritingSectionPlan] = []
+    for section_id in section_order:
+        payload = section_payloads[section_id]
+        paragraphs = payload["paragraphs"]
+        targets = (
+            _allocate_targets(
+                [max(1, int(paragraph["target_words"])) for paragraph in paragraphs],
+                int(payload["target_words"]),
+            )
+            if len(paragraphs) != original_paragraph_counts[section_id]
+            else [int(paragraph["target_words"]) for paragraph in paragraphs]
+        )
+        for number, (paragraph, target) in enumerate(
+            zip(paragraphs, targets, strict=True),
+            1,
+        ):
+            paragraph["paragraph_id"] = f"{section_id}_p{number:02d}"
+            paragraph["paragraph_number"] = number
+            paragraph["target_words"] = target
+        rebuilt.append(WritingSectionPlan.model_validate(payload))
+    return rebuilt
+
+
+def _place_source_in_existing_paragraph(
+    section_payloads: dict[str, dict[str, object]],
+    section_ids: list[str],
+    *,
+    doi: str,
+    permitted_use: str,
+    cluster_limit: int,
+) -> tuple[str, int] | None:
+    candidates: list[tuple[int, int, str, int]] = []
+    for section_id in section_ids:
+        paragraphs = section_payloads[section_id]["paragraphs"]
+        for index, paragraph in enumerate(paragraphs):
+            source_dois = paragraph["source_dois"]
+            if (
+                len(source_dois) < cluster_limit
+                and _permission_allows(permitted_use, paragraph["role"])
+            ):
+                candidates.append((len(source_dois), index, section_id, index))
+    if not candidates:
+        return None
+    _, _, section_id, index = min(candidates)
+    paragraph = section_payloads[section_id]["paragraphs"][index]
+    paragraph["source_dois"].append(doi)
+    _mark_coverage_purpose(paragraph)
+    return section_id, index
+
+
+def _convert_support_paragraph_and_place(
+    section_payloads: dict[str, dict[str, object]],
+    section_ids: list[str],
+    *,
+    doi: str,
+    cluster_limit: int,
+) -> tuple[str, int] | None:
+    candidates: list[tuple[int, int, str, int]] = []
+    for section_id in section_ids:
+        paragraphs = section_payloads[section_id]["paragraphs"]
+        for index, paragraph in enumerate(paragraphs):
+            if (
+                paragraph["role"] == "section_support"
+                and len(paragraph["source_dois"]) < cluster_limit
+            ):
+                candidates.append(
+                    (len(paragraph["source_dois"]), index, section_id, index)
+                )
+    if not candidates:
+        return None
+    _, _, section_id, index = min(candidates)
+    paragraph = section_payloads[section_id]["paragraphs"][index]
+    paragraph["role"] = "background"
+    paragraph["source_dois"].append(doi)
+    _mark_coverage_purpose(paragraph)
+    return section_id, index
+
+
+def _add_coverage_paragraph(
+    section_payloads: dict[str, dict[str, object]],
+    section_id: str,
+    *,
+    doi: str,
+    cluster_limit: int,
+) -> tuple[str, int]:
+    paragraphs = section_payloads[section_id]["paragraphs"]
+    if len(paragraphs) >= 12:
+        raise WritingPlanError(
+            f"section {section_id} has no paragraph capacity for required source {doi}"
+        )
+    insertion = next(
+        (
+            index
+            for index in range(len(paragraphs) - 1, -1, -1)
+            if paragraphs[index]["role"] == "synthesis"
+        ),
+        len(paragraphs),
+    )
+    paragraphs.insert(
+        insertion,
+        {
+            "paragraph_id": f"{section_id}_p99",
+            "section_id": section_id,
+            "paragraph_number": 99,
+            "role": "background",
+            "purpose": (
+                "Map the scope of additional verified literature required by the "
+                "bibliography coverage policy."
+            ),
+            "claim_focus": (
+                "Compare the research scope of the assigned metadata-supported sources "
+                "without attributing unverified detailed results."
+            ),
+            "target_words": 80,
+            "evidence_card_ids": [],
+            "source_dois": [doi][:cluster_limit],
+        },
+    )
+    return section_id, insertion
+
+
+def _mark_coverage_purpose(paragraph: dict[str, object]) -> None:
+    marker = "Discuss and compare every additional locked source"
+    purpose = str(paragraph["purpose"])
+    if marker not in purpose:
+        paragraph["purpose"] = (
+            purpose.rstrip()
+            + " Discuss and compare every additional locked source assigned by the "
+            "required bibliography coverage policy."
+        )
 
 
 def _paragraph_signature(packet: ParagraphEvidencePacket) -> str:

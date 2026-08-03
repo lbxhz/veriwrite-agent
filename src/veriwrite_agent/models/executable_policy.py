@@ -117,6 +117,7 @@ class ExecutableRequirementPolicy(StrictModel):
     ai_usage: AIUsagePolicy
     acknowledged_issue_ids: list[str] = Field(default_factory=list)
     remaining_warning_ids: list[str] = Field(default_factory=list)
+    resolution_notes: list[str] = Field(default_factory=list)
     unresolved_requirements: list[str] = Field(default_factory=list)
     coverage: list[PolicyCoverageItem] = Field(min_length=1)
 
