@@ -47,7 +47,12 @@ from veriwrite_agent.services.writing_planning import (
     PlannedSectionDraftService,
     WritingPlanError,
     WritingPlanRuntimeCache,
+    align_writing_plan_language,
     repair_writing_plan_source_coverage,
+)
+from veriwrite_agent.services.writing_quality import (
+    LLMSectionQualityReviewer,
+    apply_section_quality_review,
 )
 
 DOI = "10.1000/core.1"
@@ -184,6 +189,21 @@ def handoff() -> V04WritingHandoff:
     )
 
 
+def chinese_handoff() -> V04WritingHandoff:
+    active = handoff()
+    requirement = active.requirement.requirement.model_copy(
+        update={"output_language": "Chinese"}
+    )
+    return active.model_copy(
+        update={
+            "requirement": active.requirement.model_copy(
+                update={"requirement": requirement}
+            ),
+            "requirement_policy": None,
+        }
+    )
+
+
 def blocked_handoff() -> V04WritingHandoff:
     active = handoff()
     blocked_requirement = active.requirement.requirement.model_copy(
@@ -312,6 +332,7 @@ def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
     assert section.paragraphs[0].source_dois == [DOI]
     assert section.paragraphs[1].source_dois == [SUPPORTING_DOI]
     assert len(client.calls) == 1
+    assert plan.output_language == "English"
     prompt_payload = json.loads(client.calls[0]["messages"][1]["content"])
     assert prompt_payload["evidence_catalog"][0]["ref"] == "E001"
     assert prompt_payload["source_catalog"][1]["ref"] == "S002"
@@ -433,10 +454,19 @@ def test_planner_covers_every_source_required_by_reference_policy() -> None:
         if BACKGROUND_DOI in paragraph.source_dois
     )
     assert background_paragraph.role in {"background", "synthesis"}
+    assert background_paragraph.coverage_only is True
+    assert all(
+        BACKGROUND_DOI not in paragraph.source_dois
+        for paragraph in plan.sections[0].paragraphs
+        if not paragraph.coverage_only
+    )
 
 
 def test_source_coverage_repair_changes_only_paragraphs_receiving_missing_sources() -> None:
     active_handoff = handoff_with_background_source()
+    legacy = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
     requirement_spec = active_handoff.requirement.requirement.model_copy(
         update={
             "references": ReferenceRequirement(
@@ -459,25 +489,15 @@ def test_source_coverage_repair_changes_only_paragraphs_receiving_missing_source
             ),
         }
     )
-    complete = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
-        active_handoff
-    )
-    payload = complete.model_dump(mode="json")
-    payload["plan_fingerprint"] = "b" * 64
-    payload["required_source_dois"] = []
-    for section in payload["sections"]:
-        for paragraph in section["paragraphs"]:
-            paragraph["source_dois"] = [
-                doi for doi in paragraph["source_dois"] if doi != BACKGROUND_DOI
-            ]
-    legacy = type(complete).model_validate(payload)
-
     repaired = repair_writing_plan_source_coverage(active_handoff, legacy)
 
     assert repaired.plan.plan_fingerprint != legacy.plan_fingerprint
     assert BACKGROUND_DOI in repaired.plan.required_source_dois
-    assert repaired.changed_paragraph_numbers == {"method": (3,)}
-    assert repaired.plan.sections[0].paragraphs[0] == legacy.sections[0].paragraphs[0]
+    assert repaired.changed_paragraph_numbers == {"method": (4,)}
+    assert repaired.plan.sections[0].paragraphs[3].coverage_only is True
+    assert repaired.plan.sections[0].paragraphs[0].model_dump(
+        exclude={"target_words"}
+    ) == legacy.sections[0].paragraphs[0].model_dump(exclude={"target_words"})
 
 
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
@@ -500,6 +520,118 @@ def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
     with pytest.raises(GroundedWritingError, match="paragraph output"):
         LLMGroundedParagraphWriter(client).write(paragraph_packet)
     assert len(client.calls) == 2
+
+
+def test_chinese_language_contract_flows_to_plan_packet_and_repairs_prose() -> None:
+    active_handoff = chinese_handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    client = SequenceLLMClient(
+        [
+            json.dumps(
+                {
+                    "text": (
+                        "This paragraph is written entirely in English and therefore "
+                        "violates the confirmed Chinese output language."
+                    )
+                }
+            ),
+            json.dumps(
+                {
+                    "text": (
+                        "现有证据表明，该反演模型能够降低研究区域的不确定性，"
+                        "因此可为区域大气遥感反演流程提供直接的方法依据。"
+                    )
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert plan.output_language == "Chinese"
+    assert section_packet.output_language == "Chinese"
+    assert paragraph_packet.output_language == "Chinese"
+    assert result.text.startswith("现有证据表明")
+    assert len(client.calls) == 2
+    assert "natural academic Chinese" in client.calls[0]["messages"][0]["content"]
+
+
+def test_cached_plan_migration_adds_language_and_marks_legacy_coverage() -> None:
+    active_handoff = chinese_handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    payload = plan.model_dump(mode="json")
+    payload["output_language"] = "pending_confirmation"
+    payload["plan_fingerprint"] = "c" * 64
+    payload["sections"][0]["paragraphs"][1]["purpose"] = (
+        "Map the scope of additional verified literature required by the "
+        "bibliography coverage policy."
+    )
+    legacy = type(plan).model_validate(payload)
+
+    migrated = align_writing_plan_language(active_handoff, legacy)
+
+    assert migrated.output_language == "Chinese"
+    assert migrated.sections[0].paragraphs[1].coverage_only is True
+    assert migrated.plan_fingerprint != legacy.plan_fingerprint
+
+
+def test_draft_language_audit_blocks_english_prose_in_chinese_project() -> None:
+    packet = SectionEvidencePacketBuilder().build(chinese_handoff(), "method")
+
+    draft = GroundedSectionDraftService().create(
+        packet,
+        proposal(
+            text=(
+                "This paragraph remains entirely in English even though the confirmed "
+                "course-paper output language is Chinese."
+            )
+        ),
+    )
+
+    assert draft.status == "needs_review"
+    assert "language_mismatch" in [issue.code for issue in draft.issues]
+
+
+def test_chapter_quality_reviewer_creates_targeted_editorial_issue() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(packet, proposal())
+    response = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 1,
+                    "code": "overstated_evidence",
+                    "detail": "The causal wording is stronger than the locked result.",
+                    "revision_instruction": "Use associative and qualified wording.",
+                    "claim_kind": "evidence_fact",
+                    "evidence_card_ids": [EVIDENCE_ID],
+                }
+            ],
+        }
+    )
+
+    review = LLMSectionQualityReviewer(FakeLLMClient(response)).review(
+        plan.sections[0],
+        draft,
+        packet,
+        output_language="English",
+    )
+    reviewed = apply_section_quality_review(draft, review)
+
+    assert reviewed.issues[-1].code == "overstated_evidence"
+    assert reviewed.issues[-1].severity == "blocking"
+    assert reviewed.status == "needs_review"
+    assert reviewed.issues[-1].paragraph_number == 1
+    assert "qualified wording" in reviewed.issues[-1].detail
 
 
 def test_paragraph_writer_recovers_literal_json_control_characters() -> None:

@@ -13,6 +13,8 @@ def test_settings_load_from_environment(monkeypatch) -> None:
 
     assert settings.model == "deepseek-v4-flash"
     assert settings.public_summary()["api_key_configured"] is True
+    assert settings.public_summary()["temperature"] == 0.2
+    assert settings.public_summary()["max_tokens"] == 8192
     assert "test-secret-value" not in repr(settings)
     assert "test-secret-value" not in str(settings.public_summary())
 
@@ -22,4 +24,3 @@ def test_blank_api_key_is_rejected(monkeypatch) -> None:
 
     with pytest.raises(ValidationError):
         LLMSettings(_env_file=None)
-

@@ -35,7 +35,13 @@ from veriwrite_agent.services.writing_planning import (
     ParagraphWritingRuntimeCache,
     PlannedSectionDraftService,
     WritingPlanRuntimeCache,
+    align_writing_plan_language,
     repair_writing_plan_source_coverage,
+)
+from veriwrite_agent.services.writing_quality import (
+    LLMSectionQualityReviewer,
+    apply_section_quality_review,
+    language_mismatch_detail,
 )
 from veriwrite_agent.services.final_delivery import (
     FinalPaperAssembler,
@@ -65,6 +71,15 @@ WRITING_REPAIR_CODES = {
     "reference_count_above_maximum",
     "uncited_bibliography_item",
     "unknown_citation_key",
+}
+EDITORIAL_REPAIR_CODES = {
+    "paragraph_repetition",
+    "topic_drift",
+    "coherence_gap",
+    "terminology_inconsistent",
+    "academic_style_problem",
+    "unsupported_claim",
+    "overstated_evidence",
 }
 
 
@@ -221,6 +236,17 @@ def _paragraph_targets_for_final_issue(
         }
     if issue.code.startswith("length_"):
         return _length_repair_targets(issue, plan=plan, project=project)
+    if issue.code == "body_language_mismatch":
+        return {
+            (section.section_id, number)
+            for section in project.sections
+            if section.draft is not None
+            for number, paragraph in enumerate(section.draft.paragraphs, 1)
+            if language_mismatch_detail(
+                paragraph.text,
+                output_language=plan.output_language,
+            )
+        }
     if issue.code in WRITING_REPAIR_CODES:
         cited = {reference.doi for reference in package.references}
         missing = [doi for doi in plan.required_source_dois if doi not in cited]
@@ -538,24 +564,27 @@ def render_grounded_writing_console(
     st.header("V0.4 按证据逐章写作")
     st.caption(
         "DeepSeek只组织段落，不负责创建引用。DOI、引用键、证据卡和PDF页码"
-        "由程序绑定；每章确认后才进入正文汇总。"
+        "由程序绑定；初稿生成后由章节编辑器检查语言、跑题、重复、衔接、"
+        "术语和主张强度，只重写被标记的段落；每章确认后才进入正文汇总。"
     )
-
-    legacy_project_json = st.session_state.get(V04_PROJECT_KEY)
-    if legacy_project_json:
-        legacy_project = V04WritingProject.model_validate_json(legacy_project_json)
-        if legacy_project.status == "body_complete":
-            _render_body_download(
-                legacy_project,
-                include_final_delivery=include_final_delivery,
-            )
-            return
 
     writing_plan = _render_writing_plan(handoff)
     if writing_plan is None:
         return
 
     project = _load_or_start_project(handoff)
+    project, language_reopened = _revalidate_project_language(
+        project,
+        writing_plan,
+    )
+    if language_reopened:
+        _store_project(project)
+        st.session_state.pop(FINAL_MATTER_KEY, None)
+        st.session_state.pop(FINAL_PACKAGE_KEY, None)
+        st.warning(
+            f"检测到 {language_reopened} 个正文段落不符合已确认的输出语言；"
+            "系统已保留全部原文，仅将这些段落重新打开进行定点修订。"
+        )
     confirmed_count = sum(state.status == "confirmed" for state in project.sections)
     columns = st.columns(3)
     columns[0].metric("章节总数", len(project.sections))
@@ -622,12 +651,18 @@ def render_grounded_writing_console(
         return
 
     current_state = state_by_id[section_id]
+    repairable_issue_numbers = {
+        issue.paragraph_number
+        for issue in (current_state.draft.issues if current_state.draft else [])
+        if issue.paragraph_number is not None
+        and (issue.severity == "blocking" or issue.code in EDITORIAL_REPAIR_CODES)
+    }
     generate_label = (
         "生成本章草稿"
         if current_state.draft is None
         else (
-            "仅重写阻塞段落"
-            if current_state.status == "needs_review"
+            "仅重写问题段落"
+            if repairable_issue_numbers
             else "重新生成本章草稿"
         )
     )
@@ -638,10 +673,26 @@ def render_grounded_writing_console(
         key=f"v04_generate_{section_id}",
     ):
         try:
-            blocking_paragraphs = {
+            repair_paragraphs = {
                 issue.paragraph_number
                 for issue in (current_state.draft.issues if current_state.draft else [])
-                if issue.severity == "blocking" and issue.paragraph_number is not None
+                if issue.paragraph_number is not None
+                and (
+                    issue.severity == "blocking"
+                    or issue.code in EDITORIAL_REPAIR_CODES
+                )
+            }
+            revision_instructions = {
+                number: " ".join(
+                    issue.detail
+                    for issue in (current_state.draft.issues if current_state.draft else [])
+                    if issue.paragraph_number == number
+                    and (
+                        issue.severity == "blocking"
+                        or issue.code in EDITORIAL_REPAIR_CODES
+                    )
+                )
+                for number in repair_paragraphs
             }
             with st.spinner(
                 "正在按已锁定证据逐段写作；已完成段落会立即保存……"
@@ -659,10 +710,42 @@ def render_grounded_writing_console(
                     existing_draft=current_state.draft,
                     force=(
                         current_state.draft is not None
-                        and not blocking_paragraphs
+                        and not repair_paragraphs
                     ),
-                    force_paragraph_numbers=blocking_paragraphs,
+                    force_paragraph_numbers=repair_paragraphs,
+                    revision_instructions=revision_instructions,
                 )
+                try:
+                    quality_review = LLMSectionQualityReviewer(
+                        DeepSeekClient(LLMSettings().for_structured_output())
+                    ).review(
+                        section_plan,
+                        draft,
+                        packet,
+                        output_language=writing_plan.output_language,
+                    )
+                    draft = apply_section_quality_review(draft, quality_review)
+                except Exception as review_exc:
+                    retained_issues = [
+                        issue
+                        for issue in draft.issues
+                        if issue.code != "quality_review_failed"
+                    ]
+                    draft = draft.model_copy(
+                        update={
+                            "issues": [
+                                *retained_issues,
+                                SectionDraftIssue(
+                                    code="quality_review_failed",
+                                    severity="warning",
+                                    detail=(
+                                        "章节草稿已安全保存，但编辑质量审阅暂未完成："
+                                        f"{review_exc}"
+                                    ),
+                                ),
+                            ]
+                        }
+                    )
                 project = WritingProjectService().save_draft(project, draft)
         except Exception as exc:
             st.error(_friendly_writing_error(exc))
@@ -684,6 +767,35 @@ def render_final_delivery_console(handoff: V04WritingHandoff) -> None:
     st.divider()
     st.header("最终论文组装与交付")
     project = _load_or_start_project(handoff)
+    serialized_plan = st.session_state.get(WRITING_PLAN_KEY)
+    if serialized_plan:
+        loaded_plan = GroundedWritingPlan.model_validate_json(serialized_plan)
+        plan = align_writing_plan_language(
+            handoff,
+            loaded_plan,
+        )
+        if plan != loaded_plan:
+            st.session_state[WRITING_PLAN_KEY] = plan.model_dump_json(indent=2)
+            st.session_state.pop(FINAL_MATTER_KEY, None)
+            st.session_state.pop(FINAL_PACKAGE_KEY, None)
+            st.rerun()
+        project, language_reopened = _revalidate_project_language(project, plan)
+        if language_reopened:
+            _store_project(project)
+            st.session_state.pop(FINAL_MATTER_KEY, None)
+            st.session_state.pop(FINAL_PACKAGE_KEY, None)
+            first_reopened = next(
+                state.section_id
+                for state in project.sections
+                if state.status == "needs_review"
+            )
+            st.session_state[SECTION_SELECTION_REQUEST_KEY] = first_reopened
+            st.session_state["mvp_navigation_request"] = "writing"
+            st.session_state["mvp_flash"] = (
+                f"检测到 {language_reopened} 个正文段落不符合已确认的输出语言；"
+                "已退回 V0.4 定点修订，其他段落保持不变。"
+            )
+            st.rerun()
     if project.status != "body_complete":
         st.warning("正文章节尚未全部确认，最终论文组装仍处于锁定状态。")
         return
@@ -734,6 +846,13 @@ def _render_writing_plan(
         return None
 
     plan = GroundedWritingPlan.model_validate_json(serialized)
+    aligned_plan = align_writing_plan_language(handoff, plan)
+    if aligned_plan != plan:
+        plan = aligned_plan
+        st.session_state[WRITING_PLAN_KEY] = plan.model_dump_json(indent=2)
+        st.session_state.pop(FINAL_MATTER_KEY, None)
+        st.session_state.pop(FINAL_PACKAGE_KEY, None)
+        st.rerun()
     _render_writing_plan_summary(plan)
     if plan.status == "draft":
         existing_project = st.session_state.get(V04_PROJECT_KEY)
@@ -838,6 +957,68 @@ def _load_or_start_project(
     project = WritingProjectService().start(handoff)
     _store_project(project)
     return project
+
+
+def _revalidate_project_language(
+    project: V04WritingProject,
+    plan: GroundedWritingPlan,
+) -> tuple[V04WritingProject, int]:
+    """Reopen only legacy paragraphs that violate the confirmed language."""
+
+    states: list[WritingSectionState] = []
+    changed = False
+    mismatch_count = 0
+    for state in project.sections:
+        draft = state.draft
+        if draft is None:
+            states.append(state)
+            continue
+        retained = [issue for issue in draft.issues if issue.code != "language_mismatch"]
+        language_issues: list[SectionDraftIssue] = []
+        for number, paragraph in enumerate(draft.paragraphs, 1):
+            detail = language_mismatch_detail(
+                paragraph.text,
+                output_language=plan.output_language,
+            )
+            if detail:
+                mismatch_count += 1
+                language_issues.append(
+                    SectionDraftIssue(
+                        code="language_mismatch",
+                        severity="blocking",
+                        paragraph_number=number,
+                        detail=detail,
+                    )
+                )
+        issues = [*retained, *language_issues]
+        has_blocker = any(issue.severity == "blocking" for issue in issues)
+        desired_status = "needs_review" if has_blocker else draft.status
+        update: dict[str, Any] = {"issues": issues, "status": desired_status}
+        if has_blocker:
+            update.update({"confirmed_by": None, "confirmed_at": None})
+        revised_draft = draft.model_copy(update=update)
+        revised_state = WritingSectionState(
+            section_id=state.section_id,
+            status=desired_status,
+            draft=revised_draft,
+        )
+        if revised_state != state:
+            changed = True
+        states.append(revised_state if revised_state != state else state)
+    if not changed:
+        return project, mismatch_count
+    revised = project.model_copy(
+        update={
+            "status": (
+                "body_complete"
+                if all(state.status == "confirmed" for state in states)
+                else "drafting"
+            ),
+            "sections": states,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+    return V04WritingProject.model_validate(revised.model_dump(mode="json")), mismatch_count
 
 
 def _store_project(project: V04WritingProject) -> None:

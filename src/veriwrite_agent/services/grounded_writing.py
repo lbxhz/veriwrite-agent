@@ -32,6 +32,10 @@ from veriwrite_agent.services.requirement_policy import (
     RequirementPolicyCompiler,
     ai_generation_prohibitions,
 )
+from veriwrite_agent.services.writing_quality import (
+    language_mismatch_detail,
+    repeated_sentence_pairs,
+)
 
 
 class GroundedWritingError(ValueError):
@@ -98,6 +102,9 @@ class SectionEvidencePacketBuilder:
             raise GroundedWritingError(
                 "section has no confirmed full-text evidence cards"
             )
+        policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
+            handoff.requirement
+        )
         policy_reasons = _ai_generation_prohibitions(handoff)
         return SectionEvidencePacket(
             section_id=section.section_id,
@@ -105,6 +112,7 @@ class SectionEvidencePacketBuilder:
             purpose=section.purpose,
             target_words=section.target_words,
             counting_policy=section.counting_policy,
+            output_language=policy.output_language,
             research_questions=section.research_questions,
             evidence_items=evidence_items,
             sources=sources,
@@ -359,11 +367,27 @@ class GroundedSectionDraftService:
                 paragraph,
                 evidence,
                 sources,
+                packet.output_language,
             )
             issues.extend(paragraph_issues)
             citations.extend(paragraph_citations)
             rendered_paragraphs.append(
                 _render_paragraph(paragraph.text, paragraph_citations)
+            )
+
+        for first, second in repeated_sentence_pairs(
+            [paragraph.text for paragraph in proposal.paragraphs]
+        ):
+            issues.append(
+                SectionDraftIssue(
+                    code="paragraph_repetition",
+                    severity="warning",
+                    paragraph_number=second,
+                    detail=(
+                        f"paragraph {second} substantially repeats paragraph {first}; "
+                        "merge or advance the argument before confirmation"
+                    ),
+                )
             )
 
         markdown = f"## {packet.title}\n\n" + "\n\n".join(
@@ -568,6 +592,7 @@ def _audit_paragraph(
     paragraph: DraftParagraphProposal,
     evidence: dict[str, SectionEvidenceItem],
     sources: dict[str, SectionSourceRecord],
+    output_language: str,
 ) -> tuple[list[SectionDraftIssue], list[CitationBinding]]:
     issues: list[SectionDraftIssue] = []
     valid_cards: list[SectionEvidenceItem] = []
@@ -636,6 +661,20 @@ def _audit_paragraph(
                 severity="blocking",
                 paragraph_number=paragraph_number,
                 detail="LLM paragraph text attempted to author its own citation",
+            )
+        )
+
+    language_detail = language_mismatch_detail(
+        paragraph.text,
+        output_language=output_language,
+    )
+    if language_detail:
+        issues.append(
+            SectionDraftIssue(
+                code="language_mismatch",
+                severity="blocking",
+                paragraph_number=paragraph_number,
+                detail=language_detail,
             )
         )
 

@@ -28,4 +28,5 @@ def test_deepseek_adapter_uses_injected_sdk_without_network() -> None:
     request = sdk.chat.completions.create.call_args.kwargs
     assert request["model"] == "deepseek-v4-flash"
     assert request["response_format"] == {"type": "json_object"}
-
+    assert request["temperature"] == 0.2
+    assert request["max_tokens"] == 8192

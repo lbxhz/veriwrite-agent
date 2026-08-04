@@ -36,6 +36,10 @@ from veriwrite_agent.services.grounded_writing import (
     count_writing_units,
 )
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
+from veriwrite_agent.services.writing_quality import (
+    language_mismatch_detail,
+    output_language_instruction,
+)
 
 
 class WritingPlanError(ValueError):
@@ -48,6 +52,10 @@ class ParagraphLengthError(ValueError):
 
 class ParagraphCitationError(ValueError):
     """Raised when paragraph prose attempts to create its own citation."""
+
+
+class ParagraphLanguageError(ValueError):
+    """Raised when prose violates the confirmed output language."""
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,9 @@ class GroundedWritingPlanner:
         self._reuse_cache = reuse_cache
 
     def plan(self, handoff: V04WritingHandoff) -> GroundedWritingPlan:
+        policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
+            handoff.requirement
+        )
         section_plans: list[WritingSectionPlan] = []
         for outline_section in handoff.outline.outline.sections:
             packet = SectionEvidencePacketBuilder().build(
@@ -100,9 +111,11 @@ class GroundedWritingPlanner:
             handoff.outline.outline.topic,
             section_plans,
             required_source_dois=required_source_dois,
+            output_language=policy.output_language,
         )
         return GroundedWritingPlan(
             topic=handoff.outline.outline.topic,
+            output_language=policy.output_language,
             plan_fingerprint=fingerprint,
             required_source_dois=required_source_dois,
             sections=section_plans,
@@ -200,6 +213,10 @@ class GroundedWritingPlanner:
                     "permitted_use is background_only may support only background or "
                     "synthesis, never section_support or detailed_evidence. Every paragraph "
                     "needs at least one permitted evidence_ref or source_ref. "
+                    "Select only the one to three sources necessary for the paragraph's "
+                    "central claim; unused bibliography items are handled separately by "
+                    "the chapter-level coverage compiler. Do not maximize source coverage "
+                    "inside ordinary argument paragraphs. "
                     "Keep claim_focus narrow enough for one paragraph. relative_weight is "
                     "an integer from 1 to 10; code assigns exact word budgets. "
                     f"The response must satisfy this JSON Schema: {schema}"
@@ -267,7 +284,7 @@ def repair_writing_plan_source_coverage(
             paragraph.paragraph_number
             for index, paragraph in enumerate(section.paragraphs)
             if index >= len(previous_paragraphs)
-            or paragraph != previous_paragraphs[index]
+            or _paragraph_requires_rewrite(previous_paragraphs[index], paragraph)
         )
         if changed_numbers:
             changed[section.section_id] = changed_numbers
@@ -275,10 +292,12 @@ def repair_writing_plan_source_coverage(
         plan.topic,
         repaired_sections,
         required_source_dois=required_source_dois,
+        output_language=plan.output_language,
     )
     repaired_plan = GroundedWritingPlan(
         status=plan.status,
         topic=plan.topic,
+        output_language=plan.output_language,
         plan_fingerprint=fingerprint,
         required_source_dois=required_source_dois,
         sections=repaired_sections,
@@ -289,6 +308,46 @@ def repair_writing_plan_source_coverage(
         plan=repaired_plan,
         changed_paragraph_numbers=changed,
     )
+
+
+def align_writing_plan_language(
+    handoff: V04WritingHandoff,
+    plan: GroundedWritingPlan,
+) -> GroundedWritingPlan:
+    """Migrate cached plans to language and dedicated-coverage contracts."""
+
+    policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
+        handoff.requirement
+    )
+    section_payloads = [section.model_dump(mode="json") for section in plan.sections]
+    coverage_changed = False
+    for section in section_payloads:
+        for paragraph in section["paragraphs"]:
+            purpose = str(paragraph["purpose"]).casefold()
+            claim_focus = str(paragraph["claim_focus"]).casefold()
+            legacy_coverage = (
+                purpose.startswith(
+                    "map the scope of additional verified literature required by"
+                )
+                or "assigned metadata-supported sources" in claim_focus
+            )
+            if paragraph.get("coverage_only", False) != legacy_coverage:
+                paragraph["coverage_only"] = legacy_coverage
+                coverage_changed = True
+    if plan.output_language == policy.output_language and not coverage_changed:
+        return plan
+    sections = [WritingSectionPlan.model_validate(section) for section in section_payloads]
+    fingerprint = _writing_plan_fingerprint(
+        plan.topic,
+        sections,
+        required_source_dois=plan.required_source_dois,
+        output_language=policy.output_language,
+    )
+    payload = plan.model_dump(mode="json")
+    payload["output_language"] = policy.output_language
+    payload["sections"] = [section.model_dump(mode="json") for section in sections]
+    payload["plan_fingerprint"] = fingerprint
+    return GroundedWritingPlan.model_validate(payload)
 
 
 class ParagraphEvidencePacketBuilder:
@@ -318,6 +377,7 @@ class ParagraphEvidencePacketBuilder:
             section_title=section_packet.title,
             paragraph=paragraph,
             counting_policy=section_packet.counting_policy,
+            output_language=section_packet.output_language,
             evidence_items=[evidence[item] for item in paragraph.evidence_card_ids],
             sources=[sources[doi] for doi in paragraph.source_dois],
         )
@@ -329,13 +389,35 @@ class LLMGroundedParagraphWriter:
     def __init__(self, client: LLMClient) -> None:
         self._client = client
 
-    def write(self, packet: ParagraphEvidencePacket) -> ParagraphTextProposal:
+    def write(
+        self,
+        packet: ParagraphEvidencePacket,
+        *,
+        revision_instruction: str | None = None,
+    ) -> ParagraphTextProposal:
         schema = json.dumps(
             ParagraphTextProposal.model_json_schema(),
             ensure_ascii=False,
             separators=(",", ":"),
         )
         maximum_units = _paragraph_maximum_units(packet)
+        source_instruction = (
+            "This is a chapter-level literature-coverage paragraph. Briefly position "
+            "each assigned source by research scope and relevance, without attributing "
+            "unverified detailed findings. Group sources comparatively instead of "
+            "listing titles or authors."
+            if packet.paragraph.coverage_only
+            else (
+                "The plan has already narrowed the support set to the sources necessary "
+                "for this central claim. Build one coherent argument around claim_focus; "
+                "synthesize the sources and do not turn the paragraph into a source list."
+            )
+        )
+        revision_text = (
+            f" Editorial revision requirement: {revision_instruction}"
+            if revision_instruction
+            else ""
+        )
         messages = [
             {
                 "role": "system",
@@ -349,9 +431,9 @@ class LLMGroundedParagraphWriter:
                     f"paragraph must not exceed {maximum_units} counted units under "
                     f"counting_policy={packet.counting_policy}. Metadata-only sources permit "
                     "only general statements. Encode line breaks and control characters "
-                    "legally inside the JSON string. Substantively discuss every locked "
-                    "source in the packet at the level allowed by its permitted_use; do not "
-                    "merely list titles or authors. "
+                    "legally inside the JSON string. "
+                    f"{output_language_instruction(packet.output_language)} "
+                    f"{source_instruction}{revision_text} "
                     f"The response must satisfy this JSON Schema: {schema}"
                 ),
             },
@@ -370,11 +452,13 @@ class LLMGroundedParagraphWriter:
                 proposal = _parse_paragraph_text(raw)
                 _ensure_paragraph_has_no_authored_citation(proposal)
                 _ensure_paragraph_not_too_long(packet, proposal)
+                _ensure_paragraph_language(packet, proposal)
                 return proposal
             except (
                 ValidationError,
                 ParagraphLengthError,
                 ParagraphCitationError,
+                ParagraphLanguageError,
             ) as exc:
                 last_error = exc
                 if attempt == 0:
@@ -390,7 +474,8 @@ class LLMGroundedParagraphWriter:
                             "content": (
                                 f"{repair_instruction} Do not add IDs, DOI values, references, "
                                 "or citation markers. The previous output failed validation: "
-                                f"{_short_error(exc)}"
+                                f"{_short_error(exc)} "
+                                f"{output_language_instruction(packet.output_language)}"
                             ),
                         },
                     ]
@@ -410,7 +495,8 @@ class LLMGroundedParagraphWriter:
                                 "same evidence-bound paragraph to no more than "
                                 f"{safe_maximum} counted units, leaving safety margin below "
                                 f"the hard limit of {maximum_units}. Preserve the central "
-                                "comparison and every locked source at its permitted level. "
+                                "comparison and the exact planned support scope. "
+                                f"{output_language_instruction(packet.output_language)} "
                                 "Return exactly one text field without citations or IDs."
                             ),
                         },
@@ -424,6 +510,7 @@ class LLMGroundedParagraphWriter:
                     )
                     _ensure_paragraph_has_no_authored_citation(compacted)
                     _ensure_paragraph_not_too_long(packet, compacted)
+                    _ensure_paragraph_language(packet, compacted)
                     return compacted
                 break
         raise GroundedWritingError(
@@ -445,6 +532,7 @@ class PlannedSectionDraftService:
         existing_draft: SectionDraft | None = None,
         force: bool = False,
         force_paragraph_numbers: set[int] | None = None,
+        revision_instructions: dict[int, str] | None = None,
     ) -> SectionDraft:
         if section_plan.section_id != section_packet.section_id:
             raise WritingPlanError("section plan does not match the evidence packet")
@@ -463,7 +551,12 @@ class PlannedSectionDraftService:
             if text_proposal is None and not should_force and cache is not None:
                 text_proposal = cache.load(paragraph_packet)
             if text_proposal is None:
-                text_proposal = writer.write(paragraph_packet)
+                text_proposal = writer.write(
+                    paragraph_packet,
+                    revision_instruction=(revision_instructions or {}).get(
+                        paragraph_plan.paragraph_number
+                    ),
+                )
                 if cache:
                     cache.save(paragraph_packet, text_proposal)
             paragraph_proposals.append(
@@ -504,7 +597,8 @@ def _reuse_existing_paragraph(
     try:
         _ensure_paragraph_has_no_authored_citation(proposal)
         _ensure_paragraph_not_too_long(packet, proposal)
-    except (ParagraphCitationError, ParagraphLengthError):
+        _ensure_paragraph_language(packet, proposal)
+    except (ParagraphCitationError, ParagraphLengthError, ParagraphLanguageError):
         return None
     return proposal
 
@@ -564,6 +658,7 @@ class ParagraphWritingRuntimeCache:
             proposal = ParagraphTextProposal.model_validate(payload["proposal"])
             _ensure_paragraph_not_too_long(packet, proposal)
             _ensure_paragraph_has_no_authored_citation(proposal)
+            _ensure_paragraph_language(packet, proposal)
             return proposal
         except Exception:
             return None
@@ -575,6 +670,7 @@ class ParagraphWritingRuntimeCache:
     ) -> None:
         _ensure_paragraph_not_too_long(packet, proposal)
         _ensure_paragraph_has_no_authored_citation(proposal)
+        _ensure_paragraph_language(packet, proposal)
         path = self._path(packet)
         path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(
@@ -704,6 +800,11 @@ def _compile_paragraph(
         raise WritingPlanError(
             f"paragraph {number} is detailed_evidence but has no evidence card"
         )
+    if len(source_dois) > 3:
+        raise WritingPlanError(
+            f"paragraph {number} selected {len(source_dois)} sources; "
+            "ordinary argument paragraphs permit at most 3 necessary sources"
+        )
 
     return WritingParagraphPlan(
         paragraph_id=f"{packet.section_id}_p{number:02d}",
@@ -747,14 +848,21 @@ def _paragraph_count(target_words: int) -> int:
     return max(3, min(10, round(target_words / 400)))
 
 
-def _allocate_targets(weights: list[int], target_words: int) -> list[int]:
-    minimum = 80
-    if target_words < minimum * len(weights):
+def _allocate_targets(
+    weights: list[int],
+    target_words: int,
+    *,
+    minimums: list[int] | None = None,
+) -> list[int]:
+    floors = minimums or [80] * len(weights)
+    if len(floors) != len(weights):
+        raise WritingPlanError("paragraph target floors do not match paragraph weights")
+    if target_words < sum(floors):
         raise WritingPlanError("section target is too small for planned paragraphs")
-    distributable = target_words - minimum * len(weights)
+    distributable = target_words - sum(floors)
     total_weight = sum(weights)
     raw = [distributable * weight / total_weight for weight in weights]
-    targets = [minimum + int(value) for value in raw]
+    targets = [floor + int(value) for floor, value in zip(floors, raw, strict=True)]
     remainder = target_words - sum(targets)
     order = sorted(
         range(len(weights)),
@@ -803,11 +911,13 @@ def _writing_plan_fingerprint(
     sections: list[WritingSectionPlan],
     *,
     required_source_dois: list[str],
+    output_language: str,
 ) -> str:
     canonical = json.dumps(
         {
             "pipeline_version": "grounded-writing-plan-v1",
             "topic": topic,
+            "output_language": output_language,
             "required_source_dois": required_source_dois,
             "sections": [section.model_dump(mode="json") for section in sections],
         },
@@ -887,13 +997,6 @@ def _apply_required_source_coverage(
             permitted_use=record.permitted_use,
             cluster_limit=cluster_limit,
         )
-        if placement is None and record.permitted_use == "background_only":
-            placement = _convert_support_paragraph_and_place(
-                section_payloads,
-                candidate_section_ids,
-                doi=doi,
-                cluster_limit=cluster_limit,
-            )
         if placement is None:
             placement = _add_coverage_paragraph(
                 section_payloads,
@@ -911,6 +1014,10 @@ def _apply_required_source_coverage(
             _allocate_targets(
                 [max(1, int(paragraph["target_words"])) for paragraph in paragraphs],
                 int(payload["target_words"]),
+                minimums=[
+                    50 if paragraph.get("coverage_only", False) else 80
+                    for paragraph in paragraphs
+                ],
             )
             if len(paragraphs) != original_paragraph_counts[section_id]
             else [int(paragraph["target_words"]) for paragraph in paragraphs]
@@ -940,7 +1047,8 @@ def _place_source_in_existing_paragraph(
         for index, paragraph in enumerate(paragraphs):
             source_dois = paragraph["source_dois"]
             if (
-                len(source_dois) < cluster_limit
+                paragraph.get("coverage_only", False)
+                and len(source_dois) < cluster_limit
                 and _permission_allows(permitted_use, paragraph["role"])
             ):
                 candidates.append((len(source_dois), index, section_id, index))
@@ -948,34 +1056,6 @@ def _place_source_in_existing_paragraph(
         return None
     _, _, section_id, index = min(candidates)
     paragraph = section_payloads[section_id]["paragraphs"][index]
-    paragraph["source_dois"].append(doi)
-    _mark_coverage_purpose(paragraph)
-    return section_id, index
-
-
-def _convert_support_paragraph_and_place(
-    section_payloads: dict[str, dict[str, object]],
-    section_ids: list[str],
-    *,
-    doi: str,
-    cluster_limit: int,
-) -> tuple[str, int] | None:
-    candidates: list[tuple[int, int, str, int]] = []
-    for section_id in section_ids:
-        paragraphs = section_payloads[section_id]["paragraphs"]
-        for index, paragraph in enumerate(paragraphs):
-            if (
-                paragraph["role"] == "section_support"
-                and len(paragraph["source_dois"]) < cluster_limit
-            ):
-                candidates.append(
-                    (len(paragraph["source_dois"]), index, section_id, index)
-                )
-    if not candidates:
-        return None
-    _, _, section_id, index = min(candidates)
-    paragraph = section_payloads[section_id]["paragraphs"][index]
-    paragraph["role"] = "background"
     paragraph["source_dois"].append(doi)
     _mark_coverage_purpose(paragraph)
     return section_id, index
@@ -993,14 +1073,7 @@ def _add_coverage_paragraph(
         raise WritingPlanError(
             f"section {section_id} has no paragraph capacity for required source {doi}"
         )
-    insertion = next(
-        (
-            index
-            for index in range(len(paragraphs) - 1, -1, -1)
-            if paragraphs[index]["role"] == "synthesis"
-        ),
-        len(paragraphs),
-    )
+    insertion = len(paragraphs)
     paragraphs.insert(
         insertion,
         {
@@ -1016,12 +1089,33 @@ def _add_coverage_paragraph(
                 "Compare the research scope of the assigned metadata-supported sources "
                 "without attributing unverified detailed results."
             ),
-            "target_words": 80,
+            "target_words": 50,
+            "coverage_only": True,
             "evidence_card_ids": [],
             "source_dois": [doi][:cluster_limit],
         },
     )
     return section_id, insertion
+
+
+def _paragraph_requires_rewrite(
+    previous: WritingParagraphPlan,
+    current: WritingParagraphPlan,
+) -> bool:
+    """Ignore budget-only shifts that existing prose can satisfy without rewriting."""
+
+    fields = (
+        "paragraph_id",
+        "section_id",
+        "paragraph_number",
+        "role",
+        "purpose",
+        "claim_focus",
+        "coverage_only",
+        "evidence_card_ids",
+        "source_dois",
+    )
+    return any(getattr(previous, field) != getattr(current, field) for field in fields)
 
 
 def _mark_coverage_purpose(paragraph: dict[str, object]) -> None:
@@ -1091,6 +1185,18 @@ def _ensure_paragraph_has_no_authored_citation(
         )
 
 
+def _ensure_paragraph_language(
+    packet: ParagraphEvidencePacket,
+    proposal: ParagraphTextProposal,
+) -> None:
+    detail = language_mismatch_detail(
+        proposal.text,
+        output_language=packet.output_language,
+    )
+    if detail:
+        raise ParagraphLanguageError(detail)
+
+
 def _paragraph_repair_instruction(
     exc: Exception,
     *,
@@ -1107,6 +1213,12 @@ def _paragraph_repair_instruction(
             "Remove every citation marker, DOI value, DOI URL, and reference label from "
             "the paragraph text while preserving the evidence-bound prose. Return exactly "
             "one text field."
+        )
+    if isinstance(exc, ParagraphLanguageError):
+        return (
+            "Rewrite only the paragraph text in the confirmed output language. Preserve "
+            "the evidence-bound meaning, remove full sentences in other languages, and "
+            "return exactly one text field."
         )
     return (
         "Repair only the JSON encoding and schema. Preserve the paragraph meaning, return "

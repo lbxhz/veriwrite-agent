@@ -70,6 +70,9 @@ class SectionEvidencePacket(StrictModel):
     counting_policy: Literal[
         "chinese_chars_and_english_words", "words"
     ] = "chinese_chars_and_english_words"
+    output_language: Literal[
+        "Chinese", "English", "bilingual", "pending_confirmation"
+    ] = "pending_confirmation"
     research_questions: list[str] = Field(default_factory=list)
     evidence_items: list[SectionEvidenceItem] = Field(min_length=1)
     sources: list[SectionSourceRecord] = Field(min_length=1)
@@ -213,6 +216,15 @@ class SectionDraftIssue(StrictModel):
         "word_count_low",
         "word_count_high",
         "final_audit_repair",
+        "language_mismatch",
+        "paragraph_repetition",
+        "topic_drift",
+        "coherence_gap",
+        "terminology_inconsistent",
+        "academic_style_problem",
+        "quality_review_failed",
+        "unsupported_claim",
+        "overstated_evidence",
     ]
     severity: Literal["warning", "blocking"]
     detail: str = Field(min_length=1)

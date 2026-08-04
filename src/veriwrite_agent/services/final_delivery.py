@@ -25,6 +25,7 @@ from veriwrite_agent.services.requirement_policy import (
     ai_generation_prohibitions,
     source_restriction_reasons,
 )
+from veriwrite_agent.services.writing_quality import language_mismatch_detail
 
 
 class FinalDeliveryError(ValueError):
@@ -412,6 +413,20 @@ def _audit_final_paper(
 ) -> FinalPaperAudit:
     issues: list[FinalPaperAuditIssue] = []
     counted = body.counted_words
+    body_prose = re.sub(r"\[@[^\]]+\]", "", body.markdown)
+    language_detail = language_mismatch_detail(
+        body_prose,
+        output_language=policy.output_language,
+    )
+    if language_detail:
+        issues.append(
+            _issue(
+                "body_language_mismatch",
+                "blocking",
+                "output_language",
+                language_detail,
+            )
+        )
     if policy.length.minimum_units is not None and counted < policy.length.minimum_units:
         issues.append(
             _issue(

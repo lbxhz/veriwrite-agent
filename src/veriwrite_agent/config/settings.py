@@ -22,6 +22,8 @@ class LLMSettings(BaseSettings):
     structured_model: str | None = Field(default="deepseek-chat", min_length=1)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_retries: int = Field(default=2, ge=0, le=10)
+    temperature: float = Field(default=0.2, ge=0, le=2)
+    max_tokens: int = Field(default=8192, ge=256)
 
     @field_validator("api_key")
     @classmethod
@@ -40,6 +42,8 @@ class LLMSettings(BaseSettings):
             "structured_model": self.structured_model or self.model,
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
         }
 
     def for_structured_output(self) -> LLMSettings:

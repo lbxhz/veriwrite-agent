@@ -32,6 +32,8 @@ class DeepSeekClient:
             "model": self._settings.model,
             "messages": list(messages),
             "stream": False,
+            "temperature": self._settings.temperature,
+            "max_tokens": self._settings.max_tokens,
         }
         if response_format is not None:
             request["response_format"] = response_format
@@ -41,4 +43,3 @@ class DeepSeekClient:
         if not content:
             raise LLMResponseError("The LLM provider returned empty content")
         return content
-

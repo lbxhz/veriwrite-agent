@@ -62,7 +62,8 @@ class WritingParagraphPlan(StrictModel):
     role: ParagraphRole
     purpose: str = Field(min_length=1)
     claim_focus: str = Field(min_length=1)
-    target_words: int = Field(ge=80)
+    target_words: int = Field(ge=50)
+    coverage_only: bool = False
     evidence_card_ids: list[str] = Field(default_factory=list, max_length=5)
     source_dois: list[str] = Field(default_factory=list, max_length=8)
 
@@ -117,6 +118,9 @@ class GroundedWritingPlan(StrictModel):
     schema_version: Literal["0.4-plan.0"] = "0.4-plan.0"
     status: Literal["draft", "confirmed"] = "draft"
     topic: str = Field(min_length=1)
+    output_language: Literal[
+        "Chinese", "English", "bilingual", "pending_confirmation"
+    ] = "pending_confirmation"
     plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     required_source_dois: list[str] = Field(default_factory=list)
     sections: list[WritingSectionPlan] = Field(min_length=1)
@@ -188,6 +192,9 @@ class ParagraphEvidencePacket(StrictModel):
     counting_policy: Literal[
         "chinese_chars_and_english_words", "words"
     ] = "chinese_chars_and_english_words"
+    output_language: Literal[
+        "Chinese", "English", "bilingual", "pending_confirmation"
+    ] = "pending_confirmation"
     evidence_items: list[SectionEvidenceItem] = Field(default_factory=list, max_length=5)
     sources: list[SectionSourceRecord] = Field(min_length=1, max_length=8)
 
