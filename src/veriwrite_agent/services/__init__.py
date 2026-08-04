@@ -101,8 +101,10 @@ from veriwrite_agent.services.writing_planning import (
     ParagraphEvidencePacketBuilder,
     ParagraphWritingRuntimeCache,
     PlannedSectionDraftService,
+    WritingPlanCoverageRepair,
     WritingPlanError,
     WritingPlanRuntimeCache,
+    repair_writing_plan_source_coverage,
 )
 
 __all__ = [
@@ -162,8 +164,10 @@ __all__ = [
     "ParagraphEvidencePacketBuilder",
     "ParagraphWritingRuntimeCache",
     "PlannedSectionDraftService",
+    "WritingPlanCoverageRepair",
     "WritingPlanError",
     "WritingPlanRuntimeCache",
+    "repair_writing_plan_source_coverage",
     "ai_generation_prohibitions",
     "candidate_source_restriction_reasons",
     "is_foreign_literature",

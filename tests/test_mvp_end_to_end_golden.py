@@ -31,10 +31,16 @@ from veriwrite_agent.models.requirement_workflow import RequirementConfirmation
 from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftProposal,
+    V04WritingProject,
 )
 from veriwrite_agent.models.final_delivery import (
     FinalMatterProposal,
     FinalPaperAuditIssue,
+)
+from veriwrite_agent.models.writing_plan import (
+    GroundedWritingPlan,
+    WritingParagraphPlan,
+    WritingSectionPlan,
 )
 from veriwrite_agent.services.evidence_card_extraction import (
     LLMEvidenceCardExtractor,
@@ -389,17 +395,64 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
         requirement_path="references.minimum_total",
         detail="required=60; actual=20",
     )
+    delivery_only_issue = FinalPaperAuditIssue(
+        code="required_section_missing",
+        severity="blocking",
+        requirement_path="structure.required_sections",
+        detail="Introduction",
+    )
     blocked_package = package.model_copy(
         update={
             "status": "needs_revision",
             "audit": package.audit.model_copy(
-                update={"issues": [*package.audit.issues, repair_issue]}
+                update={
+                    "issues": [
+                        *package.audit.issues,
+                        repair_issue,
+                        delivery_only_issue,
+                    ]
+                }
             ),
         }
     )
+    plan_sections = []
+    for section in outline.sections:
+        targets = [section.target_words // 3] * 3
+        targets[-1] += section.target_words - sum(targets)
+        plan_sections.append(
+            WritingSectionPlan(
+                section_id=section.section_id,
+                title=section.title,
+                purpose=section.purpose,
+                target_words=section.target_words,
+                counting_policy=section.counting_policy,
+                paragraphs=[
+                    WritingParagraphPlan(
+                        paragraph_id=f"{section.section_id}_p{number:02d}",
+                        section_id=section.section_id,
+                        paragraph_number=number,
+                        role=("detailed_evidence" if number == 1 else "synthesis"),
+                        purpose=f"Planned paragraph {number}",
+                        claim_focus=f"Evidence-bound focus {number}",
+                        target_words=targets[number - 1],
+                        evidence_card_ids=(
+                            [section.evidence_card_ids[0]] if number == 1 else []
+                        ),
+                        source_dois=[section.core_dois[0]],
+                    )
+                    for number in range(1, 4)
+                ],
+            )
+        )
+    writing_plan = GroundedWritingPlan(
+        topic=outline.topic,
+        plan_fingerprint="a" * 64,
+        required_source_dois=DOIS,
+        sections=plan_sections,
+    ).confirm(confirmed_by="gold-tester")
     repair_state = {
         "v03_writing_handoff_json": handoff.model_dump_json(indent=2),
-        "v04_writing_plan_json": "old-plan",
+        "v04_writing_plan_json": writing_plan.model_dump_json(indent=2),
         "v04_writing_project_json": project.model_dump_json(indent=2),
         "mvp_final_matter_json": final_matter.model_dump_json(indent=2),
         "mvp_final_paper_json": blocked_package.model_dump_json(indent=2),
@@ -409,12 +462,28 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
     assert rollback_blocked_delivery_to_v04(repair_state) is True
     assert repair_state["mvp_navigation"] == "writing"
     assert "v03_writing_handoff_json" in repair_state
-    assert "v04_writing_plan_json" not in repair_state
-    assert "v04_writing_project_json" not in repair_state
+    assert "v04_writing_plan_json" in repair_state
+    repaired_project = V04WritingProject.model_validate_json(
+        repair_state["v04_writing_project_json"]
+    )
+    assert repaired_project.status == "drafting"
+    reopened = [section for section in repaired_project.sections if section.status == "needs_review"]
+    assert len(reopened) == 1
+    assert reopened[0].draft is not None
+    assert [
+        issue.paragraph_number
+        for issue in reopened[0].draft.issues
+        if issue.code == "final_audit_repair"
+    ] == [3]
     assert "mvp_final_paper_json" not in repair_state
     checkpoint = json.loads(repair_state["mvp_final_repair_checkpoint_json"])
-    assert checkpoint["state"]["v04_writing_plan_json"] == "old-plan"
-    assert checkpoint["reason_codes"] == ["reference_count_below_minimum"]
+    assert checkpoint["state"]["v04_writing_plan_json"] == writing_plan.model_dump_json(
+        indent=2
+    )
+    assert checkpoint["reason_codes"] == [
+        "reference_count_below_minimum",
+        "required_section_missing",
+    ]
 
 
 def _candidate(doi: str, title: str, year: int) -> LiteratureCandidate:

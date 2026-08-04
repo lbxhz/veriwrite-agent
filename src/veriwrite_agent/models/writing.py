@@ -212,6 +212,7 @@ class SectionDraftIssue(StrictModel):
         "partial_support",
         "word_count_low",
         "word_count_high",
+        "final_audit_repair",
     ]
     severity: Literal["warning", "blocking"]
     detail: str = Field(min_length=1)

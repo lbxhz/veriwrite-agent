@@ -47,6 +47,7 @@ from veriwrite_agent.services.writing_planning import (
     PlannedSectionDraftService,
     WritingPlanError,
     WritingPlanRuntimeCache,
+    repair_writing_plan_source_coverage,
 )
 
 DOI = "10.1000/core.1"
@@ -434,6 +435,51 @@ def test_planner_covers_every_source_required_by_reference_policy() -> None:
     assert background_paragraph.role in {"background", "synthesis"}
 
 
+def test_source_coverage_repair_changes_only_paragraphs_receiving_missing_sources() -> None:
+    active_handoff = handoff_with_background_source()
+    requirement_spec = active_handoff.requirement.requirement.model_copy(
+        update={
+            "references": ReferenceRequirement(
+                minimum_total=3,
+                target_total=3,
+                bibliography_style="APA 7th",
+                max_references_per_citation_cluster=4,
+                all_bibliography_items_must_be_cited_and_discussed=True,
+            )
+        }
+    )
+    confirmed_requirement = active_handoff.requirement.model_copy(
+        update={"requirement": requirement_spec}
+    )
+    active_handoff = active_handoff.model_copy(
+        update={
+            "requirement": confirmed_requirement,
+            "requirement_policy": RequirementPolicyCompiler(current_year=2026).compile(
+                confirmed_requirement
+            ),
+        }
+    )
+    complete = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
+    payload = complete.model_dump(mode="json")
+    payload["plan_fingerprint"] = "b" * 64
+    payload["required_source_dois"] = []
+    for section in payload["sections"]:
+        for paragraph in section["paragraphs"]:
+            paragraph["source_dois"] = [
+                doi for doi in paragraph["source_dois"] if doi != BACKGROUND_DOI
+            ]
+    legacy = type(complete).model_validate(payload)
+
+    repaired = repair_writing_plan_source_coverage(active_handoff, legacy)
+
+    assert repaired.plan.plan_fingerprint != legacy.plan_fingerprint
+    assert BACKGROUND_DOI in repaired.plan.required_source_dois
+    assert repaired.changed_paragraph_numbers == {"method": (3,)}
+    assert repaired.plan.sections[0].paragraphs[0] == legacy.sections[0].paragraphs[0]
+
+
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
     active_handoff = handoff()
     plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
@@ -685,6 +731,21 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
     assert len(targeted_client.calls) == 1
     assert targeted.paragraphs[0].text == first.paragraphs[0].text
     assert targeted.paragraphs[1].text == "Only the blocked paragraph is regenerated."
+
+    no_cache_client = FakeLLMClient(
+        json.dumps({"text": "Only the explicitly targeted paragraph changes."})
+    )
+    reused = service.draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(no_cache_client),
+        existing_draft=first,
+        force_paragraph_numbers={2},
+    )
+    assert len(no_cache_client.calls) == 1
+    assert reused.paragraphs[0].text == first.paragraphs[0].text
+    assert reused.paragraphs[1].text == "Only the explicitly targeted paragraph changes."
+    assert reused.paragraphs[2].text == first.paragraphs[2].text
 
 
 def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -47,6 +48,14 @@ class ParagraphLengthError(ValueError):
 
 class ParagraphCitationError(ValueError):
     """Raised when paragraph prose attempts to create its own citation."""
+
+
+@dataclass(frozen=True)
+class WritingPlanCoverageRepair:
+    """A source-coverage plan update plus the paragraphs it actually changed."""
+
+    plan: GroundedWritingPlan
+    changed_paragraph_numbers: dict[str, tuple[int, ...]]
 
 
 class GroundedWritingPlanner:
@@ -237,6 +246,51 @@ class GroundedWritingPlanner:
         ) from last_error
 
 
+def repair_writing_plan_source_coverage(
+    handoff: V04WritingHandoff,
+    plan: GroundedWritingPlan,
+) -> WritingPlanCoverageRepair:
+    """Add only missing required sources and report the affected paragraphs."""
+
+    required_source_dois = _required_source_dois(handoff)
+    repaired_sections = _apply_required_source_coverage(
+        handoff,
+        plan.sections,
+        required_source_dois=required_source_dois,
+    )
+    previous_sections = {section.section_id: section for section in plan.sections}
+    changed: dict[str, tuple[int, ...]] = {}
+    for section in repaired_sections:
+        previous = previous_sections.get(section.section_id)
+        previous_paragraphs = previous.paragraphs if previous is not None else []
+        changed_numbers = tuple(
+            paragraph.paragraph_number
+            for index, paragraph in enumerate(section.paragraphs)
+            if index >= len(previous_paragraphs)
+            or paragraph != previous_paragraphs[index]
+        )
+        if changed_numbers:
+            changed[section.section_id] = changed_numbers
+    fingerprint = _writing_plan_fingerprint(
+        plan.topic,
+        repaired_sections,
+        required_source_dois=required_source_dois,
+    )
+    repaired_plan = GroundedWritingPlan(
+        status=plan.status,
+        topic=plan.topic,
+        plan_fingerprint=fingerprint,
+        required_source_dois=required_source_dois,
+        sections=repaired_sections,
+        confirmed_by=plan.confirmed_by,
+        confirmed_at=plan.confirmed_at,
+    )
+    return WritingPlanCoverageRepair(
+        plan=repaired_plan,
+        changed_paragraph_numbers=changed,
+    )
+
+
 class ParagraphEvidencePacketBuilder:
     """Reduce a section packet to the authority locked for one paragraph."""
 
@@ -388,6 +442,7 @@ class PlannedSectionDraftService:
         writer: LLMGroundedParagraphWriter,
         *,
         cache: ParagraphWritingRuntimeCache | None = None,
+        existing_draft: SectionDraft | None = None,
         force: bool = False,
         force_paragraph_numbers: set[int] | None = None,
     ) -> SectionDraft:
@@ -399,11 +454,14 @@ class PlannedSectionDraftService:
         for paragraph_plan in section_plan.paragraphs:
             paragraph_packet = packet_builder.build(section_packet, paragraph_plan)
             should_force = force or paragraph_plan.paragraph_number in forced_numbers
-            text_proposal = (
-                None
-                if should_force or cache is None
-                else cache.load(paragraph_packet)
-            )
+            text_proposal = None
+            if not should_force and existing_draft is not None:
+                text_proposal = _reuse_existing_paragraph(
+                    existing_draft,
+                    paragraph_packet,
+                )
+            if text_proposal is None and not should_force and cache is not None:
+                text_proposal = cache.load(paragraph_packet)
             if text_proposal is None:
                 text_proposal = writer.write(paragraph_packet)
                 if cache:
@@ -423,6 +481,32 @@ class PlannedSectionDraftService:
                 paragraphs=paragraph_proposals,
             ),
         )
+
+
+def _reuse_existing_paragraph(
+    draft: SectionDraft,
+    packet: ParagraphEvidencePacket,
+) -> ParagraphTextProposal | None:
+    """Reuse confirmed prose only when its locked support still matches the plan."""
+
+    index = packet.paragraph.paragraph_number - 1
+    if index < 0 or index >= len(draft.paragraphs):
+        return None
+    existing = draft.paragraphs[index]
+    planned = packet.paragraph
+    if (
+        existing.role != planned.role
+        or existing.evidence_card_ids != planned.evidence_card_ids
+        or existing.source_dois != planned.source_dois
+    ):
+        return None
+    proposal = ParagraphTextProposal(text=existing.text)
+    try:
+        _ensure_paragraph_has_no_authored_citation(proposal)
+        _ensure_paragraph_not_too_long(packet, proposal)
+    except (ParagraphCitationError, ParagraphLengthError):
+        return None
+    return proposal
 
 
 class WritingPlanRuntimeCache:

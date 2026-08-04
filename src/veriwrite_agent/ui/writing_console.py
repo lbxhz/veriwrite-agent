@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal, MutableMapping
 
@@ -10,16 +12,22 @@ import streamlit as st
 
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
-from veriwrite_agent.models.writing import V04WritingProject
-from veriwrite_agent.models.writing_plan import GroundedWritingPlan
+from veriwrite_agent.models.writing import (
+    SectionDraftIssue,
+    V04WritingProject,
+    WritingSectionState,
+)
+from veriwrite_agent.models.writing_plan import GroundedWritingPlan, WritingSectionPlan
 from veriwrite_agent.models.final_delivery import (
     FinalMatterProposal,
+    FinalPaperAuditIssue,
     FinalPaperPackage,
 )
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.services.grounded_writing import (
     SectionEvidencePacketBuilder,
     WritingProjectService,
+    count_writing_units,
 )
 from veriwrite_agent.services.writing_planning import (
     GroundedWritingPlanner,
@@ -27,6 +35,7 @@ from veriwrite_agent.services.writing_planning import (
     ParagraphWritingRuntimeCache,
     PlannedSectionDraftService,
     WritingPlanRuntimeCache,
+    repair_writing_plan_source_coverage,
 )
 from veriwrite_agent.services.final_delivery import (
     FinalPaperAssembler,
@@ -57,6 +66,17 @@ WRITING_REPAIR_CODES = {
     "uncited_bibliography_item",
     "unknown_citation_key",
 }
+
+
+@dataclass(frozen=True)
+class TargetedWritingRepair:
+    plan: GroundedWritingPlan
+    project: V04WritingProject
+    paragraph_numbers: dict[str, tuple[int, ...]]
+
+    @property
+    def paragraph_count(self) -> int:
+        return sum(len(numbers) for numbers in self.paragraph_numbers.values())
 
 
 def clear_writing_state() -> None:
@@ -92,10 +112,377 @@ def final_delivery_repair_stage(
     return "delivery"
 
 
+def build_targeted_writing_repair(
+    state: MutableMapping[str, Any],
+    package: FinalPaperPackage,
+) -> TargetedWritingRepair:
+    """Convert final audit blockers into paragraph-level V0.4 repair tasks."""
+
+    serialized_plan = state.get(WRITING_PLAN_KEY)
+    serialized_project = state.get(V04_PROJECT_KEY)
+    if not serialized_plan or not serialized_project:
+        raise ValueError("缺少已确认的 V0.4 写作计划或正文检查点，无法定点返修")
+    plan = GroundedWritingPlan.model_validate_json(serialized_plan)
+    project = V04WritingProject.model_validate_json(serialized_project)
+    if plan.status != "confirmed" or project.status != "body_complete":
+        raise ValueError("只有已完成的 V0.4 正文才能从最终审计创建定点返修任务")
+
+    blocking = [issue for issue in package.audit.issues if issue.severity == "blocking"]
+    coverage_issues = [
+        issue
+        for issue in blocking
+        if issue.code
+        in {
+            "reference_count_below_minimum",
+            "reference_count_below_target",
+            "uncited_bibliography_item",
+        }
+    ]
+    target_issues: dict[tuple[str, int], list[FinalPaperAuditIssue]] = {}
+    if coverage_issues:
+        coverage_repair = repair_writing_plan_source_coverage(project.handoff, plan)
+        plan = coverage_repair.plan
+        for section_id, numbers in coverage_repair.changed_paragraph_numbers.items():
+            for number in numbers:
+                target_issues.setdefault((section_id, number), []).extend(
+                    coverage_issues
+                )
+
+    for issue in blocking:
+        if not _is_writing_repair_issue(issue):
+            continue
+        if issue in coverage_issues and target_issues:
+            continue
+        mapped = _paragraph_targets_for_final_issue(
+            issue,
+            plan=plan,
+            project=project,
+            package=package,
+        )
+        if not mapped:
+            mapped = {_fallback_repair_target(plan)}
+        for target in mapped:
+            target_issues.setdefault(target, []).append(issue)
+
+    if not target_issues:
+        fallback = _fallback_repair_target(plan)
+        target_issues[fallback] = blocking
+    reopened = _reopen_targeted_paragraphs(project, target_issues)
+    ordered_targets = {
+        section.section_id: tuple(
+            sorted(
+                number
+                for target_section, number in target_issues
+                if target_section == section.section_id
+            )
+        )
+        for section in plan.sections
+        if any(target_section == section.section_id for target_section, _ in target_issues)
+    }
+    return TargetedWritingRepair(
+        plan=plan,
+        project=reopened,
+        paragraph_numbers=ordered_targets,
+    )
+
+
+def _is_writing_repair_issue(issue: FinalPaperAuditIssue) -> bool:
+    return (
+        issue.code in WRITING_REPAIR_CODES
+        or issue.code.startswith("body_")
+        or issue.code.startswith("citation_")
+        or issue.code.startswith("length_")
+    )
+
+
+def _paragraph_targets_for_final_issue(
+    issue: FinalPaperAuditIssue,
+    *,
+    plan: GroundedWritingPlan,
+    project: V04WritingProject,
+    package: FinalPaperPackage,
+) -> set[tuple[str, int]]:
+    if issue.code == "citation_cluster_too_large":
+        return {
+            (section_id, int(number))
+            for section_id, number in re.findall(
+                r"([a-z][a-z0-9_]{1,39}):(\d+)=",
+                issue.detail,
+            )
+        }
+    if issue.code == "unknown_citation_key":
+        unknown_keys = {value.strip() for value in issue.detail.split(",")}
+        return {
+            (citation.section_id, citation.paragraph_number)
+            for section in project.sections
+            if section.draft is not None
+            for citation in section.draft.citations
+            if citation.citation_key in unknown_keys
+        }
+    if issue.code.startswith("length_"):
+        return _length_repair_targets(issue, plan=plan, project=project)
+    if issue.code in WRITING_REPAIR_CODES:
+        cited = {reference.doi for reference in package.references}
+        missing = [doi for doi in plan.required_source_dois if doi not in cited]
+        return {
+            (section.section_id, paragraph.paragraph_number)
+            for doi in missing
+            for section in plan.sections
+            for paragraph in section.paragraphs
+            if doi in paragraph.source_dois
+        }
+    if issue.code.startswith(("body_", "citation_")):
+        return {_fallback_repair_target(plan)}
+    return set()
+
+
+def _length_repair_targets(
+    issue: FinalPaperAuditIssue,
+    *,
+    plan: GroundedWritingPlan,
+    project: V04WritingProject,
+) -> set[tuple[str, int]]:
+    plan_sections = {section.section_id: section for section in plan.sections}
+    candidates: list[tuple[int, str, int]] = []
+    for state in project.sections:
+        if state.draft is None:
+            continue
+        section_plan = plan_sections.get(state.section_id)
+        if section_plan is None:
+            continue
+        for paragraph_plan, paragraph in zip(
+            section_plan.paragraphs,
+            state.draft.paragraphs,
+            strict=False,
+        ):
+            actual = count_writing_units(
+                paragraph.text,
+                counting_policy=section_plan.counting_policy,
+            )
+            delta = paragraph_plan.target_words - actual
+            score = delta if issue.code == "length_below_minimum" else -delta
+            candidates.append((score, state.section_id, paragraph_plan.paragraph_number))
+    if not candidates:
+        return set()
+    candidates.sort(reverse=True)
+    counts = [int(value) for value in re.findall(r"\d+", issue.detail)]
+    gap = abs(counts[0] - counts[1]) if len(counts) >= 2 else 1
+    selected: set[tuple[str, int]] = set()
+    capacity = 0
+    for score, section_id, paragraph_number in candidates:
+        selected.add((section_id, paragraph_number))
+        capacity += max(1, score)
+        if capacity >= gap:
+            break
+    return selected
+
+
+def _fallback_repair_target(plan: GroundedWritingPlan) -> tuple[str, int]:
+    for section in plan.sections:
+        synthesis = next(
+            (
+                paragraph
+                for paragraph in reversed(section.paragraphs)
+                if paragraph.role == "synthesis"
+            ),
+            section.paragraphs[-1],
+        )
+        return section.section_id, synthesis.paragraph_number
+    raise ValueError("写作计划没有可返修段落")
+
+
+def _reopen_targeted_paragraphs(
+    project: V04WritingProject,
+    target_issues: dict[tuple[str, int], list[FinalPaperAuditIssue]],
+) -> V04WritingProject:
+    reopened_states: list[WritingSectionState] = []
+    for state in project.sections:
+        section_targets = {
+            number: issues
+            for (section_id, number), issues in target_issues.items()
+            if section_id == state.section_id
+        }
+        if not section_targets:
+            reopened_states.append(state)
+            continue
+        if state.draft is None:
+            raise ValueError(f"待返修章节缺少原草稿：{state.section_id}")
+        retained_issues = [
+            issue for issue in state.draft.issues if issue.code != "final_audit_repair"
+        ]
+        repair_issues: list[SectionDraftIssue] = []
+        seen_repair_issues: set[tuple[int, str, str]] = set()
+        for number, issues in sorted(section_targets.items()):
+            for issue in issues:
+                identity = (number, issue.code, issue.detail)
+                if identity in seen_repair_issues:
+                    continue
+                seen_repair_issues.add(identity)
+                repair_issues.append(
+                    SectionDraftIssue(
+                        code="final_audit_repair",
+                        severity="blocking",
+                        detail=(
+                            f"最终审计 {issue.code}：{issue.detail}；"
+                            "只重写本段，其他已确认段落保持不变。"
+                        ),
+                        paragraph_number=number,
+                    )
+                )
+        reopened_draft = state.draft.model_copy(
+            update={
+                "status": "needs_review",
+                "issues": [*retained_issues, *repair_issues],
+                "confirmed_by": None,
+                "confirmed_at": None,
+            }
+        )
+        reopened_states.append(
+            WritingSectionState(
+                section_id=state.section_id,
+                status="needs_review",
+                draft=reopened_draft,
+            )
+        )
+    reopened = project.model_copy(
+        update={
+            "status": "drafting",
+            "sections": reopened_states,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+    return V04WritingProject.model_validate(reopened.model_dump(mode="json"))
+
+
+def upgrade_legacy_full_rebuild_repair(
+    state: MutableMapping[str, Any],
+) -> bool:
+    """Convert the old whole-body rollback checkpoint into targeted repair state."""
+
+    serialized_checkpoint = state.get(FINAL_REPAIR_CHECKPOINT_KEY)
+    if not serialized_checkpoint:
+        return False
+    try:
+        checkpoint = json.loads(serialized_checkpoint)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if checkpoint.get("schema_version") != "mvp-final-repair-1.0":
+        return False
+    saved_state = checkpoint.get("state")
+    if not isinstance(saved_state, dict):
+        return False
+    try:
+        package = FinalPaperPackage.model_validate_json(saved_state[FINAL_PACKAGE_KEY])
+        repair = build_targeted_writing_repair(saved_state, package)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    current_plan = None
+    current_project = None
+    try:
+        if state.get(WRITING_PLAN_KEY) and state.get(V04_PROJECT_KEY):
+            current_plan = GroundedWritingPlan.model_validate_json(
+                state[WRITING_PLAN_KEY]
+            )
+            current_project = V04WritingProject.model_validate_json(
+                state[V04_PROJECT_KEY]
+            )
+    except (TypeError, ValueError):
+        current_plan = None
+        current_project = None
+    repaired_project = repair.project
+    if (
+        current_plan is not None
+        and current_project is not None
+        and current_plan.plan_fingerprint == repair.plan.plan_fingerprint
+    ):
+        repaired_project = _merge_completed_repair_progress(
+            repair.project,
+            current_project,
+            repair.plan,
+        )
+
+    state[WRITING_PLAN_KEY] = repair.plan.model_dump_json(indent=2)
+    state[V04_PROJECT_KEY] = repaired_project.model_dump_json(indent=2)
+    state.pop(FINAL_MATTER_KEY, None)
+    state.pop(FINAL_PACKAGE_KEY, None)
+    checkpoint["schema_version"] = "mvp-final-repair-1.1"
+    checkpoint["migration"] = {
+        "mode": "targeted_paragraph_repair",
+        "migrated_at": datetime.now(timezone.utc).isoformat(),
+        "target_sections": len(repair.paragraph_numbers),
+        "target_paragraphs": repair.paragraph_count,
+    }
+    state[FINAL_REPAIR_CHECKPOINT_KEY] = json.dumps(
+        checkpoint,
+        ensure_ascii=False,
+        indent=2,
+    )
+    state["mvp_navigation"] = "writing"
+    state.pop("mvp_navigation_request", None)
+    state[SECTION_SELECTION_REQUEST_KEY] = _next_actionable_section(repaired_project)
+    state["mvp_flash"] = (
+        "旧版整篇重建任务已升级为定点返修；已经重写或确认的章节继续保留，"
+        "其余章节只处理审计定位的段落。"
+    )
+    return True
+
+
+def _merge_completed_repair_progress(
+    repair_project: V04WritingProject,
+    current_project: V04WritingProject,
+    plan: GroundedWritingPlan,
+) -> V04WritingProject:
+    current_states = {state.section_id: state for state in current_project.sections}
+    plan_sections = {section.section_id: section for section in plan.sections}
+    merged_states: list[WritingSectionState] = []
+    for repair_state in repair_project.sections:
+        current_state = current_states.get(repair_state.section_id)
+        section_plan = plan_sections[repair_state.section_id]
+        if (
+            current_state is not None
+            and current_state.status != "pending"
+            and _draft_matches_plan(current_state, section_plan)
+        ):
+            merged_states.append(current_state)
+        else:
+            merged_states.append(repair_state)
+    merged = repair_project.model_copy(
+        update={
+            "status": (
+                "body_complete"
+                if all(state.status == "confirmed" for state in merged_states)
+                else "drafting"
+            ),
+            "sections": merged_states,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+    return V04WritingProject.model_validate(merged.model_dump(mode="json"))
+
+
+def _draft_matches_plan(
+    state: WritingSectionState,
+    section_plan: WritingSectionPlan,
+) -> bool:
+    if state.draft is None or len(state.draft.paragraphs) != len(section_plan.paragraphs):
+        return False
+    return all(
+        paragraph.role == planned.role
+        and paragraph.evidence_card_ids == planned.evidence_card_ids
+        and paragraph.source_dois == planned.source_dois
+        for paragraph, planned in zip(
+            state.draft.paragraphs,
+            section_plan.paragraphs,
+            strict=True,
+        )
+    )
+
+
 def rollback_blocked_delivery_to_v04(
     state: MutableMapping[str, Any],
 ) -> bool:
-    """Automatically reopen V0.4 when final audit blockers belong to writing."""
+    """Automatically reopen only the V0.4 paragraphs implicated by final audit."""
 
     serialized = state.get(FINAL_PACKAGE_KEY)
     if not serialized or state.get(FINAL_REPAIR_CHECKPOINT_KEY):
@@ -112,20 +499,28 @@ def rollback_blocked_delivery_to_v04(
     blocking_codes = [
         issue.code for issue in package.audit.issues if issue.severity == "blocking"
     ]
+    try:
+        repair = build_targeted_writing_repair(state, package)
+    except (TypeError, ValueError):
+        return False
     _create_final_repair_checkpoint(
         blocking_codes,
         state=state,
         package=package,
     )
-    for key in REPAIR_DOWNSTREAM_KEYS:
-        state.pop(key, None)
+    state[WRITING_PLAN_KEY] = repair.plan.model_dump_json(indent=2)
+    state[V04_PROJECT_KEY] = repair.project.model_dump_json(indent=2)
+    state.pop(FINAL_MATTER_KEY, None)
+    state.pop(FINAL_PACKAGE_KEY, None)
     state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
     state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
     state["mvp_navigation"] = "writing"
     state.pop("mvp_navigation_request", None)
+    first_section = next(iter(repair.paragraph_numbers))
+    state[SECTION_SELECTION_REQUEST_KEY] = first_section
     state["mvp_flash"] = (
-        "最终审计问题属于 V0.4。系统已保存旧版本检查点并自动回退；"
-        "V0.1–V0.3、PDF 和证据库均已保留。"
+        "最终审计已转换为定点返修：保留全部原正文，只重新处理 "
+        f"{len(repair.paragraph_numbers)} 个章节中的 {repair.paragraph_count} 个问题段落。"
     )
     return True
 
@@ -169,6 +564,22 @@ def render_grounded_writing_console(
         "正文状态",
         "可汇总" if project.status == "body_complete" else "逐章处理中",
     )
+    repair_paragraphs = [
+        (section.section_id, issue.paragraph_number)
+        for section in project.sections
+        if section.draft is not None
+        for issue in section.draft.issues
+        if issue.code == "final_audit_repair" and issue.paragraph_number is not None
+    ]
+    if repair_paragraphs:
+        total_paragraphs = sum(len(section.paragraphs) for section in writing_plan.sections)
+        repair_sections = {section_id for section_id, _ in repair_paragraphs}
+        st.warning(
+            "最终审计定点返修：原正文与写作计划均已保留；"
+            f"{total_paragraphs - len(repair_paragraphs)} 个无问题段落不会重写，"
+            f"仅需处理 {len(repair_sections)} 个章节中的 "
+            f"{len(repair_paragraphs)} 个问题段落。"
+        )
     if project.status == "body_complete":
         _render_body_download(project, include_final_delivery=include_final_delivery)
         return
@@ -245,6 +656,7 @@ def render_grounded_writing_console(
                         project_root() / "runtime" / "writing_console",
                         plan_fingerprint=writing_plan.plan_fingerprint,
                     ),
+                    existing_draft=current_state.draft,
                     force=(
                         current_state.draft is not None
                         and not blocking_paragraphs
@@ -817,8 +1229,8 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
     needs_writing_repair = final_delivery_repair_stage(package) == "writing"
     st.subheader("审计修复路由")
     st.caption(
-        "回退只清理需要重建的下游产物；V0.1 需求、V0.2 文献、"
-        "V0.3 PDF 和证据库均保留。回退前会保存一份可撤销检查点。"
+        "正文问题会被定位到具体章节和段落：写作计划、原章节和无问题段落均保留，"
+        "只撤销受影响章节的确认。返修前会保存一份可撤销检查点。"
     )
     st.dataframe(
         [
@@ -833,12 +1245,12 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
                     else "最终结构组装"
                 ),
                 "修复动作": (
-                    "重新分配必引来源并按新计划逐章重建正文"
+                    "补充缺失来源分配，仅重写受影响段落"
                     if issue.code in WRITING_REPAIR_CODES
                     else (
                         "补齐必需结构并重新审计"
                         if issue.code == "required_section_missing"
-                        else "重建相关下游产物并重新审计"
+                        else "定位问题段落并定点返修"
                     )
                 ),
             }
@@ -848,22 +1260,38 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
         width="stretch",
     )
     if needs_writing_repair:
-        label = "创建检查点并回退到 V0.4 修复"
-        keys_to_clear = REPAIR_DOWNSTREAM_KEYS
+        label = "创建检查点并生成 V0.4 定点返修任务"
         target_stage = "writing"
-        flash = "已保留 V0.1–V0.3，并回退到 V0.4 重建引用覆盖计划。"
     else:
         label = "创建检查点并重建最终结构"
-        keys_to_clear = (FINAL_MATTER_KEY, FINAL_PACKAGE_KEY)
         target_stage = "delivery"
-        flash = "正文已保留，正在重建最终结构并重新审计。"
     if st.button(label, type="primary", width="stretch", key="final_audit_repair"):
+        repair = None
+        if needs_writing_repair:
+            try:
+                repair = build_targeted_writing_repair(st.session_state, package)
+            except (TypeError, ValueError) as exc:
+                st.error(f"无法创建定点返修任务：{exc}")
+                return
         _create_final_repair_checkpoint(
             [issue.code for issue in blocking],
             package=package,
         )
-        for key in keys_to_clear:
-            st.session_state.pop(key, None)
+        if repair is not None:
+            st.session_state[WRITING_PLAN_KEY] = repair.plan.model_dump_json(indent=2)
+            st.session_state[V04_PROJECT_KEY] = repair.project.model_dump_json(indent=2)
+            st.session_state[SECTION_SELECTION_REQUEST_KEY] = next(
+                iter(repair.paragraph_numbers)
+            )
+            flash = (
+                "已保留全部原正文，仅打开 "
+                f"{len(repair.paragraph_numbers)} 个章节中的 "
+                f"{repair.paragraph_count} 个问题段落进行返修。"
+            )
+        else:
+            flash = "正文已保留，正在重建最终结构并重新审计。"
+        st.session_state.pop(FINAL_MATTER_KEY, None)
+        st.session_state.pop(FINAL_PACKAGE_KEY, None)
         st.session_state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
         st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
         st.session_state["mvp_navigation_request"] = target_stage
