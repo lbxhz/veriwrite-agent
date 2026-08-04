@@ -759,7 +759,7 @@ def render_grounded_writing_console(
     if state.draft is None:
         st.info("本章尚未生成草稿。")
     else:
-        _render_draft(project, state.draft)
+        _render_draft(project, state.draft, section_plan)
 
 def render_final_delivery_console(handoff: V04WritingHandoff) -> None:
     """Render final assembly independently from the V0.4 section workbench."""
@@ -1098,6 +1098,7 @@ def _render_packet(packet) -> None:
 def _render_draft(
     project: V04WritingProject,
     draft,
+    section_plan: WritingSectionPlan,
 ) -> None:
     st.markdown("#### 本章草稿与审计")
     if draft.status == "needs_review":
@@ -1142,6 +1143,32 @@ def _render_draft(
     if draft.status == "confirmed":
         st.success("本章已采用。")
         return
+    if st.button(
+        "重新运行章节质量审阅",
+        width="stretch",
+        key=f"v04_quality_review_{draft.section_id}",
+    ):
+        try:
+            with st.spinner("正在只读检查本章论证、语言和证据强度……"):
+                packet = SectionEvidencePacketBuilder().build(
+                    project.handoff,
+                    draft.section_id,
+                )
+                review = LLMSectionQualityReviewer(
+                    DeepSeekClient(LLMSettings().for_structured_output())
+                ).review(
+                    section_plan,
+                    draft,
+                    packet,
+                    output_language=packet.output_language,
+                )
+                reviewed = apply_section_quality_review(draft, review)
+                updated = WritingProjectService().save_draft(project, reviewed)
+        except Exception as exc:
+            st.error(f"章节质量审阅未完成：{exc}")
+        else:
+            _store_project(updated)
+            st.rerun()
     st.caption("代码已检查引用键、来源范围和页码；请判断本章论述是否可用。")
     if st.button(
         "采用本章并继续",

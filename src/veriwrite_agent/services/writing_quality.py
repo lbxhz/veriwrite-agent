@@ -112,6 +112,10 @@ class LLMSectionQualityReviewer:
             ensure_ascii=False,
             separators=(",", ":"),
         )
+        evidence_by_id = {
+            evidence.evidence_id: evidence
+            for evidence in section_packet.evidence_items
+        }
         payload = {
             "section_id": section_plan.section_id,
             "title": section_plan.title,
@@ -123,23 +127,25 @@ class LLMSectionQualityReviewer:
                     "role": paragraph.role,
                     "purpose": paragraph.purpose,
                     "claim_focus": paragraph.claim_focus,
+                    "locked_evidence": [
+                        {
+                            "evidence_id": evidence.evidence_id,
+                            "normalized_claim": evidence.normalized_claim,
+                            "support_strength": evidence.support_strength,
+                            "quotes": [
+                                quote.exact_text
+                                for quote in evidence.supporting_quotes
+                            ],
+                        }
+                        for evidence_id in paragraph.evidence_card_ids
+                        if (evidence := evidence_by_id.get(evidence_id)) is not None
+                    ],
                 }
                 for paragraph in section_plan.paragraphs
             ],
             "paragraphs": [
                 {"paragraph_number": number, "text": paragraph.text}
                 for number, paragraph in enumerate(draft.paragraphs, 1)
-            ],
-            "locked_evidence": [
-                {
-                    "evidence_id": evidence.evidence_id,
-                    "normalized_claim": evidence.normalized_claim,
-                    "support_strength": evidence.support_strength,
-                    "quotes": [
-                        quote.exact_text for quote in evidence.supporting_quotes
-                    ],
-                }
-                for evidence in section_packet.evidence_items
             ],
         }
         messages = [
@@ -155,12 +161,17 @@ class LLMSectionQualityReviewer:
                     "report unsupported_claim when a factual statement is not entailed by "
                     "the locked evidence, and overstated_evidence when wording is stronger "
                     "than the evidence. Author analysis must be explicitly cautious rather "
-                    "than presented as an observed fact. Judge every paragraph against the "
-                    "supplied chapter purpose and planned claim focus. For evidence-related "
-                    "findings, include only evidence_card_ids already assigned to that "
-                    "paragraph. Give a concrete revision instruction that preserves evidence "
-                    "boundaries. Do not invent a problem merely to fill the list. "
-                    f"{output_language_instruction(output_language)} "
+                    "than presented as an observed fact. Judge paragraphs against the "
+                    "supplied chapter purpose, planned claim focus, and that paragraph's "
+                    "own locked_evidence only. Omit paragraphs that are acceptable. Return "
+                    "no more than six of the chapter's highest-confidence, materially useful "
+                    "findings; an empty findings list is valid. Report unsupported_claim or "
+                    "overstated_evidence only when the mismatch is clear from the supplied "
+                    "paragraph-level evidence, not for a minor wording preference. Include "
+                    "only evidence_card_ids present in that paragraph's locked_evidence. "
+                    "Give a concrete revision instruction that preserves evidence boundaries. "
+                    "Do not invent a problem merely to fill the list. Write finding details "
+                    "in natural academic Chinese when the output language is Chinese. "
                     f"Return JSON satisfying this schema: {schema}"
                 ),
             },
@@ -174,6 +185,7 @@ class LLMSectionQualityReviewer:
             )
             try:
                 review = SectionQualityReview.model_validate_json(raw)
+                review = self._normalize_evidence_scope(review, section_plan)
                 self._validate(review, section_plan)
                 return review
             except (ValidationError, ValueError) as exc:
@@ -212,13 +224,36 @@ class LLMSectionQualityReviewer:
             if identity in identities:
                 raise ValueError("quality reviewer duplicated a paragraph finding")
             identities.add(identity)
-            paragraph = section_plan.paragraphs[finding.paragraph_number - 1]
-            if not set(finding.evidence_card_ids).issubset(
-                paragraph.evidence_card_ids
-            ):
-                raise ValueError(
-                    "quality reviewer used evidence outside the paragraph plan"
+
+    @staticmethod
+    def _normalize_evidence_scope(
+        review: SectionQualityReview,
+        section_plan: WritingSectionPlan,
+    ) -> SectionQualityReview:
+        """Drop reviewer-selected card IDs outside each paragraph's locked scope."""
+
+        normalized = []
+        for finding in review.findings:
+            if finding.paragraph_number > len(section_plan.paragraphs):
+                normalized.append(finding)
+                continue
+            allowed = set(
+                section_plan.paragraphs[
+                    finding.paragraph_number - 1
+                ].evidence_card_ids
+            )
+            normalized.append(
+                finding.model_copy(
+                    update={
+                        "evidence_card_ids": [
+                            evidence_id
+                            for evidence_id in finding.evidence_card_ids
+                            if evidence_id in allowed
+                        ]
+                    }
                 )
+            )
+        return review.model_copy(update={"findings": normalized})
 
 
 def apply_section_quality_review(
@@ -241,11 +276,9 @@ def apply_section_quality_review(
     findings = [
         SectionDraftIssue(
             code=finding.code,
-            severity=(
-                "blocking"
-                if finding.code in {"unsupported_claim", "overstated_evidence"}
-                else "warning"
-            ),
+            # This is an LLM editor, not a deterministic entailment engine. Keep its
+            # findings visible and repairable while leaving the final judgment to the user.
+            severity="warning",
             paragraph_number=finding.paragraph_number,
             detail=(
                 f"{finding.detail} Revision instruction: "
@@ -261,7 +294,7 @@ def apply_section_quality_review(
             "status": (
                 "needs_review"
                 if any(issue.severity == "blocking" for issue in issues)
-                else draft.status
+                else "draft"
             ),
             "confirmed_by": None,
             "confirmed_at": None,

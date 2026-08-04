@@ -21,6 +21,7 @@ from veriwrite_agent.models.requirements import (
 )
 from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
+    SectionDraftIssue,
     SectionDraftProposal,
 )
 from veriwrite_agent.models.writing_plan import ParagraphTextProposal
@@ -628,10 +629,84 @@ def test_chapter_quality_reviewer_creates_targeted_editorial_issue() -> None:
     reviewed = apply_section_quality_review(draft, review)
 
     assert reviewed.issues[-1].code == "overstated_evidence"
-    assert reviewed.issues[-1].severity == "blocking"
-    assert reviewed.status == "needs_review"
+    assert reviewed.issues[-1].severity == "warning"
+    assert reviewed.status == "draft"
     assert reviewed.issues[-1].paragraph_number == 1
     assert "qualified wording" in reviewed.issues[-1].detail
+
+
+def test_chapter_quality_reviewer_drops_out_of_scope_evidence_ids() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(packet, proposal())
+    response = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 1,
+                    "code": "overstated_evidence",
+                    "detail": "The wording is too strong.",
+                    "revision_instruction": "Qualify the sentence.",
+                    "claim_kind": "evidence_fact",
+                    "evidence_card_ids": ["ev_outside_locked_scope"],
+                }
+            ],
+        }
+    )
+
+    review = LLMSectionQualityReviewer(FakeLLMClient(response)).review(
+        plan.sections[0],
+        draft,
+        packet,
+        output_language="English",
+    )
+
+    assert review.findings[0].evidence_card_ids == []
+
+
+def test_quality_review_reopens_needs_review_draft_when_only_warnings_remain() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(packet, proposal()).model_copy(
+        update={
+            "status": "needs_review",
+            "issues": [
+                SectionDraftIssue(
+                    code="unsupported_claim",
+                    severity="blocking",
+                    detail="An earlier editorial review blocked this draft.",
+                    paragraph_number=1,
+                )
+            ],
+        }
+    )
+    response = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 1,
+                    "code": "academic_style_problem",
+                    "detail": "The sentence is verbose.",
+                    "revision_instruction": "Make it concise.",
+                }
+            ],
+        }
+    )
+
+    review = LLMSectionQualityReviewer(FakeLLMClient(response)).review(
+        plan.sections[0],
+        draft,
+        packet,
+        output_language="English",
+    )
+    reviewed = apply_section_quality_review(draft, review)
+
+    assert reviewed.status == "draft"
+    assert all(issue.severity == "warning" for issue in reviewed.issues)
 
 
 def test_paragraph_writer_recovers_literal_json_control_characters() -> None:
