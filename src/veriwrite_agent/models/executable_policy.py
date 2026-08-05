@@ -13,6 +13,7 @@ from veriwrite_agent.models.requirements import (
     SelectionPolicy,
     StrictModel,
     SubmissionRequirement,
+    TopicBoundary,
 )
 
 
@@ -104,6 +105,7 @@ class ExecutableRequirementPolicy(StrictModel):
     course_name: str | None = None
     output_language: Literal["Chinese", "English", "bilingual", "pending_confirmation"]
     topic: str = Field(min_length=1)
+    topic_boundary: TopicBoundary = Field(default_factory=TopicBoundary)
     required_theme_elements: list[str] = Field(default_factory=list)
     deliverables: list[str] = Field(default_factory=list)
     length: ExecutableLengthPolicy

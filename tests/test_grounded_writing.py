@@ -287,6 +287,9 @@ def plan_response(*, evidence_ref: str = "E001") -> str:
                     "role": "detailed_evidence",
                     "purpose": "Present the verified retrieval result.",
                     "claim_focus": "The verified model reduces regional uncertainty.",
+                    "central_question": "How does the verified model reduce uncertainty?",
+                    "argument_move": "frame_problem",
+                    "comparison_axis": "retrieval uncertainty",
                     "relative_weight": 3,
                     "evidence_refs": [evidence_ref],
                     "source_refs": [],
@@ -295,6 +298,9 @@ def plan_response(*, evidence_ref: str = "E001") -> str:
                     "role": "section_support",
                     "purpose": "Connect the result to the wider research context.",
                     "claim_focus": "Remote sensing supports regional observation.",
+                    "central_question": "What boundary limits the supporting study?",
+                    "argument_move": "evaluate_limitation",
+                    "comparison_axis": "scope of application",
                     "relative_weight": 2,
                     "evidence_refs": [],
                     "source_refs": ["S002"],
@@ -303,6 +309,9 @@ def plan_response(*, evidence_ref: str = "E001") -> str:
                     "role": "synthesis",
                     "purpose": "Synthesize the core and supporting literature.",
                     "claim_focus": "The evidence motivates regional retrieval workflows.",
+                    "central_question": "What shared conclusion follows from the studies?",
+                    "argument_move": "synthesize_consensus",
+                    "comparison_axis": "regional retrieval workflow",
                     "relative_weight": 1,
                     "evidence_refs": ["E001"],
                     "source_refs": ["S002"],
@@ -429,7 +438,11 @@ def test_planner_covers_every_source_required_by_reference_policy() -> None:
         }
     )
 
-    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    payload = json.loads(plan_response())
+    payload["paragraphs"][2]["source_refs"].append("S003")
+    plan = GroundedWritingPlanner(FakeLLMClient(json.dumps(payload))).plan(
+        active_handoff
+    )
 
     planned_dois = {
         doi
@@ -448,22 +461,19 @@ def test_planner_covers_every_source_required_by_reference_policy() -> None:
         for section in plan.sections
         for paragraph in section.paragraphs
     ) <= 4
-    background_paragraph = next(
-        paragraph
+    assert all(
+        paragraph.coverage_only is False
         for section in plan.sections
         for paragraph in section.paragraphs
-        if BACKGROUND_DOI in paragraph.source_dois
     )
-    assert background_paragraph.role in {"background", "synthesis"}
-    assert background_paragraph.coverage_only is True
     assert all(
-        BACKGROUND_DOI not in paragraph.source_dois
-        for paragraph in plan.sections[0].paragraphs
-        if not paragraph.coverage_only
+        "coverage policy" not in paragraph.purpose.casefold()
+        for section in plan.sections
+        for paragraph in section.paragraphs
     )
 
 
-def test_source_coverage_repair_changes_only_paragraphs_receiving_missing_sources() -> None:
+def test_source_coverage_repair_refuses_to_manufacture_coverage_paragraphs() -> None:
     active_handoff = handoff_with_background_source()
     legacy = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
         active_handoff
@@ -490,15 +500,8 @@ def test_source_coverage_repair_changes_only_paragraphs_receiving_missing_source
             ),
         }
     )
-    repaired = repair_writing_plan_source_coverage(active_handoff, legacy)
-
-    assert repaired.plan.plan_fingerprint != legacy.plan_fingerprint
-    assert BACKGROUND_DOI in repaired.plan.required_source_dois
-    assert repaired.changed_paragraph_numbers == {"method": (4,)}
-    assert repaired.plan.sections[0].paragraphs[3].coverage_only is True
-    assert repaired.plan.sections[0].paragraphs[0].model_dump(
-        exclude={"target_words"}
-    ) == legacy.sections[0].paragraphs[0].model_dump(exclude={"target_words"})
+    with pytest.raises(WritingPlanError, match="regenerate the problem-driven plan"):
+        repair_writing_plan_source_coverage(active_handoff, legacy)
 
 
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
@@ -883,7 +886,7 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
         plan_fingerprint=plan.plan_fingerprint,
     )
     first_client = FakeLLMClient(
-        json.dumps({"text": "The locked evidence supports this planned paragraph."})
+        json.dumps({"text": "The verified result supports this planned paragraph."})
     )
     service = PlannedSectionDraftService()
 
@@ -1203,6 +1206,17 @@ def test_llm_cannot_insert_its_own_doi_citation() -> None:
 
     assert draft.status == "needs_review"
     assert any(issue.code == "llm_authored_citation" for issue in draft.issues)
+
+
+def test_internal_coverage_instruction_cannot_enter_submit_ready_prose() -> None:
+    packet = SectionEvidencePacketBuilder().build(handoff(), "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        proposal(text="为满足参考文献覆盖政策，本段补充讨论上述研究。"),
+    )
+
+    assert draft.status == "needs_review"
+    assert any(issue.code == "workflow_instruction_leak" for issue in draft.issues)
 
 
 def test_project_requires_human_confirmation_before_body_assembly() -> None:

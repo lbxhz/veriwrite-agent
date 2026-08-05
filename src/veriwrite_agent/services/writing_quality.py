@@ -87,6 +87,25 @@ def output_language_instruction(output_language: OutputLanguage) -> str:
     return "Do not draft prose until the output language has been confirmed."
 
 
+def workflow_instruction_leak_detail(text: str) -> str | None:
+    """Detect internal retrieval/planning instructions that leaked into submit-ready prose."""
+
+    patterns = (
+        r"为满足.{0,20}(?:文献|参考文献|引用).{0,20}(?:数量|覆盖|配额|政策)",
+        r"(?:文献|参考文献|引用)(?:覆盖|配额)政策",
+        r"(?:证据卡|检索蓝图|写作交接包|锁定证据包)",
+        r"(?:bibliography|reference|citation)\s+(?:coverage|quota)\s+(?:policy|requirement)",
+        r"(?:locked|assigned)\s+(?:evidence|source)s?",
+        r"(?:evidence|writing)\s+packet",
+        r"metadata-supported\s+sources?",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return f"internal workflow instruction leaked into prose: {match.group(0)}"
+    return None
+
+
 class LLMSectionQualityReviewer:
     """Read a complete chapter and return paragraph-level editorial actions."""
 
@@ -116,6 +135,7 @@ class LLMSectionQualityReviewer:
             evidence.evidence_id: evidence
             for evidence in section_packet.evidence_items
         }
+        sources_by_doi = {source.doi: source for source in section_packet.sources}
         payload = {
             "section_id": section_plan.section_id,
             "title": section_plan.title,
@@ -127,6 +147,9 @@ class LLMSectionQualityReviewer:
                     "role": paragraph.role,
                     "purpose": paragraph.purpose,
                     "claim_focus": paragraph.claim_focus,
+                    "central_question": paragraph.central_question,
+                    "argument_move": paragraph.argument_move,
+                    "comparison_axis": paragraph.comparison_axis,
                     "locked_evidence": [
                         {
                             "evidence_id": evidence.evidence_id,
@@ -139,6 +162,16 @@ class LLMSectionQualityReviewer:
                         }
                         for evidence_id in paragraph.evidence_card_ids
                         if (evidence := evidence_by_id.get(evidence_id)) is not None
+                    ],
+                    "admitted_sources": [
+                        {
+                            "doi": source.doi,
+                            "centrality": source.centrality,
+                            "supported_claim": source.supported_claim,
+                            "use_boundary": source.use_boundary,
+                        }
+                        for doi in paragraph.source_dois
+                        if (source := sources_by_doi.get(doi)) is not None
                     ],
                 }
                 for paragraph in section_plan.paragraphs
@@ -163,7 +196,10 @@ class LLMSectionQualityReviewer:
                     "than the evidence. Author analysis must be explicitly cautious rather "
                     "than presented as an observed fact. Judge paragraphs against the "
                     "supplied chapter purpose, planned claim focus, and that paragraph's "
-                    "own locked_evidence only. Omit paragraphs that are acceptable. Return "
+                    "own locked_evidence and admitted_sources only. Treat a paragraph as "
+                    "topic_drift when a source is used beyond its supported_claim or "
+                    "use_boundary, or when a contextual source becomes the main subject. "
+                    "Omit paragraphs that are acceptable. Return "
                     "no more than six of the chapter's highest-confidence, materially useful "
                     "findings; an empty findings list is valid. Report unsupported_claim or "
                     "overstated_evidence only when the mismatch is clear from the supplied "

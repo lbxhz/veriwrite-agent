@@ -112,6 +112,13 @@ def assessment_response(dois: list[str]) -> str:
             "assessments": [
                 {
                     "doi": doi,
+                    "admission_status": "admit",
+                    "centrality": "central",
+                    "supported_claim": "该研究支持对应大气遥感对象的反演方法比较。",
+                    "suitable_section_id": (
+                        "aerosol" if "aerosol" in doi else "methane"
+                    ),
+                    "use_boundary": "仅用于比较对应观测对象的反演方法与局限。",
                     "theme_scores": [
                         {
                             "theme_id": "aerosol",

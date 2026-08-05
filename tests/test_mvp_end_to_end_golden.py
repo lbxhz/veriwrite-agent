@@ -31,7 +31,6 @@ from veriwrite_agent.models.requirement_workflow import RequirementConfirmation
 from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftProposal,
-    V04WritingProject,
 )
 from veriwrite_agent.models.final_delivery import (
     FinalMatterProposal,
@@ -88,7 +87,10 @@ from veriwrite_agent.services.writing_handoff import (
     WritingOutlineBuilder,
 )
 from veriwrite_agent.ui.literature_workbench import LiteratureWorkbench
-from veriwrite_agent.ui.writing_console import rollback_blocked_delivery_to_v04
+from veriwrite_agent.ui.writing_console import (
+    final_delivery_repair_stage,
+    rollback_blocked_delivery_to_v04,
+)
 
 
 DOIS = ["10.1000/gold.1", "10.1000/gold.2"]
@@ -110,6 +112,19 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
             confirmed_by="gold-tester",
             field_updates={
                 "output_language": "English",
+                "topic_boundary.central_question": (
+                    "How do recent atmospheric remote-sensing retrieval methods differ?"
+                ),
+                "topic_boundary.included_objects": [
+                    "atmospheric composition",
+                    "atmospheric observation systems",
+                ],
+                "topic_boundary.excluded_objects": [
+                    "soil moisture",
+                    "archaeology",
+                ],
+                "topic_boundary.contextual_only_topics": ["edge computing"],
+                "topic_boundary.origin": "explicit",
                 "references.recent_year_rule_strength": "hard",
                 "references.in_text_style": "author_year",
                 "structure.required_or_recommended_sections": [
@@ -137,6 +152,13 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
             "topic": "ignored LLM topic",
             "discipline": "测绘科学与技术",
             "writing_through_line": "From background to method comparison.",
+            "topic_boundary": {
+                "central_question": "How do atmospheric retrieval methods differ?",
+                "included_objects": ["atmospheric composition"],
+                "excluded_objects": ["soil moisture"],
+                "contextual_only_topics": ["edge computing"],
+                "origin": "agent_proposed",
+            },
             "target_total": 2,
             "themes": [
                 {
@@ -291,6 +313,11 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
                 evidence_tier="A_core",
                 evidence_status="full_text_verified",
                 permitted_use="detailed_claims",
+                admission_status="admitted",
+                centrality=selected.centrality,
+                supported_claim=selected.supported_claim,
+                suitable_section_id=selected.suitable_section_id,
+                use_boundary=selected.use_boundary,
             )
         )
         documents.append(document)
@@ -459,31 +486,10 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
         "mvp_navigation": "delivery",
     }
 
-    assert rollback_blocked_delivery_to_v04(repair_state) is True
-    assert repair_state["mvp_navigation"] == "writing"
-    assert "v03_writing_handoff_json" in repair_state
-    assert "v04_writing_plan_json" in repair_state
-    repaired_project = V04WritingProject.model_validate_json(
-        repair_state["v04_writing_project_json"]
-    )
-    assert repaired_project.status == "drafting"
-    reopened = [section for section in repaired_project.sections if section.status == "needs_review"]
-    assert len(reopened) == 1
-    assert reopened[0].draft is not None
-    assert [
-        issue.paragraph_number
-        for issue in reopened[0].draft.issues
-        if issue.code == "final_audit_repair"
-    ] == [3]
-    assert "mvp_final_paper_json" not in repair_state
-    checkpoint = json.loads(repair_state["mvp_final_repair_checkpoint_json"])
-    assert checkpoint["state"]["v04_writing_plan_json"] == writing_plan.model_dump_json(
-        indent=2
-    )
-    assert checkpoint["reason_codes"] == [
-        "reference_count_below_minimum",
-        "required_section_missing",
-    ]
+    assert final_delivery_repair_stage(blocked_package) == "literature"
+    assert rollback_blocked_delivery_to_v04(repair_state) is False
+    assert repair_state["mvp_navigation"] == "delivery"
+    assert "v04_writing_project_json" in repair_state
 
 
 def _candidate(doi: str, title: str, year: int) -> LiteratureCandidate:
@@ -509,6 +515,11 @@ def _assessment(
 ) -> dict[str, object]:
     return {
         "doi": doi,
+        "admission_status": "admit",
+        "centrality": "central",
+        "supported_claim": "Supports the atmospheric retrieval argument for this section.",
+        "suitable_section_id": best_theme_id,
+        "use_boundary": "Use only for atmospheric retrieval comparison.",
         "theme_scores": [
             {
                 "theme_id": "background",

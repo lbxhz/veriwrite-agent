@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ from veriwrite_agent.ui.mvp_console import (
 )
 from veriwrite_agent.ui.writing_console import (
     render_final_delivery_console,
+    render_final_repair_checkpoint_restore,
     render_grounded_writing_console,
     rollback_blocked_delivery_to_v04,
     upgrade_legacy_full_rebuild_repair,
@@ -108,6 +110,7 @@ def run() -> None:
     if autosave_error:
         st.warning(f"本地项目自动存档暂不可用：{autosave_error}")
     _render_runtime_recovery_offer()
+    render_final_repair_checkpoint_restore()
 
     stages = {stage.stage_id: stage for stage in status.stages}
     if selected_stage == "overview":
@@ -454,6 +457,21 @@ def _render_requirement_facts(spec) -> None:
             "字段": "章节",
             "值": "、".join(spec.structure.required_or_recommended_sections),
         },
+        {
+            "字段": "核心问题",
+            "值": spec.topic_boundary.central_question or "待确认",
+        },
+        {
+            "字段": "主题边界",
+            "值": (
+                "纳入："
+                + ("、".join(spec.topic_boundary.included_objects) or "待确认")
+                + "；排除："
+                + ("、".join(spec.topic_boundary.excluded_objects) or "无明确项")
+                + "；仅作支撑："
+                + ("、".join(spec.topic_boundary.contextual_only_topics) or "无")
+            ),
+        },
     ]
     st.dataframe(rows, width="stretch", hide_index=True)
 
@@ -573,6 +591,38 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
             value=(selected_profile.topic if selected_profile is not None else spec.topic or ""),
             key=f"confirmed_topic_{selected_profile_id or 'single'}",
         )
+        boundary = (
+            selected_profile.topic_boundary
+            if selected_profile is not None
+            and selected_profile.topic_boundary.central_question
+            else spec.topic_boundary
+        )
+        st.markdown("**立题卡：检索准入边界**")
+        st.caption(
+            "这不是额外审批；与课程要求一次确认。它会直接排除“关键词相似但研究对象无关”的文献。"
+        )
+        central_question = st.text_input(
+            "本文要回答的核心问题",
+            value=(
+                boundary.central_question
+                or (f"围绕“{topic or spec.topic or '本主题'}”，本文需要回答什么核心问题？")
+            ),
+        )
+        included_objects = st.text_area(
+            "必须纳入的研究对象（每行或分号分隔）",
+            value="；".join(boundary.included_objects or ([topic] if topic else [])),
+            height=80,
+        )
+        excluded_objects = st.text_area(
+            "默认排除的对象（每行或分号分隔）",
+            value="；".join(boundary.excluded_objects),
+            height=80,
+        )
+        contextual_only_topics = st.text_area(
+            "只能作为支撑技术、不可主导正文的主题",
+            value="；".join(boundary.contextual_only_topics),
+            height=70,
+        )
         bibliography_style = st.text_input(
             "参考文献格式",
             value=_default_bibliography_style(spec),
@@ -677,6 +727,10 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
             updates = _build_updates(
                 review,
                 topic,
+                central_question,
+                included_objects,
+                excluded_objects,
+                contextual_only_topics,
                 bibliography_style,
                 language_options[language_label],
                 counting_label,
@@ -709,6 +763,10 @@ def _render_confirmation(review: RequirementReviewPackage) -> None:
 def _build_updates(
     review: RequirementReviewPackage,
     topic: str,
+    central_question: str,
+    included_objects: str,
+    excluded_objects: str,
+    contextual_only_topics: str,
     bibliography_style: str,
     output_language: str,
     counting_label: str,
@@ -721,6 +779,20 @@ def _build_updates(
         updates["selected_profile_id"] = selected_profile_id
     if topic.strip():
         updates["topic"] = topic.strip()
+    if not central_question.strip():
+        raise ValueError("立题卡必须说明本文要回答的核心问题。")
+    included = _parse_boundary_terms(included_objects)
+    if not included:
+        raise ValueError("立题卡至少需要一个必须纳入的研究对象。")
+    updates["topic_boundary.central_question"] = central_question.strip()
+    updates["topic_boundary.included_objects"] = included
+    updates["topic_boundary.excluded_objects"] = _parse_boundary_terms(
+        excluded_objects
+    )
+    updates["topic_boundary.contextual_only_topics"] = _parse_boundary_terms(
+        contextual_only_topics
+    )
+    updates["topic_boundary.origin"] = "explicit"
     if bibliography_style.strip():
         updates["references.bibliography_style"] = bibliography_style.strip()
     updates["output_language"] = output_language
@@ -748,6 +820,16 @@ def _build_updates(
                 raise ValueError(f"{field} 需要填写自定义 JSON。")
             updates[field] = json.loads(custom)
     return updates
+
+
+def _parse_boundary_terms(value: str) -> list[str]:
+    return list(
+        dict.fromkeys(
+            item.strip()
+            for item in re.split(r"[\n；;，,]+", value)
+            if item.strip()
+        )
+    )
 
 
 def _default_bibliography_style(spec) -> str:

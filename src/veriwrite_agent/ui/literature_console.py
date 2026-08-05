@@ -41,6 +41,11 @@ LITERATURE_STATE_KEYS = (
     "mvp_final_matter_json",
     "mvp_final_paper_json",
     "mvp_ai_declaration",
+    "mvp_final_repair_checkpoint_json",
+    "mvp_final_semantic_review_attestation",
+    "mvp_final_repair_auto_suppressed_id",
+    "v04_selected_section",
+    "v04_selected_section_request",
 )
 
 LITERATURE_DERIVED_STATE_KEYS = (
@@ -52,6 +57,8 @@ LITERATURE_DERIVED_STATE_KEYS = (
     "mvp_final_matter_json",
     "mvp_final_paper_json",
     "mvp_ai_declaration",
+    "mvp_final_semantic_review_attestation",
+    "mvp_final_repair_auto_suppressed_id",
 )
 
 
@@ -85,6 +92,27 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
     if completed_payload:
         payload = json.loads(completed_payload)
         completed_selection = BalancedLiteratureSelection.model_validate(payload["selection"])
+        if _selection_requires_admission_refresh(completed_selection):
+            st.error(
+                "这批文献来自旧版“真实性验证即准入”流程，尚未经过主题边界和用途审查，"
+                "不能继续作为 V0.3/V0.4 的写作来源。"
+            )
+            st.caption(
+                "重新执行会保留 runtime 中的原检索/PDF文件，但清除当前页面的下游派生状态；"
+                "新流程会逐篇给出保留/排除、支撑论点、适用章节和使用边界。"
+            )
+            if st.button(
+                "按立题卡重新执行文献准入",
+                type="primary",
+                width="stretch",
+                key="refresh_literature_admission",
+            ):
+                clear_literature_state()
+                st.session_state["mvp_flash"] = (
+                    "旧文献池未被删除；正在按立题卡重新生成检索方案和文献准入表。"
+                )
+                st.rerun()
+            return
         if completed_selection.target_reached and not completed_selection.policy_issues:
             _render_completed_literature_result(
                 completed_selection,
@@ -368,6 +396,21 @@ def _render_blueprint_summary(
         "年份",
         (f"{blueprint.year_from or '不限'}–{blueprint.year_to or '不限'}"),
     )
+    boundary = blueprint.topic_boundary
+    st.markdown("**立题卡与主题边界**")
+    st.dataframe(
+        [
+            {
+                "中心问题": boundary.central_question or "待补充",
+                "纳入对象": "；".join(boundary.included_objects) or "待补充",
+                "明确排除": "；".join(boundary.excluded_objects) or "无明确项",
+                "仅可作支撑": "；".join(boundary.contextual_only_topics) or "无",
+                "边界来源": boundary.origin,
+            }
+        ],
+        width="stretch",
+        hide_index=True,
+    )
     st.dataframe(
         [
             {
@@ -382,6 +425,20 @@ def _render_blueprint_summary(
         ],
         width="stretch",
         hide_index=True,
+    )
+
+
+def _selection_requires_admission_refresh(
+    selection: BalancedLiteratureSelection,
+) -> bool:
+    if not selection.blueprint.topic_boundary.is_actionable:
+        return True
+    return any(
+        item.admission_status != "admit"
+        or item.centrality not in {"central", "supporting"}
+        or not item.supported_claim
+        or not item.suitable_section_id
+        for item in selection.selected
     )
 
 
@@ -475,6 +532,19 @@ def _render_literature_result(*, include_downstream: bool = True) -> None:
         st.error("文献数量可能已达到，但 V0.1 策略仍未满足，因此不能进入 V0.3。")
         st.code("\n".join(selection.policy_issues))
 
+    if selection.admission_exclusions:
+        with st.expander("查看文献准入闸门的排除统计"):
+            st.dataframe(
+                [
+                    {"排除原因": reason, "篇数": count}
+                    for reason, count in sorted(
+                        selection.admission_exclusions.items()
+                    )
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+
     cug_unranked = sum(item.cug_tier is None for item in selection.selected)
     norwegian_fallback = sum(
         item.cug_tier is None and item.norwegian_level is not None for item in selection.selected
@@ -516,6 +586,10 @@ def _render_literature_result(*, include_downstream: bool = True) -> None:
                 ),
                 "挪威匹配依据": item.norwegian_match_basis or "未启用",
                 "相关性": item.relevance_score,
+                "中心性": item.centrality,
+                "具体支撑论点": item.supported_claim or "待人工复核",
+                "适用章节": item.suitable_section_id or item.theme_id,
+                "使用边界": item.use_boundary or "仅按准入结论使用",
                 "外文": item.is_foreign,
                 "期刊": item.journal or "—",
                 "出版社": item.publisher or "—",

@@ -340,6 +340,15 @@ class LiteratureMatrixRow(StrictModel):
     doi: str
     title: str = Field(min_length=1)
     theme_ids: list[str] = Field(min_length=1)
+    admission_status: Literal["admitted", "legacy_unreviewed"] = (
+        "legacy_unreviewed"
+    )
+    centrality: Literal[
+        "central", "supporting", "peripheral", "out_of_scope"
+    ] = "peripheral"
+    supported_claim: str | None = None
+    suitable_section_id: str | None = None
+    use_boundary: str | None = None
     research_objects: list[EvidenceBackedValue] = Field(default_factory=list)
     data_sources: list[EvidenceBackedValue] = Field(default_factory=list)
     methods: list[EvidenceBackedValue] = Field(default_factory=list)
@@ -394,6 +403,15 @@ class LiteratureLibraryRecord(StrictModel):
     abstract: str | None = None
     source_url: str
     theme_ids: list[str] = Field(min_length=1)
+    admission_status: Literal["admitted", "legacy_unreviewed"] = (
+        "legacy_unreviewed"
+    )
+    centrality: Literal[
+        "central", "supporting", "peripheral", "out_of_scope"
+    ] = "peripheral"
+    supported_claim: str | None = None
+    suitable_section_id: str | None = None
+    use_boundary: str | None = None
     evidence_tier: Literal["A_core", "B_supporting", "C_background"]
     evidence_status: Literal["full_text_verified", "metadata_verified"]
     permitted_use: Literal[
@@ -409,6 +427,13 @@ class LiteratureLibraryRecord(StrictModel):
 
     @model_validator(mode="after")
     def tier_must_match_evidence_status(self) -> LiteratureLibraryRecord:
+        if self.admission_status == "admitted":
+            if self.centrality not in {"central", "supporting"}:
+                raise ValueError("admitted records must be central or supporting")
+            if not self.supported_claim or not self.suitable_section_id:
+                raise ValueError(
+                    "admitted records require a supported claim and suitable section"
+                )
         if self.evidence_tier == "A_core":
             if self.evidence_status != "full_text_verified":
                 raise ValueError("A_core records require verified full text")
@@ -499,8 +524,6 @@ class EvidenceLibrary(StrictModel):
             raise ValueError("available PDFs must be represented as full-text records")
 
         for row in self.literature_matrix:
-            if row.doi not in document_dois:
-                raise ValueError("matrix rows require an available source document")
             if self.records and row.doi not in record_by_doi:
                 raise ValueError("matrix rows require a literature library record")
             cells = (

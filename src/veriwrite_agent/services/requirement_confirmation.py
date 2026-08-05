@@ -43,11 +43,17 @@ class RequirementConfirmationService:
         for field, value in confirmation.field_updates.items():
             self._apply_field_update(spec_data, field, value)
         confirmed_topic = spec_data["topic"] if "topic" in confirmation.field_updates else None
+        confirmed_boundary = {
+            field.split(".", 1)[1]: value
+            for field, value in confirmation.field_updates.items()
+            if field.startswith("topic_boundary.")
+        }
         if spec_data.get("selected_profile_id"):
             self._materialize_selected_profile(spec_data)
         if confirmed_topic is not None:
             spec_data["topic"] = confirmed_topic
             spec_data["topic_source"] = "explicit"
+        spec_data["topic_boundary"].update(confirmed_boundary)
 
         evidence = list(spec_data["source_evidence"])
         for field, value in confirmation.field_updates.items():
@@ -167,6 +173,9 @@ class RequirementConfirmationService:
         if selected.get("topic"):
             spec_data["topic"] = selected["topic"]
             spec_data["topic_source"] = "explicit"
+        selected_boundary = selected.get("topic_boundary", {})
+        if selected_boundary.get("central_question"):
+            spec_data["topic_boundary"] = deepcopy(selected_boundary)
         if selected.get("output_language") != "pending_confirmation":
             spec_data["output_language"] = selected["output_language"]
 

@@ -35,6 +35,7 @@ from veriwrite_agent.services.requirement_policy import (
 from veriwrite_agent.services.writing_quality import (
     language_mismatch_detail,
     repeated_sentence_pairs,
+    workflow_instruction_leak_detail,
 )
 
 
@@ -98,6 +99,17 @@ class SectionEvidencePacketBuilder:
                 + ", ".join(missing_records)
             )
         sources = [_source_record(records[doi]) for doi in source_dois]
+        misplaced_sources = [
+            source.doi
+            for source in sources
+            if source.admission_status == "admitted"
+            and source.suitable_section_id != section.section_id
+        ]
+        if misplaced_sources:
+            raise GroundedWritingError(
+                "section contains literature admitted for a different section: "
+                + ", ".join(misplaced_sources)
+            )
         if not evidence_items:
             raise GroundedWritingError(
                 "section has no confirmed full-text evidence cards"
@@ -159,7 +171,9 @@ class LLMGroundedSectionWriter:
                         "the attached evidence cards. Do not state specific numbers, "
                         "results, or methods from metadata-only sources. "
                         "Metadata-only B sources may support general section claims; "
-                        "C sources are background only. Group "
+                        "C sources are background only. Respect every source's "
+                        "supported_claim, suitable_section_id, and use_boundary; a "
+                        "supporting source must not become the paragraph's main subject. Group "
                         "literature by problem, method, trend, limitation, or comparison "
                         "instead of listing one paper per paragraph. Use a restrained "
                         "academic style and stay close to the target word count. "
@@ -575,6 +589,11 @@ def _source_record(record: LiteratureLibraryRecord) -> SectionSourceRecord:
         abstract=record.abstract,
         evidence_tier=record.evidence_tier,
         permitted_use=record.permitted_use,
+        admission_status=record.admission_status,
+        centrality=record.centrality,
+        supported_claim=record.supported_claim,
+        suitable_section_id=record.suitable_section_id,
+        use_boundary=record.use_boundary,
     )
 
 
@@ -661,6 +680,17 @@ def _audit_paragraph(
                 severity="blocking",
                 paragraph_number=paragraph_number,
                 detail="LLM paragraph text attempted to author its own citation",
+            )
+        )
+
+    workflow_leak = workflow_instruction_leak_detail(paragraph.text)
+    if workflow_leak:
+        issues.append(
+            SectionDraftIssue(
+                code="workflow_instruction_leak",
+                severity="blocking",
+                paragraph_number=paragraph_number,
+                detail=workflow_leak,
             )
         )
 

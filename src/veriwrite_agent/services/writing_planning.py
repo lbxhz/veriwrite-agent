@@ -84,11 +84,22 @@ class GroundedWritingPlanner:
         policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
             handoff.requirement
         )
+        required_source_dois = _required_source_dois(handoff)
         section_plans: list[WritingSectionPlan] = []
         for outline_section in handoff.outline.outline.sections:
             packet = SectionEvidencePacketBuilder().build(
                 handoff,
                 outline_section.section_id,
+            )
+            packet_source_dois = {source.doi for source in packet.sources}
+            packet = packet.model_copy(
+                update={
+                    "required_source_dois": [
+                        doi
+                        for doi in required_source_dois
+                        if doi in packet_source_dois
+                    ]
+                }
             )
             cached = (
                 self._cache.load_section(packet)
@@ -101,7 +112,6 @@ class GroundedWritingPlanner:
                     self._cache.save_section(packet, cached)
             section_plans.append(cached)
 
-        required_source_dois = _required_source_dois(handoff)
         section_plans = _apply_required_source_coverage(
             handoff,
             section_plans,
@@ -166,6 +176,13 @@ class GroundedWritingPlanner:
                     "year": source.year,
                     "evidence_tier": source.evidence_tier,
                     "permitted_use": source.permitted_use,
+                    "centrality": source.centrality,
+                    "supported_claim": source.supported_claim,
+                    "suitable_section_id": source.suitable_section_id,
+                    "use_boundary": source.use_boundary,
+                    "required_for_reference_policy": (
+                        source.doi in packet.required_source_dois
+                    ),
                     "allowed_roles": _allowed_roles(source.permitted_use),
                     "abstract": (source.abstract or "")[:400],
                 }
@@ -215,9 +232,20 @@ class GroundedWritingPlanner:
                     "needs at least one permitted evidence_ref or source_ref. "
                     "Select only the one to three sources necessary for the paragraph's "
                     "central claim; unused bibliography items are handled separately by "
-                    "the chapter-level coverage compiler. Do not maximize source coverage "
-                    "inside ordinary argument paragraphs. "
-                    "Keep claim_focus narrow enough for one paragraph. relative_weight is "
+                    "the admission and planning stages. Every source marked "
+                    "required_for_reference_policy must appear in at least one paragraph "
+                    "where it supports that paragraph's central claim. Compare sources by "
+                    "problem, method, evidence, difference, or limitation; never create a "
+                    "bibliography-coverage paragraph or mention internal coverage policy. "
+                    "Respect each source's supported_claim and use_boundary; never expand "
+                    "a contextual or supporting source into the paragraph's main subject. "
+                    "Keep claim_focus narrow enough for one paragraph. Every paragraph "
+                    "must start from a research problem and a central judgment, not from "
+                    "a paper. Set central_question and argument_move. Use compare_studies, "
+                    "synthesize_consensus, or analyze_difference for multi-study synthesis "
+                    "and state the comparison_axis. A single-paper paragraph is allowed "
+                    "only when one representative study is genuinely needed as detailed "
+                    "evidence; do not create a sequence of paper summaries. relative_weight is "
                     "an integer from 1 to 10; code assigns exact word budgets. "
                     f"The response must satisfy this JSON Schema: {schema}"
                 ),
@@ -267,7 +295,7 @@ def repair_writing_plan_source_coverage(
     handoff: V04WritingHandoff,
     plan: GroundedWritingPlan,
 ) -> WritingPlanCoverageRepair:
-    """Add only missing required sources and report the affected paragraphs."""
+    """Validate coverage without manufacturing bibliography-policy prose."""
 
     required_source_dois = _required_source_dois(handoff)
     repaired_sections = _apply_required_source_coverage(
@@ -395,6 +423,11 @@ class LLMGroundedParagraphWriter:
         *,
         revision_instruction: str | None = None,
     ) -> ParagraphTextProposal:
+        if packet.paragraph.coverage_only:
+            raise WritingPlanError(
+                "legacy bibliography-coverage paragraph cannot be written; "
+                "regenerate the section's problem-driven plan"
+            )
         schema = json.dumps(
             ParagraphTextProposal.model_json_schema(),
             ensure_ascii=False,
@@ -402,16 +435,9 @@ class LLMGroundedParagraphWriter:
         )
         maximum_units = _paragraph_maximum_units(packet)
         source_instruction = (
-            "This is a chapter-level literature-coverage paragraph. Briefly position "
-            "each assigned source by research scope and relevance, without attributing "
-            "unverified detailed findings. Group sources comparatively instead of "
-            "listing titles or authors."
-            if packet.paragraph.coverage_only
-            else (
-                "The plan has already narrowed the support set to the sources necessary "
-                "for this central claim. Build one coherent argument around claim_focus; "
-                "synthesize the sources and do not turn the paragraph into a source list."
-            )
+            "The plan has already narrowed the support set to the sources necessary "
+            "for this central claim. Build one coherent argument around claim_focus; "
+            "synthesize the sources and do not turn the paragraph into a source list."
         )
         revision_text = (
             f" Editorial revision requirement: {revision_instruction}"
@@ -427,6 +453,10 @@ class LLMGroundedParagraphWriter:
                     "locked all evidence and sources; do not output IDs, DOI values, "
                     "references, or citation markers. Do not introduce claims, numbers, "
                     "methods, or papers outside the packet. Follow purpose and claim_focus "
+                    "and answer paragraph.central_question through the declared "
+                    "argument_move. Lead with the paragraph's central judgment, then "
+                    "compare or synthesize evidence along comparison_axis when supplied. "
+                    "Do not organize the paragraph as one-paper-at-a-time notes. "
                     f"and stay close to target_words={packet.paragraph.target_words}; the "
                     f"paragraph must not exceed {maximum_units} counted units under "
                     f"counting_policy={packet.counting_policy}. Metadata-only sources permit "
@@ -724,6 +754,19 @@ def _compile_section_plan(
         )
         for number, proposal_item in enumerate(proposal.paragraphs, 1)
     ]
+    planned_source_dois = {
+        doi for paragraph in paragraphs for doi in paragraph.source_dois
+    }
+    missing_required = [
+        doi
+        for doi in packet.required_source_dois
+        if doi not in planned_source_dois
+    ]
+    if missing_required:
+        raise WritingPlanError(
+            "section plan omitted admitted sources required by the reference policy: "
+            + ", ".join(missing_required)
+        )
     return WritingSectionPlan(
         section_id=packet.section_id,
         title=packet.title,
@@ -743,6 +786,13 @@ def _compile_paragraph(
     evidence_aliases: dict[str, SectionEvidenceItem],
     source_aliases: dict[str, SectionSourceRecord],
 ) -> WritingParagraphPlan:
+    if (
+        proposal.central_question == "legacy_unspecified"
+        or proposal.argument_move == "legacy_unspecified"
+    ):
+        raise WritingPlanError(
+            f"paragraph {number} is missing its problem-driven argument contract"
+        )
     unknown_evidence = [ref for ref in proposal.evidence_refs if ref not in evidence_aliases]
     unknown_sources = [ref for ref in proposal.source_refs if ref not in source_aliases]
     if unknown_evidence or unknown_sources:
@@ -805,6 +855,15 @@ def _compile_paragraph(
             f"paragraph {number} selected {len(source_dois)} sources; "
             "ordinary argument paragraphs permit at most 3 necessary sources"
         )
+    if (
+        proposal.argument_move
+        in {"compare_studies", "synthesize_consensus", "analyze_difference"}
+        and len(source_dois) < 2
+    ):
+        raise WritingPlanError(
+            f"paragraph {number} declares {proposal.argument_move} but has fewer "
+            "than two supporting studies"
+        )
 
     return WritingParagraphPlan(
         paragraph_id=f"{packet.section_id}_p{number:02d}",
@@ -813,6 +872,9 @@ def _compile_paragraph(
         role=proposal.role,
         purpose=proposal.purpose,
         claim_focus=proposal.claim_focus,
+        central_question=proposal.central_question,
+        argument_move=proposal.argument_move,
+        comparison_axis=proposal.comparison_axis,
         target_words=target_words,
         evidence_card_ids=evidence_ids,
         source_dois=source_dois,
@@ -956,20 +1018,6 @@ def _apply_required_source_coverage(
     *,
     required_source_dois: list[str],
 ) -> list[WritingSectionPlan]:
-    if not required_source_dois:
-        return sections
-    policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
-        handoff.requirement
-    )
-    cluster_limit = min(
-        policy.references.max_references_per_citation_cluster or 4,
-        8,
-    )
-    records = {record.doi: record for record in handoff.evidence_library.records}
-    section_payloads = {
-        section.section_id: section.model_dump(mode="json") for section in sections
-    }
-    section_order = [section.section_id for section in sections]
     covered = {
         doi
         for section in sections
@@ -977,125 +1025,13 @@ def _apply_required_source_coverage(
         for doi in paragraph.source_dois
     }
     missing_required = [doi for doi in required_source_dois if doi not in covered]
-    if not missing_required:
-        return sections
-    original_paragraph_counts = {
-        section.section_id: len(section.paragraphs) for section in sections
-    }
-
-    for doi in missing_required:
-        record = records[doi]
-        candidate_section_ids = [
-            section_id
-            for section_id in section_order
-            if section_id in record.theme_ids
-        ] or section_order
-        placement = _place_source_in_existing_paragraph(
-            section_payloads,
-            candidate_section_ids,
-            doi=doi,
-            permitted_use=record.permitted_use,
-            cluster_limit=cluster_limit,
-        )
-        if placement is None:
-            placement = _add_coverage_paragraph(
-                section_payloads,
-                candidate_section_ids[0],
-                doi=doi,
-                cluster_limit=cluster_limit,
-            )
-        covered.add(doi)
-
-    rebuilt: list[WritingSectionPlan] = []
-    for section_id in section_order:
-        payload = section_payloads[section_id]
-        paragraphs = payload["paragraphs"]
-        targets = (
-            _allocate_targets(
-                [max(1, int(paragraph["target_words"])) for paragraph in paragraphs],
-                int(payload["target_words"]),
-                minimums=[
-                    50 if paragraph.get("coverage_only", False) else 80
-                    for paragraph in paragraphs
-                ],
-            )
-            if len(paragraphs) != original_paragraph_counts[section_id]
-            else [int(paragraph["target_words"]) for paragraph in paragraphs]
-        )
-        for number, (paragraph, target) in enumerate(
-            zip(paragraphs, targets, strict=True),
-            1,
-        ):
-            paragraph["paragraph_id"] = f"{section_id}_p{number:02d}"
-            paragraph["paragraph_number"] = number
-            paragraph["target_words"] = target
-        rebuilt.append(WritingSectionPlan.model_validate(payload))
-    return rebuilt
-
-
-def _place_source_in_existing_paragraph(
-    section_payloads: dict[str, dict[str, object]],
-    section_ids: list[str],
-    *,
-    doi: str,
-    permitted_use: str,
-    cluster_limit: int,
-) -> tuple[str, int] | None:
-    candidates: list[tuple[int, int, str, int]] = []
-    for section_id in section_ids:
-        paragraphs = section_payloads[section_id]["paragraphs"]
-        for index, paragraph in enumerate(paragraphs):
-            source_dois = paragraph["source_dois"]
-            if (
-                paragraph.get("coverage_only", False)
-                and len(source_dois) < cluster_limit
-                and _permission_allows(permitted_use, paragraph["role"])
-            ):
-                candidates.append((len(source_dois), index, section_id, index))
-    if not candidates:
-        return None
-    _, _, section_id, index = min(candidates)
-    paragraph = section_payloads[section_id]["paragraphs"][index]
-    paragraph["source_dois"].append(doi)
-    _mark_coverage_purpose(paragraph)
-    return section_id, index
-
-
-def _add_coverage_paragraph(
-    section_payloads: dict[str, dict[str, object]],
-    section_id: str,
-    *,
-    doi: str,
-    cluster_limit: int,
-) -> tuple[str, int]:
-    paragraphs = section_payloads[section_id]["paragraphs"]
-    if len(paragraphs) >= 12:
+    if missing_required:
         raise WritingPlanError(
-            f"section {section_id} has no paragraph capacity for required source {doi}"
+            "writing plan omitted admitted literature required by the reference policy; "
+            "regenerate the problem-driven plan instead of adding a coverage paragraph: "
+            + ", ".join(missing_required)
         )
-    insertion = len(paragraphs)
-    paragraphs.insert(
-        insertion,
-        {
-            "paragraph_id": f"{section_id}_p99",
-            "section_id": section_id,
-            "paragraph_number": 99,
-            "role": "background",
-            "purpose": (
-                "Map the scope of additional verified literature required by the "
-                "bibliography coverage policy."
-            ),
-            "claim_focus": (
-                "Compare the research scope of the assigned metadata-supported sources "
-                "without attributing unverified detailed results."
-            ),
-            "target_words": 50,
-            "coverage_only": True,
-            "evidence_card_ids": [],
-            "source_dois": [doi][:cluster_limit],
-        },
-    )
-    return section_id, insertion
+    return sections
 
 
 def _paragraph_requires_rewrite(
@@ -1116,17 +1052,6 @@ def _paragraph_requires_rewrite(
         "source_dois",
     )
     return any(getattr(previous, field) != getattr(current, field) for field in fields)
-
-
-def _mark_coverage_purpose(paragraph: dict[str, object]) -> None:
-    marker = "Discuss and compare every additional locked source"
-    purpose = str(paragraph["purpose"])
-    if marker not in purpose:
-        paragraph["purpose"] = (
-            purpose.rstrip()
-            + " Discuss and compare every additional locked source assigned by the "
-            "required bibliography coverage policy."
-        )
 
 
 def _paragraph_signature(packet: ParagraphEvidencePacket) -> str:

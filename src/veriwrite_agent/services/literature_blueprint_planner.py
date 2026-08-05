@@ -59,6 +59,9 @@ class LiteratureBlueprintPlanner:
         source = json.dumps(
             {
                 "topic": requirement.topic,
+                "confirmed_topic_boundary": requirement.topic_boundary.model_dump(
+                    mode="json"
+                ),
                 "document_type": requirement.document_type,
                 "required_theme_elements": requirement.required_theme_elements,
                 "required_sections": (requirement.structure.required_or_recommended_sections),
@@ -83,6 +86,13 @@ class LiteratureBlueprintPlanner:
                     "检索短语不得使用大写AND、OR、NOT或字段语法。"
                     "discipline必须原样选自available_disciplines。"
                     "不要生成论文、作者或DOI。"
+                    "Before planning themes, produce an actionable topic_boundary: one "
+                    "central question, concrete included research objects, explicit "
+                    "out-of-scope objects, and adjacent technologies that may appear only "
+                    "as supporting context. Preserve a confirmed boundary when supplied; "
+                    "otherwise mark the boundary as agent_proposed. Search themes must stay "
+                    "inside this boundary and contextual-only technologies must never become "
+                    "the chapter subject. "
                     "accepted_tiers保留T1至T6；高水平期刊是后续软排序，不是此处硬排除。"
                     f"输出必须符合以下JSON Schema：{schema}"
                 ),
@@ -95,11 +105,22 @@ class LiteratureBlueprintPlanner:
                 f"LLM selected unsupported discipline: {blueprint.discipline}"
             )
 
+        topic_boundary = (
+            policy.topic_boundary
+            if policy.topic_boundary.is_actionable
+            else blueprint.topic_boundary
+        )
+        if not topic_boundary.is_actionable:
+            raise BlueprintPlanningError(
+                "literature blueprint has no actionable topic boundary"
+            )
+
         try:
             return LiteratureSearchBlueprint.model_validate(
                 {
                     **blueprint.model_dump(mode="python"),
                     "topic": requirement.topic,
+                    "topic_boundary": topic_boundary.model_dump(mode="python"),
                     "target_total": target_total,
                     "accepted_tiers": ["T1", "T2", "T3", "T4", "T5", "T6"],
                     "year_from": policy.references.year_from,

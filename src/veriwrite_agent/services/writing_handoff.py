@@ -44,6 +44,7 @@ class WritingOutlineBuilder:
                 target_words=target_words,
                 counting_policy=counting_policy,
                 policy_fingerprint=policy_fingerprint,
+                policy=active_policy,
             )
         if target_words < 200 * len(blueprint.themes):
             raise ValueError("target_words is too small for the confirmed themes")
@@ -51,17 +52,34 @@ class WritingOutlineBuilder:
             [theme.target_count for theme in blueprint.themes],
             target_words,
         )
+        records_by_theme = {
+            theme.theme_id: [
+                record
+                for record in library.records
+                if (
+                    (
+                        record.admission_status == "admitted"
+                        and record.suitable_section_id == theme.theme_id
+                    )
+                    or (
+                        record.admission_status == "legacy_unreviewed"
+                        and theme.theme_id in record.theme_ids
+                        and (
+                            active_policy is None
+                            or not active_policy.topic_boundary.is_actionable
+                        )
+                    )
+                )
+            ]
+            for theme in blueprint.themes
+        }
         cards_by_theme = {
             theme.theme_id: [
                 card
                 for card in library.evidence_cards
-                if card.theme_id == theme.theme_id and card.review_status != "rejected"
-            ]
-            for theme in blueprint.themes
-        }
-        records_by_theme = {
-            theme.theme_id: [
-                record for record in library.records if theme.theme_id in record.theme_ids
+                if card.doi
+                in {record.doi for record in records_by_theme[theme.theme_id]}
+                and card.review_status != "rejected"
             ]
             for theme in blueprint.themes
         }
@@ -111,6 +129,7 @@ class WritingOutlineBuilder:
         target_words: int,
         counting_policy: str,
         policy_fingerprint: str | None,
+        policy: ExecutableRequirementPolicy | None,
     ) -> WritingOutlineDraft:
         """Build one evidence-backed section for a minimal connectivity test.
 
@@ -121,17 +140,53 @@ class WritingOutlineBuilder:
         """
 
         accepted_cards = [
-            card for card in library.evidence_cards if card.review_status != "rejected"
+            card
+            for card in library.evidence_cards
+            if card.review_status != "rejected"
+            and any(
+                record.doi == card.doi
+                and (
+                    record.admission_status == "admitted"
+                    or (
+                        record.admission_status == "legacy_unreviewed"
+                        and (
+                            policy is None
+                            or not policy.topic_boundary.is_actionable
+                        )
+                    )
+                )
+                for record in library.records
+            )
         ]
         core_dois = [
             record.doi
             for record in library.records
             if record.evidence_status == "full_text_verified"
+            and (
+                record.admission_status == "admitted"
+                or (
+                    record.admission_status == "legacy_unreviewed"
+                    and (
+                        policy is None
+                        or not policy.topic_boundary.is_actionable
+                    )
+                )
+            )
         ]
         supporting_dois = [
             record.doi
             for record in library.records
             if record.evidence_status == "metadata_verified"
+            and (
+                record.admission_status == "admitted"
+                or (
+                    record.admission_status == "legacy_unreviewed"
+                    and (
+                        policy is None
+                        or not policy.topic_boundary.is_actionable
+                    )
+                )
+            )
         ]
         evidence_gap = not core_dois or not accepted_cards
         first_theme = blueprint.themes[0]
@@ -196,6 +251,18 @@ class WritingHandoffService:
         policy: ExecutableRequirementPolicy | None = None,
     ) -> V04WritingHandoff:
         active_policy = policy or RequirementPolicyCompiler().compile(requirement)
+        if active_policy.topic_boundary.is_actionable:
+            unreviewed = [
+                record.doi
+                for record in evidence_library.records
+                if record.admission_status != "admitted"
+            ]
+            if unreviewed:
+                raise ValueError(
+                    "V0.4 requires every literature record to pass the topic-admission "
+                    "gate: "
+                    + ", ".join(unreviewed)
+                )
         if (
             evidence_library.requirement_policy_fingerprint
             and evidence_library.requirement_policy_fingerprint

@@ -151,6 +151,7 @@ class RequirementPolicyCompiler:
             course_name=requirement.course_name,
             output_language=requirement.output_language,
             topic=requirement.topic,
+            topic_boundary=requirement.topic_boundary,
             required_theme_elements=requirement.required_theme_elements,
             deliverables=requirement.deliverables,
             length=ExecutableLengthPolicy(
@@ -299,10 +300,18 @@ def _normalize_source_name(value: str) -> str:
 def _coverage_map() -> list[PolicyCoverageItem]:
     return [
         PolicyCoverageItem(
-            requirement_path="topic|required_theme_elements",
+            requirement_path="topic|topic_boundary|required_theme_elements",
             enforcement="enforced",
-            consumers=["V0.2 blueprint", "V0.3 page retrieval", "V0.4 outline"],
-            note="Controls search themes, retrieval context, and section purposes.",
+            consumers=[
+                "V0.2 blueprint",
+                "V0.2 literature admission",
+                "V0.3 page retrieval",
+                "V0.4 outline",
+            ],
+            note=(
+                "Controls search themes, explicit exclusions, contextual-only topics, "
+                "retrieval context, and section purposes."
+            ),
         ),
         PolicyCoverageItem(
             requirement_path="length",

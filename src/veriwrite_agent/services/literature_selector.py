@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from math import ceil
+
 from veriwrite_agent.models.literature_discovery import CugTier
 from veriwrite_agent.models.literature_selection import (
     BalancedLiteratureSelection,
@@ -39,6 +41,7 @@ class BalancedLiteratureSelector:
         selected: list[SelectedLiteratureRecord] = []
         used_dois: set[str] = set()
         theme_counts = {theme.theme_id: 0 for theme in blueprint.themes}
+        supporting_counts = {theme.theme_id: 0 for theme in blueprint.themes}
         themes = sorted(
             blueprint.themes,
             key=lambda theme: (theme.priority, theme.theme_id),
@@ -54,7 +57,15 @@ class BalancedLiteratureSelector:
                     candidate
                     for candidate in candidates
                     if candidate.verification.candidate.doi not in used_dois
+                    and candidate.relevance.admission_status == "admit"
+                    and candidate.relevance.suitable_section_id == theme.theme_id
+                    and candidate.relevance.centrality in {"central", "supporting"}
                     and self._score(candidate, theme.theme_id) >= blueprint.relevance_threshold
+                    and (
+                        candidate.relevance.centrality == "central"
+                        or supporting_counts[theme.theme_id]
+                        < ceil(theme.target_count * blueprint.max_contextual_share)
+                    )
                 ]
                 if not eligible:
                     continue
@@ -80,6 +91,8 @@ class BalancedLiteratureSelector:
                 selected.append(record)
                 used_dois.add(record.doi)
                 theme_counts[theme.theme_id] += 1
+                if chosen.relevance.centrality == "supporting":
+                    supporting_counts[theme.theme_id] += 1
                 progress = True
 
         shortages = {
@@ -96,11 +109,21 @@ class BalancedLiteratureSelector:
                     "minimum_foreign_count_not_reached:"
                     f"required={minimum_foreign_count}:actual={foreign_count}"
                 )
+        admission_exclusions: dict[str, int] = {}
+        for candidate in candidates:
+            if candidate.relevance.admission_status == "admit":
+                continue
+            key = (
+                candidate.relevance.exclusion_reason
+                or candidate.relevance.admission_status
+            )
+            admission_exclusions[key] = admission_exclusions.get(key, 0) + 1
         return BalancedLiteratureSelection(
             blueprint=blueprint,
             selected=selected,
             shortages=shortages,
             policy_issues=policy_issues,
+            admission_exclusions=admission_exclusions,
             target_reached=(len(selected) == blueprint.target_total and not policy_issues),
         )
 
@@ -120,7 +143,7 @@ class BalancedLiteratureSelector:
         *,
         prefer_foreign: bool,
         blueprint: LiteratureSearchBlueprint,
-    ) -> tuple[int, float, int, int, int, int, str]:
+    ) -> tuple[int, int, float, int, int, int, int, str]:
         score = self._score(candidate, theme_id)
         tier = candidate.ranking.resolved_tier
         norwegian_level = (
@@ -157,6 +180,7 @@ class BalancedLiteratureSelector:
                 source_rank = 1
         return (
             foreign_rank,
+            0 if candidate.relevance.centrality == "central" else 1,
             -score,
             source_rank,
             TIER_RANK[tier] if tier is not None else 7,
@@ -208,6 +232,10 @@ class BalancedLiteratureSelector:
             is_foreign=foreign,
             theme_id=theme_id,
             relevance_score=score,
+            centrality=candidate.relevance.centrality,
+            supported_claim=candidate.relevance.supported_claim,
+            suitable_section_id=candidate.relevance.suitable_section_id,
+            use_boundary=candidate.relevance.use_boundary,
             cug_tier=tier,
             ranking_status=candidate.ranking.status,
             norwegian_level=norwegian_level,

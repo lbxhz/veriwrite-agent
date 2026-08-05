@@ -27,8 +27,6 @@ class LiteratureMatrixBuilder:
 
         rows: list[LiteratureMatrixRow] = []
         for record in records:
-            if record.evidence_status != "full_text_verified":
-                continue
             dimensions: dict[str, list[EvidenceBackedValue]] = defaultdict(list)
             for card in cards_by_doi.get(record.doi, []):
                 dimensions[card.evidence_type].append(
@@ -42,6 +40,11 @@ class LiteratureMatrixBuilder:
                     doi=record.doi,
                     title=record.title,
                     theme_ids=record.theme_ids,
+                    admission_status=record.admission_status,
+                    centrality=record.centrality,
+                    supported_claim=record.supported_claim,
+                    suitable_section_id=record.suitable_section_id,
+                    use_boundary=record.use_boundary,
                     research_objects=dimensions["research_object"],
                     data_sources=dimensions["data"],
                     methods=dimensions["method"],

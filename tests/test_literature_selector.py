@@ -61,6 +61,10 @@ def selection_candidate(
     norwegian_level: int | None = None,
     aerosol_score: float,
     methane_score: float,
+    admission_status: str = "admit",
+    centrality: str = "central",
+    suitable_section_id: str | None = None,
+    exclusion_reason: str | None = None,
 ) -> LiteratureSelectionCandidate:
     candidate = LiteratureCandidate(
         doi=doi,
@@ -145,6 +149,23 @@ def selection_candidate(
     )
     relevance = LiteratureRelevanceAssessment(
         doi=doi,
+        admission_status=admission_status,
+        centrality=centrality,
+        supported_claim=(
+            "Supports the selected atmospheric retrieval comparison."
+            if admission_status == "admit"
+            else None
+        ),
+        suitable_section_id=(
+            suitable_section_id
+            or ("aerosol" if aerosol_score >= methane_score else "methane")
+        ),
+        use_boundary=(
+            "Use only for the selected atmospheric retrieval theme."
+            if admission_status == "admit"
+            else None
+        ),
+        exclusion_reason=exclusion_reason,
         theme_scores=[
             ThemeRelevanceScore(
                 theme_id="aerosol",
@@ -167,6 +188,84 @@ def selection_candidate(
         norwegian_ranking=norwegian_ranking,
         relevance=relevance,
     )
+
+
+def test_real_but_out_of_scope_paper_is_rejected_before_ranking() -> None:
+    rejected = selection_candidate(
+        doi="10.1000/soil",
+        title="High-ranked soil-moisture remote sensing",
+        year=2026,
+        tier="T1",
+        aerosol_score=0.99,
+        methane_score=0.1,
+        admission_status="reject",
+        centrality="out_of_scope",
+        exclusion_reason="Research object is soil moisture, which the topic card excludes.",
+    )
+    admitted = selection_candidate(
+        doi="10.1000/aerosol-admitted",
+        title="Atmospheric aerosol retrieval",
+        year=2024,
+        tier="T3",
+        aerosol_score=0.82,
+        methane_score=0.1,
+    )
+    methane = selection_candidate(
+        doi="10.1000/methane-admitted",
+        title="Atmospheric methane retrieval",
+        year=2024,
+        tier="T3",
+        aerosol_score=0.1,
+        methane_score=0.9,
+    )
+
+    result = BalancedLiteratureSelector().select(
+        blueprint(),
+        [rejected, admitted, methane],
+    )
+
+    assert {item.doi for item in result.selected} == {
+        "10.1000/aerosol-admitted",
+        "10.1000/methane-admitted",
+    }
+    assert result.admission_exclusions == {
+        "Research object is soil moisture, which the topic card excludes.": 1
+    }
+
+
+def test_supporting_sources_cannot_fill_a_theme_without_central_literature() -> None:
+    candidates = [
+        selection_candidate(
+            doi=f"10.1000/context-{index}",
+            title=f"Contextual platform {index}",
+            year=2025,
+            tier="T1",
+            aerosol_score=0.9 - index * 0.01,
+            methane_score=0.1,
+            centrality="supporting",
+        )
+        for index in range(3)
+    ]
+    candidates.append(
+        selection_candidate(
+            doi="10.1000/methane-central",
+            title="Atmospheric methane retrieval",
+            year=2025,
+            tier="T2",
+            aerosol_score=0.1,
+            methane_score=0.9,
+        )
+    )
+
+    result = BalancedLiteratureSelector().select(
+        blueprint(aerosol_target=2, methane_target=1).model_copy(
+            update={"max_contextual_share": 0.25}
+        ),
+        candidates,
+    )
+
+    assert len(result.selected) == 2
+    assert result.shortages == {"aerosol": 1}
 
 
 def test_relevance_has_priority_over_journal_tier_and_year() -> None:

@@ -173,6 +173,57 @@ class FormattingRequirement(StrictModel):
     line_spacing: float | None = Field(default=None, gt=0)
 
 
+class TopicBoundary(StrictModel):
+    """User-confirmable topic card that separates the subject from adjacent fields."""
+
+    central_question: str | None = None
+    included_objects: list[str] = Field(default_factory=list)
+    excluded_objects: list[str] = Field(default_factory=list)
+    contextual_only_topics: list[str] = Field(default_factory=list)
+    origin: Literal[
+        "explicit",
+        "agent_proposed",
+        "pending_confirmation",
+    ] = "pending_confirmation"
+
+    @field_validator(
+        "included_objects",
+        "excluded_objects",
+        "contextual_only_topics",
+        mode="after",
+    )
+    @classmethod
+    def normalize_boundary_terms(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            clean = " ".join(value.split())
+            fingerprint = clean.casefold()
+            if clean and fingerprint not in seen:
+                normalized.append(clean)
+                seen.add(fingerprint)
+        return normalized
+
+    @model_validator(mode="after")
+    def boundary_groups_must_not_overlap(self) -> TopicBoundary:
+        groups = {
+            "included": {value.casefold() for value in self.included_objects},
+            "excluded": {value.casefold() for value in self.excluded_objects},
+            "contextual": {
+                value.casefold() for value in self.contextual_only_topics
+            },
+        }
+        if groups["included"] & groups["excluded"]:
+            raise ValueError("included and excluded topic objects cannot overlap")
+        if groups["excluded"] & groups["contextual"]:
+            raise ValueError("excluded and contextual-only topics cannot overlap")
+        return self
+
+    @property
+    def is_actionable(self) -> bool:
+        return bool(self.central_question and self.included_objects)
+
+
 class RequirementProfile(StrictModel):
     """One selectable teacher/topic option inside a compound requirement."""
 
@@ -186,6 +237,7 @@ class RequirementProfile(StrictModel):
         "pending_confirmation",
     ] = "pending_confirmation"
     topic: str | None = None
+    topic_boundary: TopicBoundary = Field(default_factory=TopicBoundary)
     required_theme_elements: list[str] = Field(default_factory=list)
     deliverables: list[str] = Field(default_factory=list)
     length: LengthRequirement = Field(default_factory=LengthRequirement)
@@ -257,6 +309,7 @@ class RequirementSpec(StrictModel):
     ] = "pending_confirmation"
     topic: str | None = None
     topic_source: Literal["explicit", "user_confirmation_required"] = "user_confirmation_required"
+    topic_boundary: TopicBoundary = Field(default_factory=TopicBoundary)
     required_theme_elements: list[str] = Field(default_factory=list)
     deliverables: list[str] = Field(default_factory=list)
     length: LengthRequirement = Field(default_factory=LengthRequirement)

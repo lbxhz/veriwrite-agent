@@ -18,6 +18,7 @@ from veriwrite_agent.models.literature_selection import (
     LiteratureSearchBlueprint,
     LiteratureThemePlan,
 )
+from veriwrite_agent.models.requirements import TopicBoundary
 from veriwrite_agent.models.literature_verification import (
     AuthoritativeMetadataEvidence,
     DoiResolutionEvidence,
@@ -78,6 +79,12 @@ def confirmed_blueprint() -> ConfirmedLiteratureSearchBlueprint:
             target_total=2,
             max_candidates=20,
             relevance_threshold=0.5,
+            topic_boundary=TopicBoundary(
+                central_question="How are atmospheric constituents retrieved?",
+                included_objects=["aerosol", "methane"],
+                excluded_objects=["soil moisture"],
+                origin="explicit",
+            ),
             themes=[
                 LiteratureThemePlan(
                     theme_id="aerosol",
@@ -146,6 +153,11 @@ def relevance_response() -> str:
             "assessments": [
                 {
                     "doi": "10.1000/aerosol",
+                    "admission_status": "admit",
+                    "centrality": "central",
+                    "supported_claim": "Supports comparison of aerosol retrieval methods.",
+                    "suitable_section_id": "aerosol",
+                    "use_boundary": "Use only for atmospheric aerosol retrieval.",
                     "theme_scores": [
                         {
                             "theme_id": "aerosol",
@@ -162,6 +174,11 @@ def relevance_response() -> str:
                 },
                 {
                     "doi": "10.1000/methane",
+                    "admission_status": "admit",
+                    "centrality": "central",
+                    "supported_claim": "Supports comparison of methane retrieval methods.",
+                    "suitable_section_id": "methane",
+                    "use_boundary": "Use only for atmospheric methane retrieval.",
                     "theme_scores": [
                         {
                             "theme_id": "aerosol",

@@ -343,9 +343,15 @@ class LiteratureWorkbench:
     ) -> LiteratureRelevanceAssessmentBatch:
         cache_path = run_dir / "relevance_cache.json"
         if cache_path.is_file():
-            batch = LiteratureRelevanceAssessmentBatch.model_validate_json(
-                cache_path.read_text(encoding="utf-8")
-            )
+            cached_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            if cached_payload.get("schema_version") == "0.2-admission.1":
+                batch = LiteratureRelevanceAssessmentBatch.model_validate(
+                    cached_payload
+                )
+            else:
+                # Pre-admission relevance scores cannot be reused: they never answered
+                # which concrete claim a paper supports or whether it is out of scope.
+                batch = LiteratureRelevanceAssessmentBatch()
         else:
             batch = LiteratureRelevanceAssessmentBatch()
         scored = {assessment.doi for assessment in batch.assessments}
@@ -415,7 +421,7 @@ def blueprint_run_id(
 
     canonical = json.dumps(
         {
-            "pipeline_version": "0.2.3-norwegian-register-2025",
+            "pipeline_version": "0.2.4-topic-admission-gate",
             "blueprint": confirmed.blueprint.model_dump(mode="json"),
             "pool_multiplier": pool_multiplier,
         },

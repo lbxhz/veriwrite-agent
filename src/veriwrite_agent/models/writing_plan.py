@@ -16,6 +16,16 @@ from veriwrite_agent.models.writing import (
     SectionSourceRecord,
 )
 
+ArgumentMove = Literal[
+    "frame_problem",
+    "compare_studies",
+    "synthesize_consensus",
+    "analyze_difference",
+    "evaluate_limitation",
+    "author_judgment",
+    "legacy_unspecified",
+]
+
 
 class ParagraphPlanProposal(StrictModel):
     """Semantic paragraph plan using short aliases instead of authority IDs."""
@@ -23,6 +33,9 @@ class ParagraphPlanProposal(StrictModel):
     role: ParagraphRole
     purpose: str = Field(min_length=1)
     claim_focus: str = Field(min_length=1)
+    central_question: str = "legacy_unspecified"
+    argument_move: ArgumentMove = "legacy_unspecified"
+    comparison_axis: str | None = None
     relative_weight: int = Field(ge=1, le=10)
     evidence_refs: list[str] = Field(default_factory=list, max_length=5)
     source_refs: list[str] = Field(default_factory=list, max_length=3)
@@ -62,6 +75,9 @@ class WritingParagraphPlan(StrictModel):
     role: ParagraphRole
     purpose: str = Field(min_length=1)
     claim_focus: str = Field(min_length=1)
+    central_question: str = "legacy_unspecified"
+    argument_move: ArgumentMove = "legacy_unspecified"
+    comparison_axis: str | None = None
     target_words: int = Field(ge=50)
     coverage_only: bool = False
     evidence_card_ids: list[str] = Field(default_factory=list, max_length=5)

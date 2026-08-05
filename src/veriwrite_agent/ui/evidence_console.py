@@ -505,6 +505,11 @@ def _build_evidence_library(
             abstract=authority_by_doi[item.doi][2],
             source_url=authority_by_doi[item.doi][3],
             theme_ids=[item.theme_id],
+            admission_status="admitted",
+            centrality=item.centrality,
+            supported_claim=item.supported_claim,
+            suitable_section_id=item.suitable_section_id,
+            use_boundary=item.use_boundary,
             evidence_tier=(
                 "A_core"
                 if item.doi in available
@@ -610,6 +615,24 @@ def _render_library_summary(library: EvidenceLibrary) -> None:
     )
     metrics[2].metric("证据卡", len(library.evidence_cards))
     metrics[3].metric("提取问题", len(library.unresolved_issues))
+    if library.literature_matrix:
+        with st.expander("查看文献准入表与写作用途"):
+            st.dataframe(
+                [
+                    {
+                        "题名": row.title,
+                        "DOI": row.doi,
+                        "准入状态": row.admission_status,
+                        "中心性": row.centrality,
+                        "支撑论点": row.supported_claim or "旧项目待复核",
+                        "适用章节": row.suitable_section_id or "待复核",
+                        "使用边界": row.use_boundary or "待复核",
+                    }
+                    for row in library.literature_matrix
+                ],
+                hide_index=True,
+                width="stretch",
+            )
     if library.extractions:
         with st.expander("查看 PDF 全文提取与检索选页审计"):
             st.caption(

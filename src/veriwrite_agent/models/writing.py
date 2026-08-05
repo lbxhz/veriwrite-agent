@@ -52,11 +52,30 @@ class SectionSourceRecord(StrictModel):
         "section_support",
         "background_only",
     ]
+    admission_status: Literal["admitted", "legacy_unreviewed"] = (
+        "legacy_unreviewed"
+    )
+    centrality: Literal[
+        "central", "supporting", "peripheral", "out_of_scope", "legacy_unreviewed"
+    ] = "legacy_unreviewed"
+    supported_claim: str | None = None
+    suitable_section_id: str | None = None
+    use_boundary: str | None = None
 
     @field_validator("doi")
     @classmethod
     def normalize_doi(cls, value: str) -> str:
         return canonicalize_doi(value)
+
+    @model_validator(mode="after")
+    def admitted_source_needs_writing_scope(self) -> SectionSourceRecord:
+        if self.admission_status == "admitted" and (
+            self.centrality not in {"central", "supporting"}
+            or not self.supported_claim
+            or not self.suitable_section_id
+        ):
+            raise ValueError("admitted section sources require an explicit writing scope")
+        return self
 
 
 class SectionEvidencePacket(StrictModel):
@@ -74,6 +93,7 @@ class SectionEvidencePacket(StrictModel):
         "Chinese", "English", "bilingual", "pending_confirmation"
     ] = "pending_confirmation"
     research_questions: list[str] = Field(default_factory=list)
+    required_source_dois: list[str] = Field(default_factory=list)
     evidence_items: list[SectionEvidenceItem] = Field(min_length=1)
     sources: list[SectionSourceRecord] = Field(min_length=1)
     ai_writing_mode: Literal["generation_allowed", "generation_blocked"] = (
@@ -91,6 +111,8 @@ class SectionEvidencePacket(StrictModel):
             raise ValueError("section source DOI values must be unique")
         if any(item.doi not in source_dois for item in self.evidence_items):
             raise ValueError("every section evidence item needs a source record")
+        if any(doi not in source_dois for doi in self.required_source_dois):
+            raise ValueError("required section sources must exist in the packet")
         if (
             self.ai_writing_mode == "generation_blocked"
             and not self.ai_policy_reasons
@@ -212,6 +234,7 @@ class SectionDraftIssue(StrictModel):
         "source_permission_exceeded",
         "unconfirmed_evidence",
         "llm_authored_citation",
+        "workflow_instruction_leak",
         "partial_support",
         "word_count_low",
         "word_count_high",

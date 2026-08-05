@@ -54,6 +54,7 @@ class LLMLiteratureRelevanceScorer:
         source = json.dumps(
             {
                 "overall_topic": blueprint.topic,
+                "topic_boundary": blueprint.topic_boundary.model_dump(mode="json"),
                 "themes": [
                     {
                         "theme_id": theme.theme_id,
@@ -92,6 +93,13 @@ class LLMLiteratureRelevanceScorer:
                     "你不能判断或修改DOI真实性、题名、作者、年份、期刊等级。"
                     "只能根据给定题名和摘要，给每篇论文对每个theme_id评0至1分。"
                     "0表示无关，0.5表示部分相关，1表示直接支撑该章节研究问题。"
+                    "A real DOI is not enough for admission. For every paper, decide "
+                    "admission_status, centrality, the exact supported_claim, the suitable "
+                    "section, and its use boundary. Admit only when you can answer: if this "
+                    "paper were removed, which concrete planned claim would lose support? "
+                    "Reject papers matching excluded_objects. A contextual_only topic may "
+                    "be admitted only as supporting context and must not define the section. "
+                    "Use manual_review when the title and abstract are insufficient. "
                     "每篇必须覆盖全部且仅覆盖给定theme_id，best_theme_id必须是最高分主题。"
                     "不要添加、删除或修改任何DOI。"
                     f"输出必须符合以下JSON Schema：{schema}"
@@ -154,12 +162,24 @@ class LLMLiteratureRelevanceScorer:
             )
         expected_theme_set = set(expected_themes)
         for assessment in batch.assessments:
+            if assessment.admission_status == "legacy_unreviewed":
+                raise RelevanceScoringError(
+                    f"admission decision is missing for DOI {assessment.doi}"
+                )
             actual_themes = {
                 score.theme_id for score in assessment.theme_scores
             }
             if actual_themes != expected_theme_set:
                 raise RelevanceScoringError(
                     f"relevance output has wrong themes for DOI {assessment.doi}"
+                )
+            if (
+                assessment.admission_status == "admit"
+                and assessment.suitable_section_id not in expected_theme_set
+            ):
+                raise RelevanceScoringError(
+                    "admission output has an unknown suitable section for DOI "
+                    f"{assessment.doi}"
                 )
 
 

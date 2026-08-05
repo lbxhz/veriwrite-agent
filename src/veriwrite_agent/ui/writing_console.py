@@ -60,14 +60,29 @@ FINAL_REPAIR_AUTO_SUPPRESSION_KEY = "mvp_final_repair_auto_suppressed_id"
 SECTION_SELECTION_KEY = "v04_selected_section"
 SECTION_SELECTION_REQUEST_KEY = "v04_selected_section_request"
 REPAIR_DOWNSTREAM_KEYS = (
+    "literature_blueprint_json",
+    "literature_blueprint_editor",
+    "literature_confirmed_blueprint_json",
+    "literature_result_json",
+    "literature_ris",
+    "literature_verification_json",
+    "literature_run_dir",
+    "literature_pool_multiplier",
+    "v03_core_dois",
+    "v03_download_directory",
+    "v03_pdf_inspection_json",
+    "v03_evidence_library_json",
+    "v03_writing_handoff_json",
     WRITING_PLAN_KEY,
     V04_PROJECT_KEY,
     FINAL_MATTER_KEY,
     FINAL_PACKAGE_KEY,
 )
-WRITING_REPAIR_CODES = {
+LITERATURE_REBUILD_CODES = {
     "reference_count_below_minimum",
     "reference_count_below_target",
+}
+WRITING_REPAIR_CODES = {
     "reference_count_above_maximum",
     "uncited_bibliography_item",
     "unknown_citation_key",
@@ -108,7 +123,7 @@ def clear_writing_state() -> None:
 
 def final_delivery_repair_stage(
     package: FinalPaperPackage,
-) -> Literal["writing", "delivery"] | None:
+) -> Literal["literature", "writing", "delivery"] | None:
     """Route final blockers to the earliest stage that can actually fix them."""
 
     blocking_codes = {
@@ -116,6 +131,8 @@ def final_delivery_repair_stage(
     }
     if not blocking_codes:
         return None
+    if blocking_codes & LITERATURE_REBUILD_CODES:
+        return "literature"
     if any(
         code in WRITING_REPAIR_CODES
         or code.startswith("body_")
@@ -558,8 +575,6 @@ def render_grounded_writing_console(
 ) -> None:
     """Render the staged V0.4 body-writing workflow."""
 
-    _render_repair_checkpoint_restore()
-
     st.divider()
     st.header("V0.4 按证据逐章写作")
     st.caption(
@@ -567,6 +582,7 @@ def render_grounded_writing_console(
         "由程序绑定；初稿生成后由章节编辑器检查语言、跑题、重复、衔接、"
         "术语和主张强度，只重写被标记的段落；每章确认后才进入正文汇总。"
     )
+    _render_source_selection_rebuild_control()
 
     writing_plan = _render_writing_plan(handoff)
     if writing_plan is None:
@@ -779,6 +795,16 @@ def render_final_delivery_console(handoff: V04WritingHandoff) -> None:
             st.session_state.pop(FINAL_MATTER_KEY, None)
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
             st.rerun()
+        if _legacy_coverage_count(plan):
+            st.error(
+                "当前正文来自旧版“文献覆盖段落”计划，不能直接进入最终交付；"
+                "请回到 V0.4 重建问题驱动的写作计划。"
+            )
+            st.session_state["mvp_navigation_request"] = "writing"
+            st.session_state["mvp_flash"] = (
+                "检测到旧版覆盖型计划，已退回 V0.4；原正文仍保留在检查点前状态。"
+            )
+            st.rerun()
         project, language_reopened = _revalidate_project_language(project, plan)
         if language_reopened:
             _store_project(project)
@@ -853,6 +879,32 @@ def _render_writing_plan(
         st.session_state.pop(FINAL_MATTER_KEY, None)
         st.session_state.pop(FINAL_PACKAGE_KEY, None)
         st.rerun()
+    legacy_coverage_count = _legacy_coverage_count(plan)
+    if legacy_coverage_count:
+        st.error(
+            f"检测到 {legacy_coverage_count} 个旧版“为覆盖文献而写”的段落计划。"
+            "这类计划会污染论证，必须重建，原 V0.3 证据库和本地运行文件会保留。"
+        )
+        if st.button(
+            "废止旧计划并重新生成问题驱动提纲",
+            type="primary",
+            width="stretch",
+            key="replace_legacy_coverage_plan",
+        ):
+            _create_final_repair_checkpoint(
+                ["legacy_coverage_plan"],
+                replace=True,
+            )
+            st.session_state.pop(WRITING_PLAN_KEY, None)
+            st.session_state.pop(V04_PROJECT_KEY, None)
+            st.session_state.pop(FINAL_MATTER_KEY, None)
+            st.session_state.pop(FINAL_PACKAGE_KEY, None)
+            st.session_state["v04_force_writing_plan_regeneration"] = True
+            st.session_state["mvp_flash"] = (
+                "旧版覆盖型计划已保存到可撤销检查点；现在将按中心问题重新规划。"
+            )
+            st.rerun()
+        return None
     _render_writing_plan_summary(plan)
     if plan.status == "draft":
         existing_project = st.session_state.get(V04_PROJECT_KEY)
@@ -1434,18 +1486,23 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
     blocking = [issue for issue in package.audit.issues if issue.severity == "blocking"]
     if not blocking:
         return
-    needs_writing_repair = final_delivery_repair_stage(package) == "writing"
+    repair_stage = final_delivery_repair_stage(package)
+    needs_literature_rebuild = repair_stage == "literature"
+    needs_writing_repair = repair_stage == "writing"
     st.subheader("审计修复路由")
     st.caption(
         "正文问题会被定位到具体章节和段落：写作计划、原章节和无问题段落均保留，"
-        "只撤销受影响章节的确认。返修前会保存一份可撤销检查点。"
+        "只撤销受影响章节的确认。若文献池本身不足或选材失控，则回到 V0.2 "
+        "重做准入与提纲，不能靠补写段落凑数。返修前会保存一份可撤销检查点。"
     )
     st.dataframe(
         [
             {
                 "问题": issue.code,
                 "责任阶段": (
-                    "V0.4 写作计划与正文"
+                    "V0.2 文献准入与 V0.4 提纲"
+                    if issue.code in LITERATURE_REBUILD_CODES
+                    else "V0.4 写作计划与正文"
                     if issue.code in WRITING_REPAIR_CODES
                     or issue.code.startswith("body_")
                     or issue.code.startswith("citation_")
@@ -1453,7 +1510,9 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
                     else "最终结构组装"
                 ),
                 "修复动作": (
-                    "补充缺失来源分配，仅重写受影响段落"
+                    "保留原运行文件，重新准入文献并按合格证据重构提纲"
+                    if issue.code in LITERATURE_REBUILD_CODES
+                    else "按原论证计划定点修复受影响段落"
                     if issue.code in WRITING_REPAIR_CODES
                     else (
                         "补齐必需结构并重新审计"
@@ -1467,7 +1526,10 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
         hide_index=True,
         width="stretch",
     )
-    if needs_writing_repair:
+    if needs_literature_rebuild:
+        label = "保存检查点并回到 V0.2 重建文献准入与提纲"
+        target_stage = "literature"
+    elif needs_writing_repair:
         label = "创建检查点并生成 V0.4 定点返修任务"
         target_stage = "writing"
     else:
@@ -1484,6 +1546,7 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
         _create_final_repair_checkpoint(
             [issue.code for issue in blocking],
             package=package,
+            replace=True,
         )
         if repair is not None:
             st.session_state[WRITING_PLAN_KEY] = repair.plan.model_dump_json(indent=2)
@@ -1495,6 +1558,13 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
                 "已保留全部原正文，仅打开 "
                 f"{len(repair.paragraph_numbers)} 个章节中的 "
                 f"{repair.paragraph_count} 个问题段落进行返修。"
+            )
+        elif needs_literature_rebuild:
+            for key in REPAIR_DOWNSTREAM_KEYS:
+                st.session_state.pop(key, None)
+            flash = (
+                "原检索与 PDF 运行文件仍保留在本地；页面状态已回到 V0.2，"
+                "请按立题卡重新准入文献。合格来源将进入新提纲，不再对旧正文做翻译式修补。"
             )
         else:
             flash = "正文已保留，正在重建最终结构并重新审计。"
@@ -1512,9 +1582,10 @@ def _create_final_repair_checkpoint(
     *,
     state: MutableMapping[str, Any] | None = None,
     package: FinalPaperPackage | None = None,
+    replace: bool = False,
 ) -> None:
     target_state = st.session_state if state is None else state
-    if FINAL_REPAIR_CHECKPOINT_KEY in target_state:
+    if FINAL_REPAIR_CHECKPOINT_KEY in target_state and not replace:
         return
     if package is None and target_state.get(FINAL_PACKAGE_KEY):
         try:
@@ -1539,7 +1610,7 @@ def _create_final_repair_checkpoint(
     )
 
 
-def _render_repair_checkpoint_restore() -> None:
+def render_final_repair_checkpoint_restore() -> None:
     serialized = st.session_state.get(FINAL_REPAIR_CHECKPOINT_KEY)
     if not serialized:
         return
@@ -1553,7 +1624,7 @@ def _render_repair_checkpoint_restore() -> None:
             f"创建时间：{payload.get('created_at', '未知')}；"
             f"触发问题：{', '.join(payload.get('reason_codes', [])) or '未记录'}。"
         )
-        st.caption("恢复会覆盖本次修复产生的 V0.4 和最终交付状态。")
+        st.caption("恢复会覆盖本次修复产生的 V0.2–V0.4 和最终交付页面状态。")
         if st.button(
             "撤销本次修复并恢复旧版本",
             width="stretch",
@@ -1570,8 +1641,36 @@ def _render_repair_checkpoint_restore() -> None:
             repair_id = payload.get("repair_id")
             if repair_id:
                 st.session_state[FINAL_REPAIR_AUTO_SUPPRESSION_KEY] = repair_id
-            st.session_state["mvp_navigation_request"] = "delivery"
+            st.session_state["mvp_navigation_request"] = (
+                "delivery" if saved_state.get(FINAL_PACKAGE_KEY) else "writing"
+            )
             st.session_state["mvp_flash"] = "已恢复审计修复前的版本。"
+            st.rerun()
+
+
+def _render_source_selection_rebuild_control() -> None:
+    with st.expander("选材或论证主线失控？执行重构式修订"):
+        st.caption(
+            "如果问题来自不相关文献、章节对象漂移或大纲骨架错误，不应继续润色旧稿。"
+            "系统会保存可撤销检查点，返回 V0.2 重新执行文献准入；本地 runtime "
+            "中的原检索文件和 PDF 不会删除。"
+        )
+        if st.button(
+            "保存检查点并重新准入文献、重建提纲",
+            width="stretch",
+            key="rebuild_from_literature_admission",
+        ):
+            _create_final_repair_checkpoint(
+                ["source_selection_rebuild"],
+                replace=True,
+            )
+            for key in REPAIR_DOWNSTREAM_KEYS:
+                st.session_state.pop(key, None)
+            st.session_state["mvp_navigation_request"] = "literature"
+            st.session_state["mvp_flash"] = (
+                "已保存旧版本检查点并返回 V0.2。请先重做文献准入；"
+                "新提纲只会使用保留文献，随后按问题而非按论文重写正文。"
+            )
             st.rerun()
 
 
@@ -1593,6 +1692,14 @@ def _next_actionable_section(project: V04WritingProject) -> str:
         if section.status != "confirmed":
             return section.section_id
     return project.sections[0].section_id
+
+
+def _legacy_coverage_count(plan: GroundedWritingPlan) -> int:
+    return sum(
+        paragraph.coverage_only
+        for section in plan.sections
+        for paragraph in section.paragraphs
+    )
 
 
 def _status_label(status: str) -> str:

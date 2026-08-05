@@ -21,7 +21,7 @@ from veriwrite_agent.models.literature_discovery import (
 from veriwrite_agent.models.literature_verification import (
     LiteratureVerificationResult,
 )
-from veriwrite_agent.models.requirements import StrictModel
+from veriwrite_agent.models.requirements import StrictModel, TopicBoundary
 
 
 class LiteratureThemePlan(StrictModel):
@@ -70,6 +70,7 @@ class LiteratureSearchBlueprint(StrictModel):
     schema_version: Literal["0.2.2"] = "0.2.2"
     outline_status: Literal["provisional_search_blueprint"] = "provisional_search_blueprint"
     topic: str = Field(min_length=1)
+    topic_boundary: TopicBoundary = Field(default_factory=TopicBoundary)
     discipline: str = Field(min_length=1)
     writing_through_line: str = Field(min_length=1)
     target_total: int = Field(ge=2, le=100)
@@ -82,6 +83,7 @@ class LiteratureSearchBlueprint(StrictModel):
     year_to: int | None = Field(default=None, ge=1900, le=2100)
     max_candidates: int = Field(default=300, ge=20, le=1000)
     relevance_threshold: float = Field(default=0.6, ge=0, le=1)
+    max_contextual_share: float = Field(default=0.25, ge=0, le=0.5)
     requirement_policy: ExecutableRequirementPolicy | None = None
 
     @field_validator("accepted_tiers", mode="after")
@@ -141,6 +143,22 @@ class LiteratureRelevanceAssessment(StrictModel):
     doi: str
     theme_scores: list[ThemeRelevanceScore] = Field(min_length=1)
     best_theme_id: str = Field(min_length=1)
+    admission_status: Literal[
+        "admit",
+        "reject",
+        "manual_review",
+        "legacy_unreviewed",
+    ] = "legacy_unreviewed"
+    centrality: Literal[
+        "central",
+        "supporting",
+        "peripheral",
+        "out_of_scope",
+    ] = "peripheral"
+    supported_claim: str | None = None
+    suitable_section_id: str | None = None
+    use_boundary: str | None = None
+    exclusion_reason: str | None = None
 
     @field_validator("doi")
     @classmethod
@@ -158,10 +176,20 @@ class LiteratureRelevanceAssessment(StrictModel):
             raise ValueError("best_theme_id must appear in theme_scores")
         if scores[self.best_theme_id] != max(scores.values()):
             raise ValueError("best_theme_id must have the highest relevance score")
+        if self.admission_status == "admit":
+            if self.centrality not in {"central", "supporting"}:
+                raise ValueError("admitted literature must be central or supporting")
+            if not self.supported_claim or not self.suitable_section_id:
+                raise ValueError(
+                    "admitted literature must state its supported claim and section"
+                )
+        if self.admission_status == "reject" and not self.exclusion_reason:
+            raise ValueError("rejected literature must state an exclusion reason")
         return self
 
 
 class LiteratureRelevanceAssessmentBatch(StrictModel):
+    schema_version: Literal["0.2-admission.1"] = "0.2-admission.1"
     assessments: list[LiteratureRelevanceAssessment] = Field(default_factory=list)
 
 
@@ -198,6 +226,11 @@ class SelectedLiteratureRecord(StrictModel):
     is_foreign: bool
     theme_id: str = Field(min_length=1)
     relevance_score: float = Field(ge=0, le=1)
+    admission_status: Literal["admit"] = "admit"
+    centrality: Literal["central", "supporting"] = "central"
+    supported_claim: str | None = None
+    suitable_section_id: str | None = None
+    use_boundary: str | None = None
     cug_tier: CugTier | None = None
     ranking_status: RankingLookupStatus
     norwegian_level: NorwegianLevel | None = None
@@ -220,6 +253,7 @@ class BalancedLiteratureSelection(StrictModel):
     selected: list[SelectedLiteratureRecord] = Field(default_factory=list)
     shortages: dict[str, int] = Field(default_factory=dict)
     policy_issues: list[str] = Field(default_factory=list)
+    admission_exclusions: dict[str, int] = Field(default_factory=dict)
     target_reached: bool
 
     @model_validator(mode="after")

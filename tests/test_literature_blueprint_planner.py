@@ -4,7 +4,11 @@ import pytest
 
 from veriwrite_agent.llm.fake_client import FakeLLMClient
 from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
-from veriwrite_agent.models.requirements import ReferenceRequirement, RequirementSpec
+from veriwrite_agent.models.requirements import (
+    ReferenceRequirement,
+    RequirementSpec,
+    TopicBoundary,
+)
 from veriwrite_agent.services.literature_blueprint_planner import (
     BlueprintPlanningError,
     LiteratureBlueprintPlanner,
@@ -38,6 +42,13 @@ def valid_blueprint_response(*, discipline: str = "大气科学") -> str:
             "topic": "LLM不得覆盖用户主题",
             "discipline": discipline,
             "writing_through_line": "从观测对象、反演方法到应用验证",
+            "topic_boundary": {
+                "central_question": "近五年大气遥感的观测对象与反演方法如何演进？",
+                "included_objects": ["气溶胶", "温室气体", "大气遥感观测系统"],
+                "excluded_objects": ["土壤水分", "考古", "健身物联网", "海底油气"],
+                "contextual_only_topics": ["云计算", "边缘计算"],
+                "origin": "agent_proposed",
+            },
             "target_total": 6,
             "themes": [
                 {
@@ -84,8 +95,33 @@ def test_llm_designs_themes_but_code_enforces_confirmed_bounds() -> None:
     assert sum(theme.target_count for theme in blueprint.themes) == 6
     assert blueprint.year_from == 2022
     assert blueprint.year_to == 2026
+    assert blueprint.topic_boundary.is_actionable is True
     assert blueprint.accepted_tiers == ["T1", "T2", "T3", "T4", "T5", "T6"]
     assert client.calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_confirmed_topic_boundary_overrides_llm_proposal() -> None:
+    confirmed = confirmed_requirement()
+    requirement = confirmed.requirement.model_copy(
+        update={
+            "topic_boundary": TopicBoundary(
+                central_question="大气成分遥感如何提高反演可靠性？",
+                included_objects=["大气成分"],
+                excluded_objects=["土壤水分"],
+                contextual_only_topics=["边缘计算"],
+                origin="explicit",
+            )
+        }
+    )
+
+    blueprint = LiteratureBlueprintPlanner(
+        FakeLLMClient(valid_blueprint_response()),
+        ["大气科学"],
+        current_year=2026,
+    ).plan(confirmed.model_copy(update={"requirement": requirement}))
+
+    assert blueprint.topic_boundary.central_question == "大气成分遥感如何提高反演可靠性？"
+    assert blueprint.topic_boundary.included_objects == ["大气成分"]
 
 
 def test_unsupported_discipline_is_rejected() -> None:

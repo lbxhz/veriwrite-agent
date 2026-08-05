@@ -46,6 +46,13 @@ class LLMRequirementParser:
                     "只有上下文明确时才可进行这种字符纠正。"
                     "只有原文确实冲突或缺失时才记录ambiguities；"
                     "原文明确允许A或B不属于歧义。"
+                    "When a usable topic is present, also produce a conservative "
+                    "topic_boundary. State one central research question, the research "
+                    "objects that are in scope, objects that are clearly out of scope, "
+                    "and adjacent technologies that may appear only as supporting context. "
+                    "If these boundaries are inferred rather than quoted from the source, "
+                    "set origin to agent_proposed; do not present the proposal as an "
+                    "explicit teacher requirement. "
                     f"输出必须符合以下JSON Schema：{schema}"
                 ),
             },
