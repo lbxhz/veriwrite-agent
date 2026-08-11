@@ -56,7 +56,10 @@ from veriwrite_agent.services.writing_planning import (
     GroundedWritingPlanner,
     LLMGroundedParagraphWriter,
     ParagraphWritingRuntimeCache,
+    WritingPlanBudgetExceeded,
+    WritingPlanDependencyError,
     WritingPlanRuntimeCache,
+    _paragraph_requires_rewrite,
     align_writing_plan_language,
     repair_writing_plan_source_coverage,
 )
@@ -1628,14 +1631,30 @@ def _resume_after_evidence_recovery(
         merged_draft.model_dump(mode="json")
     ).confirm(confirmed_by=handoff.requirement.confirmed_by)
     new_project = WritingProjectService().start(handoff)
-    merged_states = [
-        (
-            old_states[state.section_id]
-            if state.section_id in preserved_ids
-            else state
-        )
-        for state in new_project.sections
-    ]
+    repaired_sections = {
+        section.section_id: section for section in merged_draft.sections
+    }
+    merged_states: list[WritingSectionState] = []
+    for state in new_project.sections:
+        if state.section_id in preserved_ids:
+            merged_states.append(old_states[state.section_id])
+            continue
+        old_state = old_states.get(state.section_id)
+        old_section = old_plans.get(state.section_id)
+        reopened = None
+        if (
+            state.section_id not in request.affected_section_ids
+            and old_state is not None
+            and old_section is not None
+            and old_state.status == "confirmed"
+        ):
+            reopened = _reopen_confirmed_state_for_plan_changes(
+                old_state,
+                previous_plan=old_section,
+                current_plan=repaired_sections[state.section_id],
+                handoff=handoff,
+            )
+        merged_states.append(reopened or state)
     resumed_project = V04WritingProject.model_validate(
         new_project.model_copy(
             update={
@@ -1704,6 +1723,65 @@ def _reopen_minimum_sections_for_source_coverage(
                 return candidate, preserved.difference(reopened_ids)
     raise ValueError(
         "recovery reference plan does not cover every required source DOI"
+    )
+
+
+def _reopen_confirmed_state_for_plan_changes(
+    state: WritingSectionState,
+    *,
+    previous_plan: WritingSectionPlan,
+    current_plan: WritingSectionPlan,
+    handoff: V04WritingHandoff,
+) -> WritingSectionState | None:
+    """Retain accepted prose and reopen only paragraphs whose authority changed."""
+
+    if (
+        state.draft is None
+        or len(previous_plan.paragraphs) != len(current_plan.paragraphs)
+        or not _recovered_state_is_compatible(state, previous_plan, handoff)
+    ):
+        return None
+    changed = [
+        current.paragraph_number
+        for previous, current in zip(
+            previous_plan.paragraphs,
+            current_plan.paragraphs,
+            strict=True,
+        )
+        if _paragraph_requires_rewrite(previous, current)
+    ]
+    if not changed:
+        return state
+    retained = [
+        issue for issue in state.draft.issues if issue.code != "final_audit_repair"
+    ]
+    repair_issues = [
+        SectionDraftIssue(
+            code="final_audit_repair",
+            severity="blocking",
+            paragraph_number=number,
+            detail=(
+                "补证后的来源权限或必引绑定改变；只按新计划重写本段，"
+                "本章其他已确认段落保持不变。"
+            ),
+        )
+        for number in changed
+    ]
+    reopened_draft = state.draft.model_copy(
+        update={
+            "status": "needs_review",
+            "issues": [*retained, *repair_issues],
+            "confirmed_by": None,
+            "confirmed_at": None,
+            "quality_review_status": "not_run",
+            "quality_review_rounds": 0,
+            "quality_reviewed_at": None,
+        }
+    )
+    return WritingSectionState(
+        section_id=state.section_id,
+        status="needs_review",
+        draft=reopened_draft,
     )
 
 
@@ -2014,15 +2092,47 @@ def _render_writing_plan(
                 with st.spinner(
                     "正在逐章规划段落与证据；已完成章节会保存为检查点……"
                 ):
+                    planning_settings = LLMSettings().for_structured_output()
+                    planning_settings = planning_settings.model_copy(
+                        update={
+                            "timeout_seconds": min(
+                                planning_settings.timeout_seconds,
+                                60.0,
+                            ),
+                            "max_retries": 0,
+                        }
+                    )
                     plan = GroundedWritingPlanner(
-                        DeepSeekClient(LLMSettings().for_structured_output()),
+                        DeepSeekClient(planning_settings),
                         cache=WritingPlanRuntimeCache(
                             project_root() / "runtime" / "writing_plan",
                             handoff=handoff,
                         ),
                         reuse_cache=not force,
                         repair_feedback_by_section=_writing_plan_repair_feedback(),
+                        max_elapsed_seconds=300.0,
+                        max_model_calls=max(
+                            1,
+                            len(handoff.outline.outline.sections),
+                        ),
                     ).plan(handoff)
+            except WritingPlanBudgetExceeded:
+                pause_writing_agent(st.session_state)
+                _autosave_current_project()
+                st.error(
+                    "本轮写作规划已达到 5 分钟预算，系统已暂停并保留所有"
+                    "成功章节缓存。再次继续时只会处理尚未完成的规划节点。"
+                )
+                return None
+            except WritingPlanDependencyError:
+                pause_writing_agent(st.session_state)
+                _autosave_current_project()
+                st.error(
+                    "写作计划发现无法由改写解决的来源权限冲突，系统已停止"
+                    "自动重试并保留全部规划缓存。该问题需要调整证据路由或"
+                    "课程引用策略，不会继续消耗模型调用。"
+                )
+                return None
             except Exception as exc:
                 if auto_plan:
                     failures = int(

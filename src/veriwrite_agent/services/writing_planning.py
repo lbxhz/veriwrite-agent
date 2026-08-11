@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -48,6 +49,14 @@ class WritingPlanError(ValueError):
     """Raised when semantic planning cannot compile to real evidence authority."""
 
 
+class WritingPlanBudgetExceeded(WritingPlanError):
+    """Raised before another model call would exceed the bounded planning budget."""
+
+
+class WritingPlanDependencyError(WritingPlanError):
+    """Raised when deterministic evidence permissions make retrying prose useless."""
+
+
 class ParagraphLengthError(ValueError):
     """Raised when one model paragraph greatly exceeds its locked word budget."""
 
@@ -86,13 +95,23 @@ class GroundedWritingPlanner:
         cache: WritingPlanRuntimeCache | None = None,
         reuse_cache: bool = True,
         repair_feedback_by_section: dict[str, list[str]] | None = None,
+        max_elapsed_seconds: float = 300.0,
+        max_model_calls: int = 6,
     ) -> None:
+        if max_elapsed_seconds <= 0:
+            raise ValueError("max_elapsed_seconds must be positive")
+        if max_model_calls < 1:
+            raise ValueError("max_model_calls must be positive")
         self._client = client
         self._cache = cache
         self._reuse_cache = reuse_cache
         self._repair_feedback_by_section = repair_feedback_by_section or {}
+        self._max_elapsed_seconds = max_elapsed_seconds
+        self._max_model_calls = max_model_calls
 
     def plan(self, handoff: V04WritingHandoff) -> GroundedWritingPlan:
+        started = perf_counter()
+        model_calls = 0
         policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
             handoff.requirement
         )
@@ -120,6 +139,15 @@ class GroundedWritingPlanner:
                 else None
             )
             if cached is None:
+                if (
+                    model_calls >= self._max_model_calls
+                    or perf_counter() - started >= self._max_elapsed_seconds
+                ):
+                    raise WritingPlanBudgetExceeded(
+                        "writing planning stopped before exceeding its model-call or "
+                        "wall-clock budget"
+                    )
+                model_calls += 1
                 cached = self._plan_section(packet)
                 if self._cache:
                     self._cache.save_section(packet, cached)
@@ -1504,6 +1532,44 @@ def _repair_compiled_required_source_coverage(
                 )
             )
         if not candidates:
+            occurrences = occurrence_counts()
+            repurposeable = [
+                (len(paragraph.evidence_card_ids), -index, index)
+                for index, paragraph in enumerate(updated)
+                if paragraph.role == "detailed_evidence"
+                and all(
+                    doi not in required or occurrences.get(doi, 0) > 1
+                    for doi in paragraph.source_dois
+                )
+            ]
+            if not repurposeable:
+                continue
+            _, _, chosen_index = min(repurposeable)
+            chosen = updated[chosen_index]
+            claim_focus = (source.supported_claim or source.title).strip()
+            if packet.output_language == "Chinese":
+                purpose = "提供与本章问题直接相关且不超出元数据权限的背景语境。"
+                central_question = "该来源为本章问题提供了什么边界明确的背景信息？"
+            else:
+                purpose = (
+                    "Provide permission-bounded background context for the section."
+                )
+                central_question = (
+                    "What bounded background context does this source provide?"
+                )
+            updated[chosen_index] = chosen.model_copy(
+                update={
+                    "role": "background",
+                    "purpose": purpose,
+                    "claim_focus": claim_focus,
+                    "central_question": central_question,
+                    "argument_move": "frame_problem",
+                    "comparison_axis": None,
+                    "evidence_card_ids": [],
+                    "source_dois": [missing_doi],
+                    "coverage_only": False,
+                }
+            )
             continue
         _, _, _, negative_index, eviction = max(candidates)
         chosen_index = -negative_index
@@ -1826,7 +1892,7 @@ def _apply_required_source_coverage(
     }
     missing_required = [doi for doi in required_source_dois if doi not in covered]
     if missing_required:
-        raise WritingPlanError(
+        raise WritingPlanDependencyError(
             "required literature has no permission-compatible paragraph route: "
             + ", ".join(missing_required)
         )

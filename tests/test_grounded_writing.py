@@ -62,6 +62,7 @@ from veriwrite_agent.services.writing_planning import (
     ParagraphWritingRuntimeCache,
     PlannedSectionDraftService,
     WritingPlanError,
+    WritingPlanBudgetExceeded,
     WritingPlanRuntimeCache,
     _assign_required_sources_to_problem_paragraphs,
     _repair_compiled_required_source_coverage,
@@ -85,6 +86,7 @@ from veriwrite_agent.services.writing_agent_runtime import WritingAgentRuntimeSe
 from veriwrite_agent.services.writing_evidence_recovery import merge_recovery_handoffs
 from veriwrite_agent.ui.writing_console import (
     _merge_recovery_checkpoint_progress,
+    _reopen_confirmed_state_for_plan_changes,
     reopen_entire_body_for_regeneration,
 )
 
@@ -386,6 +388,29 @@ def test_recovery_checkpoint_unions_compatible_confirmed_progress() -> None:
     )
     assert excluded_project.sections[0].status == "pending"
 
+    changed_paragraphs = list(plan.sections[0].paragraphs)
+    changed_paragraphs[1] = changed_paragraphs[1].model_copy(
+        update={"purpose": "Use newly admitted bounded background authority."}
+    )
+    changed_section = plan.sections[0].model_copy(
+        update={"paragraphs": changed_paragraphs}
+    )
+    targeted = _reopen_confirmed_state_for_plan_changes(
+        accepted.sections[0],
+        previous_plan=plan.sections[0],
+        current_plan=changed_section,
+        handoff=active,
+    )
+
+    assert targeted is not None
+    assert targeted.status == "needs_review"
+    assert targeted.draft is not None
+    assert targeted.draft.paragraphs == accepted.sections[0].draft.paragraphs
+    repair_issues = [
+        issue for issue in targeted.draft.issues if issue.code == "final_audit_repair"
+    ]
+    assert [issue.paragraph_number for issue in repair_issues] == [2]
+
 
 def blocked_handoff() -> V04WritingHandoff:
     active = handoff()
@@ -549,6 +574,17 @@ def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
         "background",
         "synthesis",
     ]
+
+
+def test_planner_stops_before_exceeding_model_call_budget() -> None:
+    client = ScriptedLLMClient([plan_response()])
+
+    with pytest.raises(WritingPlanBudgetExceeded):
+        GroundedWritingPlanner(client, max_model_calls=1).plan(
+            two_section_handoff()
+        )
+
+    assert len(client.calls) == 1
 
 
 def test_required_source_replaces_optional_ref_when_repair_capacity_is_full() -> None:
@@ -1378,6 +1414,51 @@ def test_compiled_plan_replaces_duplicate_required_occurrence_for_missing_source
     assert covered == {DOI, SUPPORTING_DOI, BACKGROUND_DOI}
     assert BACKGROUND_DOI in repaired[2].source_dois
     assert len(repaired[2].source_dois) == 2
+
+
+def test_compiled_plan_repurposes_redundant_detail_for_background_source() -> None:
+    active_handoff = handoff_with_background_source()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method").model_copy(
+        update={
+            "required_source_dois": [DOI, SUPPORTING_DOI, BACKGROUND_DOI],
+            "max_sources_per_paragraph": 1,
+        }
+    )
+    paragraphs = list(plan.sections[0].paragraphs)
+    paragraphs[0] = paragraphs[0].model_copy(
+        update={
+            "role": "detailed_evidence",
+            "evidence_card_ids": [EVIDENCE_ID],
+            "source_dois": [DOI],
+        }
+    )
+    paragraphs[1] = paragraphs[1].model_copy(
+        update={
+            "role": "detailed_evidence",
+            "evidence_card_ids": [EVIDENCE_ID],
+            "source_dois": [DOI],
+        }
+    )
+    paragraphs[2] = paragraphs[2].model_copy(
+        update={
+            "role": "synthesis",
+            "evidence_card_ids": [],
+            "source_dois": [SUPPORTING_DOI],
+        }
+    )
+
+    repaired = _repair_compiled_required_source_coverage(packet, paragraphs)
+
+    covered = {doi for paragraph in repaired for doi in paragraph.source_dois}
+    assert covered == {DOI, SUPPORTING_DOI, BACKGROUND_DOI}
+    assert len(repaired) == len(paragraphs)
+    assert repaired[1].role == "background"
+    assert repaired[1].evidence_card_ids == []
+    assert repaired[1].source_dois == [BACKGROUND_DOI]
+    assert repaired[1].coverage_only is False
 
 
 def test_planner_covers_every_source_required_by_reference_policy() -> None:
