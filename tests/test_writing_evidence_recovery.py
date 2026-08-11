@@ -91,6 +91,62 @@ def _section_plan(*, use_background_comparison: bool) -> WritingSectionPlan:
     )
 
 
+def _section_with_single_source(
+    section: WritingSectionPlan,
+    *,
+    section_id: str,
+    source_doi: str,
+) -> WritingSectionPlan:
+    return section.model_copy(
+        update={
+            "section_id": section_id,
+            "title": section_id.title(),
+            "paragraphs": [
+                paragraph.model_copy(
+                    update={
+                        "paragraph_id": f"{section_id}_p{paragraph.paragraph_number:02d}",
+                        "section_id": section_id,
+                        "source_dois": [source_doi],
+                    }
+                )
+                for paragraph in section.paragraphs
+            ],
+        }
+    )
+
+
+def test_recovery_merge_reopens_only_sections_needed_by_new_source_contract() -> None:
+    template = _section_plan(use_background_comparison=False)
+    generated_method = _section_with_single_source(
+        template,
+        section_id="method",
+        source_doi=CORE_DOI,
+    )
+    generated_context = _section_with_single_source(
+        template,
+        section_id="context",
+        source_doi=BACKGROUND_DOI,
+    )
+    accepted_old_method = _section_with_single_source(
+        template,
+        section_id="method",
+        source_doi=SECOND_CORE_DOI,
+    )
+
+    sections, preserved = (
+        writing_console._reopen_minimum_sections_for_source_coverage(
+            reference_sections=[generated_method, generated_context],
+            merged_sections=[accepted_old_method, generated_context],
+            preserved_section_ids={"method", "context"},
+            required_source_dois=[CORE_DOI, BACKGROUND_DOI],
+        )
+    )
+
+    assert preserved == {"context"}
+    assert sections[0] == generated_method
+    assert sections[1] == generated_context
+
+
 def _packet() -> SectionEvidencePacket:
     return SectionEvidencePacket(
         section_id="method",
@@ -302,6 +358,27 @@ def test_main_pause_clears_every_automatic_transition_but_keeps_run_identity() -
     assert state[writing_console.V04_PROJECT_KEY] == "saved-project"
     assert not writing_console._agent_auto_run_requested(state)
     assert "已暂停" in state["mvp_flash"]
+
+
+def test_ready_recovery_checkpoint_does_not_bypass_pause() -> None:
+    state = {
+        writing_console.EVIDENCE_RECOVERY_REQUEST_KEY: json.dumps(
+            {"status": "ready_to_resume"}
+        ),
+        writing_console.EVIDENCE_RECOVERY_CHECKPOINT_KEY: "saved-checkpoint",
+    }
+
+    assert not writing_console._consume_writing_plan_auto_request(
+        state,
+        auto_failures=0,
+    )
+
+    state[writing_console.EVIDENCE_RECOVERY_AUTO_PLAN_KEY] = True
+    assert writing_console._consume_writing_plan_auto_request(
+        state,
+        auto_failures=0,
+    )
+    assert writing_console.EVIDENCE_RECOVERY_AUTO_PLAN_KEY not in state
 
 
 def test_user_can_decline_one_blocked_pdf_batch_and_resume_with_bounded_claims(

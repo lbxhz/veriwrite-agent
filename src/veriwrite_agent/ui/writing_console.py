@@ -8,6 +8,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Literal, MutableMapping
 from uuid import uuid4
@@ -362,6 +363,22 @@ def active_writing_recovery_status(
     if request.status == "resolved":
         return None
     return request.status
+
+
+def _consume_writing_plan_auto_request(
+    state: MutableMapping[str, Any],
+    *,
+    auto_failures: int,
+) -> bool:
+    """Require an explicit run flag; a resumable checkpoint alone is not consent."""
+
+    return bool(
+        state.pop(EVIDENCE_RECOVERY_AUTO_PLAN_KEY, False)
+        or (
+            state.get(V04_AUTOPILOT_REQUESTED_KEY)
+            and auto_failures < 2
+        )
+    )
 
 
 def render_writing_agent_recovery_shell() -> None:
@@ -1558,17 +1575,7 @@ def _resume_after_evidence_recovery(
     )
     old_plans = {section.section_id: section for section in old_plan.sections}
     old_states = {state.section_id: state for state in old_project.sections}
-    available_dois = {
-        record.doi for record in handoff.evidence_library.records
-    }
-    required_source_dois = [
-        doi for doi in old_plan.required_source_dois if doi in available_dois
-    ]
-    for doi in generated_plan.required_source_dois:
-        if len(required_source_dois) >= len(generated_plan.required_source_dois):
-            break
-        if doi in available_dois and doi not in required_source_dois:
-            required_source_dois.append(doi)
+    required_source_dois = list(generated_plan.required_source_dois)
     merged_sections: list[WritingSectionPlan] = []
     preserved_ids: set[str] = set()
     for new_section in generated_plan.sections:
@@ -1585,6 +1592,13 @@ def _resume_after_evidence_recovery(
             preserved_ids.add(new_section.section_id)
         else:
             merged_sections.append(new_section)
+
+    merged_sections, preserved_ids = _reopen_minimum_sections_for_source_coverage(
+        reference_sections=generated_plan.sections,
+        merged_sections=merged_sections,
+        preserved_section_ids=preserved_ids,
+        required_source_dois=required_source_dois,
+    )
 
     merged_draft = GroundedWritingPlan.model_validate(
         generated_plan.model_copy(
@@ -1651,6 +1665,48 @@ def _resume_after_evidence_recovery(
     )
 
 
+def _reopen_minimum_sections_for_source_coverage(
+    *,
+    reference_sections: list[WritingSectionPlan],
+    merged_sections: list[WritingSectionPlan],
+    preserved_section_ids: set[str],
+    required_source_dois: list[str],
+) -> tuple[list[WritingSectionPlan], set[str]]:
+    """Keep the largest safe set of accepted sections under the new DOI contract."""
+
+    required = set(required_source_dois)
+
+    def covered(sections: list[WritingSectionPlan]) -> set[str]:
+        return {
+            doi
+            for section in sections
+            for paragraph in section.paragraphs
+            for doi in paragraph.source_dois
+        }
+
+    preserved = set(preserved_section_ids)
+    if required <= covered(merged_sections):
+        return merged_sections, preserved
+    reference_by_id = {section.section_id: section for section in reference_sections}
+    reopenable = sorted(
+        section_id for section_id in preserved if section_id in reference_by_id
+    )
+    for reopen_count in range(1, len(reopenable) + 1):
+        for reopened in combinations(reopenable, reopen_count):
+            reopened_ids = set(reopened)
+            candidate = [
+                reference_by_id[section.section_id]
+                if section.section_id in reopened_ids
+                else section
+                for section in merged_sections
+            ]
+            if required <= covered(candidate):
+                return candidate, preserved.difference(reopened_ids)
+    raise ValueError(
+        "recovery reference plan does not cover every required source DOI"
+    )
+
+
 def _restore_unaffected_recovery_progress(handoff: V04WritingHandoff) -> bool:
     """Restore compatible unaffected chapters from an evidence-recovery checkpoint."""
 
@@ -1708,15 +1764,13 @@ def _restore_unaffected_recovery_progress(handoff: V04WritingHandoff) -> bool:
     if not preserved:
         return False
 
-    available_dois = {record.doi for record in handoff.evidence_library.records}
-    required_source_dois = [
-        doi for doi in old_plan.required_source_dois if doi in available_dois
-    ]
-    for doi in current_plan.required_source_dois:
-        if len(required_source_dois) >= len(current_plan.required_source_dois):
-            break
-        if doi in available_dois and doi not in required_source_dois:
-            required_source_dois.append(doi)
+    required_source_dois = list(current_plan.required_source_dois)
+    merged_sections, preserved = _reopen_minimum_sections_for_source_coverage(
+        reference_sections=current_plan.sections,
+        merged_sections=merged_sections,
+        preserved_section_ids=preserved,
+        required_source_dois=required_source_dois,
+    )
     candidate = GroundedWritingPlan.model_validate(
         current_plan.model_copy(
             update={
@@ -1902,17 +1956,7 @@ def _render_writing_plan(
         st.caption(
             "系统根据检索蓝图和实际证据，为每个段落分配论点、字数和证据。"
         )
-        recovery_auto_plan = False
         recovery_raw = st.session_state.get(EVIDENCE_RECOVERY_REQUEST_KEY)
-        if recovery_raw and st.session_state.get(EVIDENCE_RECOVERY_CHECKPOINT_KEY):
-            try:
-                recovery_status = json.loads(recovery_raw).get("status")
-            except (TypeError, json.JSONDecodeError):
-                recovery_status = None
-            recovery_auto_plan = recovery_status in {
-                "pending_full_text",
-                "ready_to_resume",
-            }
         auto_failures = int(
             st.session_state.get(WRITING_PLAN_AUTO_FAILURES_KEY, 0) or 0
         )
@@ -1941,17 +1985,9 @@ def _render_writing_plan(
                     "检测到旧版写作计划因来源权限分配中断；系统已升级确定性修复"
                     "策略，将从现有检查点自动继续，不会重做已完成章节。"
                 )
-        autopilot_plan = bool(
-            st.session_state.get(V04_AUTOPILOT_REQUESTED_KEY)
-            and auto_failures < 2
-        )
-        auto_plan = bool(
-            st.session_state.pop(EVIDENCE_RECOVERY_AUTO_PLAN_KEY, False)
-            or autopilot_plan
-            or (
-                recovery_auto_plan
-                and auto_failures < 2
-            )
+        auto_plan = _consume_writing_plan_auto_request(
+            st.session_state,
+            auto_failures=auto_failures,
         )
         if (
             st.session_state.get(V04_AUTOPILOT_REQUESTED_KEY)
@@ -2007,9 +2043,22 @@ def _render_writing_plan(
                     st.code(str(exc))
             else:
                 st.session_state.pop(WRITING_PLAN_AUTO_FAILURES_KEY, None)
-                st.session_state[WRITING_PLAN_KEY] = plan.model_dump_json(indent=2)
                 if st.session_state.get(EVIDENCE_RECOVERY_CHECKPOINT_KEY):
-                    _resume_after_evidence_recovery(handoff, plan)
+                    try:
+                        _resume_after_evidence_recovery(handoff, plan)
+                    except Exception as exc:
+                        pause_writing_agent(st.session_state)
+                        st.session_state.pop(WRITING_PLAN_KEY, None)
+                        _autosave_current_project()
+                        st.error(
+                            "补证后的写作计划尚未能安全接回原项目。系统已暂停，"
+                            "恢复检查点和已生成的规划缓存均已保留。"
+                        )
+                        with st.expander("技术详情"):
+                            st.code(str(exc))
+                        return None
+                else:
+                    st.session_state[WRITING_PLAN_KEY] = plan.model_dump_json(indent=2)
                 st.rerun()
         return None
 
