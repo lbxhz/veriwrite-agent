@@ -11,9 +11,40 @@ from veriwrite_agent.services.pdf_acquisition import (
     _extract_dois,
     evidence_document_identity_conflicts,
 )
+from veriwrite_agent.ui import evidence_console
 
 DOI = "10.1000/core.1"
 TITLE = "Atmospheric Remote Sensing with Multispectral Observations"
+
+
+def test_project_pdf_directory_migrates_legacy_browser_downloads(monkeypatch) -> None:
+    monkeypatch.setenv(
+        evidence_console.EVIDENCE_VAULT_ENV,
+        r"E:\AI-Agent-Projects\Evidence-Vault",
+    )
+    state = {
+        evidence_console.PDF_DIRECTORY_KEY: str(Path.home() / "Downloads"),
+    }
+
+    assert evidence_console.project_pdf_directory(state) == (
+        r"E:\AI-Agent-Projects\Evidence-Vault"
+    )
+
+
+def test_project_pdf_directory_preserves_an_explicit_custom_location(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        evidence_console.EVIDENCE_VAULT_ENV,
+        r"E:\AI-Agent-Projects\Evidence-Vault",
+    )
+    state = {
+        evidence_console.PDF_DIRECTORY_KEY: r"D:\Research\Current Paper",
+    }
+
+    assert evidence_console.project_pdf_directory(state) == (
+        r"D:\Research\Current Paper"
+    )
 
 
 def expectation(

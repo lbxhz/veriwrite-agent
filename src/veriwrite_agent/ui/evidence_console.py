@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import quote
 
@@ -66,6 +68,30 @@ PDF_STATE_KEYS = (
     "v04_writing_plan_json",
     "v04_writing_project_json",
 )
+
+PDF_DIRECTORY_KEY = "v03_download_directory"
+EVIDENCE_VAULT_ENV = "VERIWRITE_EVIDENCE_VAULT"
+DEFAULT_EVIDENCE_VAULT = Path(r"E:\AI-Agent-Projects\Evidence-Vault")
+
+
+def project_pdf_directory(state: Mapping[str, object]) -> str:
+    """Return the dedicated PDF directory, migrating only the legacy default."""
+
+    configured = os.getenv(EVIDENCE_VAULT_ENV, str(DEFAULT_EVIDENCE_VAULT)).strip()
+    configured_path = configured or str(DEFAULT_EVIDENCE_VAULT)
+    saved = str(state.get(PDF_DIRECTORY_KEY, "") or "").strip()
+    if not saved or _same_local_path(saved, Path.home() / "Downloads"):
+        return configured_path
+    return saved
+
+
+def _same_local_path(left: str | Path, right: str | Path) -> bool:
+    try:
+        left_path = Path(left).expanduser().resolve(strict=False)
+        right_path = Path(right).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return os.path.normcase(str(left_path)) == os.path.normcase(str(right_path))
 
 
 def render_pdf_acquisition_console(
@@ -246,18 +272,19 @@ def render_pdf_acquisition_console(
                 width="stretch",
             )
 
+    st.session_state[PDF_DIRECTORY_KEY] = project_pdf_directory(st.session_state)
     download_directory = st.text_input(
-        "浏览器下载目录",
-        value=st.session_state.get(
-            "v03_download_directory",
-            str(Path.home() / "Downloads"),
+        "当前项目 PDF 专属目录",
+        key=PDF_DIRECTORY_KEY,
+        help=(
+            "V0.3 只扫描这个目录的第一层文件，不再扫描整个浏览器下载目录。"
+            "请将本项目需要核验的 PDF 保存到这里。"
         ),
-        help="点击出版社的下载按钮后，文件通常会保存到这里。",
     )
-    st.session_state["v03_download_directory"] = download_directory
     if not agent_embedded or recovery_blocked:
         st.info(
-            "系统会按下载时间从新到旧检查文件；找到全部目标的完整 PDF 后立即停止，"
+            "系统只会在当前项目 PDF 专属目录中按下载时间从新到旧检查文件；"
+            "找到全部目标的完整 PDF 后立即停止，"
             "并核验 DOI、题名、完整性和文本可提取性。"
         )
 
