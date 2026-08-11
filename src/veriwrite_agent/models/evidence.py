@@ -97,6 +97,7 @@ class PdfInspectionIssue(StrictModel):
         "empty_pdf",
         "missing_eof_marker",
         "text_not_extractable",
+        "doi_conflict",
         "identity_not_confirmed",
     ]
     severity: Literal["warning", "blocking"]
@@ -115,6 +116,7 @@ class PdfInspectionReport(StrictModel):
     extractable_page_count: int = Field(default=0, ge=0)
     identity_score: float = Field(default=0, ge=0, le=1)
     identity_basis: list[PdfIdentityBasis] = Field(default_factory=list)
+    detected_dois: list[str] = Field(default_factory=list)
     issues: list[PdfInspectionIssue] = Field(default_factory=list)
     inspected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -144,7 +146,7 @@ class PdfInspectionReport(StrictModel):
 class PdfInspectionBatch(StrictModel):
     """Recoverable human-in-the-loop checkpoint for all core papers."""
 
-    schema_version: Literal["0.3.0"] = "0.3.0"
+    schema_version: Literal["0.3.0", "0.3.1", "0.3.2"] = "0.3.2"
     download_directory: str
     inspected_file_count: int = Field(ge=0)
     reports: list[PdfInspectionReport] = Field(default_factory=list)
@@ -430,9 +432,14 @@ class LiteratureLibraryRecord(StrictModel):
         if self.admission_status == "admitted":
             if self.centrality not in {"central", "supporting"}:
                 raise ValueError("admitted records must be central or supporting")
-            if not self.supported_claim or not self.suitable_section_id:
+            if (
+                not self.supported_claim
+                or not self.suitable_section_id
+                or not self.use_boundary
+            ):
                 raise ValueError(
-                    "admitted records require a supported claim and suitable section"
+                    "admitted records require a supported claim, suitable section, "
+                    "and use boundary"
                 )
         if self.evidence_tier == "A_core":
             if self.evidence_status != "full_text_verified":

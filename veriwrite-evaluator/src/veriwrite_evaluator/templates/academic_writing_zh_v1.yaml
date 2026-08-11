@@ -1,0 +1,70 @@
+artifact_class: academic_writing_zh_v1
+description: 中文学术论文写作质量评定——聚焦语言组织、行文逻辑与论证推进，不评估事实正确性。
+target_window_bytes: 120000
+dimensions:
+  - id: central_focus
+    name: 中心聚焦
+    description: 每个段落是否有且只有一个清晰的中心句（主题句），全段围绕其展开，无主题杂乱。
+    evidence_instructions: |
+      逐段定位中心句（通常位于段首或段尾），逐字引用原文。若某段缺少中心句或同时夹杂多个主题，逐字引用该段作为反例。
+      至少给出 2 处引用，并分别说明"有中心句"或"无中心句/主题混杂"。
+    weight: 3
+    hedge: false
+  - id: argument_chain
+    name: 论证链完整性
+    description: 段内可论证主张是否有观点+证据+解释构成的完整论证链，而非只有断言或只有罗列。
+    evidence_instructions: |
+      对每个明显可论证的主张，检查是否提供了证据/论据与解释。逐字引用"观点句"、"证据句"和"解释句"；
+      对只有断言、缺少证据或解释的主张，逐字引用该主张句作为反例。至少 2 处引用。
+    weight: 3
+    hedge: false
+  - id: sentence_flow
+    name: 句间衔接与段落连贯
+    description: 段落内句子之间衔接自然、无跳跃断裂，指代与逻辑连接词使用连贯。
+    evidence_instructions: |
+      检查段落内句与句之间是否有明显断裂、指代不清或话题跳跃。逐字引用衔接生硬处的句子；
+      若整体连贯，逐字引用一组衔接流畅的句子作为证据。至少 2 处引用。
+    weight: 2
+    hedge: false
+  - id: inter_paragraph_flow
+    name: 段间承接
+    description: 相邻段落之间存在逻辑承接（递进/转折/因果/并列有序），而非各自独立、无过渡地堆叠。
+    evidence_instructions: |
+      检查相邻段落的段尾与段首之间是否有过渡与承接。逐字引用体现承接的过渡句；
+      若两段各自独立、无过渡衔接，逐字引用前段段尾与后段段首作为反例。至少 2 处引用。
+    weight: 2
+    hedge: false
+  - id: global_progression
+    name: 全局结构与研究推进
+    description: 章节之间是否与研究问题一致地递进（引言-现状-方法-结论），各章节职责清晰。
+    evidence_instructions: |
+      站在全文结构层面检查章节衔接与职责。逐字引用各章节首句（或过渡句）作为证据；
+      若存在章节职责重叠或顺序与问题推进不符，逐字引用相关章节句子作为反例。
+      全文结构判断可能证据较薄，引用应尽量具体。
+    weight: 3
+    hedge: true
+  - id: no_redundancy
+    name: 信息密度与去重
+    description: 段落与章节之间无重复表述或车轱辘话，信息密度高，不空话连篇。
+    evidence_instructions: |
+      检测相邻段落或章节之间是否重复表述同一观点或数据。逐字引用重复出现的内容（多处）作为证据；
+      若未发现重复，逐字引用体现关键新信息推进的句子作为证据。至少 2 处引用。
+    weight: 2
+    hedge: false
+  - id: academic_register
+    name: 学术语域与术语一致
+    description: 语言保持学术语域，无口语化/情绪化表达，关键术语与概念前后命名一致。
+    evidence_instructions: |
+      定位口语化、主观情绪化或随意措辞并逐字引用；检查同一概念是否前后使用一致命名，
+      对不一致处逐字引用前后两处。若整体规范，逐字引用规范表述的句子作为证据。至少 2 处引用。
+    weight: 3
+    hedge: false
+  - id: llm_fool
+    name: 反 AI 套话
+    description: 避免典型 AI 生成腔（如"值得注意的是""综上所述""显著提升""赋能"等模板化表达）与过度模板化句式。
+    evidence_instructions: |
+      检查是否存在过度使用的模板化连接词与套话：值得注意的是、综上所述、总而言之、显而易见、
+      显著提升、不言而喻、赋能、助力、迈向新台阶等。逐字引用命中项；
+      若未命中，逐字引用一句自然、非模板化的句子作为证据。
+    weight: 1
+    hedge: true

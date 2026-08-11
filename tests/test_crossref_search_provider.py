@@ -1,4 +1,5 @@
 import json
+from http.client import RemoteDisconnected
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
@@ -122,6 +123,28 @@ def test_retries_transient_network_errors_then_succeeds() -> None:
     assert sleeps == [0.5, 1.0]
 
 
+def test_retries_remote_disconnects_then_succeeds() -> None:
+    attempts = 0
+
+    def opener(_request: object, *, timeout: float) -> FakeResponse:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RemoteDisconnected("remote closed the connection")
+        return FakeResponse(payload())
+
+    provider = CrossrefSearchProvider(
+        opener=opener,
+        sleeper=lambda _seconds: None,
+        max_retries=2,
+        rows_per_request=10,
+        minimum_request_interval_seconds=0,
+    )
+
+    assert len(list(provider.search(search_plan()))) == 1
+    assert attempts == 2
+
+
 def test_throttles_public_list_requests_to_one_per_second() -> None:
     current_time = 100.0
     sleeps: list[float] = []
@@ -217,3 +240,34 @@ def test_interleaves_candidates_from_all_queries_before_consumer_stops() -> None
         "10.1000/aerosol.2",
         "10.1000/methane.2",
     ]
+
+
+def test_uses_offset_window_instead_of_repeating_the_first_page() -> None:
+    urls: list[str] = []
+
+    def opener(request: object, *, timeout: float) -> FakeResponse:
+        assert timeout == 20
+        urls.append(request.full_url)
+        return FakeResponse(payload())
+
+    query = "GeoAI GIS"
+    plan = LiteratureSearchPlan(
+        topic="GeoAI",
+        discipline="测绘科学与技术",
+        primary_keywords=["GeoAI"],
+        search_queries=[query],
+        target_eligible_count=1,
+        max_candidates=2,
+        query_offsets={query: 3},
+        query_limits={query: 2},
+    )
+    provider = CrossrefSearchProvider(
+        opener=opener,
+        rows_per_request=10,
+        minimum_request_interval_seconds=0,
+    )
+
+    assert len(list(provider.search(plan))) == 1
+    params = parse_qs(urlparse(urls[0]).query)
+    assert params["offset"] == ["3"]
+    assert "cursor" not in params

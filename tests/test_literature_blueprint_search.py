@@ -55,11 +55,32 @@ def test_expands_every_confirmed_theme_into_an_independent_bounded_search() -> N
 
     assert [item.theme_id for item in plans] == ["aerosol", "methane"]
     assert [item.plan.target_eligible_count for item in plans] == [9, 9]
-    assert [item.plan.max_candidates for item in plans] == [30, 30]
+    assert [item.plan.max_candidates for item in plans] == [9, 9]
+    assert plans[0].plan.query_offsets == {"satellite aerosol retrieval": 0}
+    assert plans[0].plan.query_limits == {"satellite aerosol retrieval": 9}
     assert plans[0].plan.topic == "Atmospheric remote sensing：Aerosols"
     assert plans[0].plan.year_from == 2022
     assert plans[0].plan.year_to == 2026
     assert plans[0].plan.journal_ranking_policy == "preferred"
+
+
+def test_expands_only_shortage_themes_into_the_next_non_overlapping_window() -> None:
+    confirmed = LiteratureBlueprintConfirmationService().confirm(
+        blueprint(),
+        confirmed_by="student",
+    )
+    expander = LiteratureBlueprintSearchExpander(pool_multiplier=3)
+
+    plans = expander.expand(
+        confirmed,
+        round_index=1,
+        shortages={"methane": 1},
+    )
+
+    assert [item.theme_id for item in plans] == ["methane"]
+    assert plans[0].plan.max_candidates == 6
+    assert plans[0].plan.query_offsets == {"satellite methane retrieval": 9}
+    assert plans[0].plan.query_limits == {"satellite methane retrieval": 6}
 
 
 def test_unconfirmed_draft_cannot_start_external_retrieval() -> None:

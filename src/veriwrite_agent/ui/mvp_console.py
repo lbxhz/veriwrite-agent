@@ -27,11 +27,12 @@ StageState = Literal["locked", "ready", "in_progress", "blocked", "complete"]
 
 STAGE_LABELS = {
     "overview": "MVP 总览",
+    "evaluation": "独立论文评测",
     "requirements": "V0.1 需求确认",
     "literature": "V0.2 文献检索",
     "evidence": "V0.3 全文证据",
-    "writing": "V0.4 逐章写作",
-    "delivery": "最终交付",
+    "writing": "V0.4 Agent 写作",
+    "delivery": "V0.5 全文编辑与交付",
 }
 
 MVP_STATE_KEYS = (
@@ -66,12 +67,31 @@ MVP_STATE_KEYS = (
     "v03_writing_handoff_json",
     "v04_writing_plan_json",
     "v04_writing_project_json",
+    "v04_writing_mode",
+    "v04_agent_run_id",
+    "v04_autopilot_requested",
+    "v04_evidence_recovery_json",
+    "v04_evidence_recovery_checkpoint_json",
+    "v04_evidence_recovery_auto_plan",
+    "v04_evidence_recovery_auto_resume",
+    "v04_writing_plan_auto_failures",
+    "v04_writing_plan_repair_feedback_json",
+    "literature_auto_run_requested",
+    "literature_auto_advance_requested",
+    "literature_recovery_seed_run_dir",
     "mvp_final_matter_json",
     "mvp_final_paper_json",
     "mvp_final_repair_checkpoint_json",
     "mvp_final_repair_auto_suppressed_id",
+    "mvp_final_delivery_auto_resume",
+    "mvp_global_editor_round",
     "mvp_ai_declaration",
     "mvp_final_semantic_review_attestation",
+    "mvp_paper_quality_scorecard_json",
+    "mvp_paper_quality_baseline_json",
+    "mvp_external_writing_evaluation_json",
+    "mvp_external_writing_baseline_json",
+    "mvp_external_writing_failure_json",
 )
 
 
@@ -435,6 +455,15 @@ def _literature_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpSta
         selection = BalancedLiteratureSelection.model_validate(payload["selection"])
     except Exception as exc:
         return _invalid_stage("literature", "V0.2 文献检索", exc)
+    if _literature_admission_incomplete(selection):
+        return MvpStage(
+            "literature",
+            "V0.2 文献检索",
+            "blocked",
+            "文献真实性已验证，但主题相关性和写作用途准入尚未完成。",
+            "按立题卡重新执行相关性准入；本地 PDF 文件不会因此删除。",
+            ("存在旧版或不完整的文献准入记录，禁止进入 V0.3/V0.4。",),
+        )
     blockers = tuple(selection.policy_issues)
     blockers += tuple(f"主题 {theme_id} 还缺 {count} 篇" for theme_id, count in selection.shortages.items())
     if selection.target_reached:
@@ -452,6 +481,21 @@ def _literature_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpSta
         f"已选 {len(selection.selected)} 篇，但配额或 V0.1 策略尚未满足。",
         "在V0.2选择扩大候选池自动补搜，或返回修改检索蓝图。",
         blockers or ("文献选择尚未达到目标。",),
+    )
+
+
+def _literature_admission_incomplete(
+    selection: BalancedLiteratureSelection,
+) -> bool:
+    if not selection.blueprint.topic_boundary.is_actionable:
+        return True
+    return any(
+        item.admission_status != "admit"
+        or item.centrality not in {"central", "supporting"}
+        or not item.supported_claim
+        or not item.suitable_section_id
+        or not item.use_boundary
+        for item in selection.selected
     )
 
 
@@ -513,6 +557,26 @@ def _evidence_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage
 
 
 def _writing_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage:
+    recovery_status = _active_writing_recovery_status(state)
+    if recovery_status is not None:
+        labels = {
+            "pending_search": "Agent 正在内部回退并补搜缺失论点。",
+            "pending_full_text": "Agent 正在检查全文并重建证据。",
+            "ready_to_resume": "Agent 已补齐证据，正在恢复受影响章节。",
+            "blocked": "自动替代已经用尽，等待一次性补充受限 PDF。",
+        }
+        return MvpStage(
+            "writing",
+            "V0.4 Agent 写作",
+            "blocked" if recovery_status == "blocked" else "in_progress",
+            labels[recovery_status],
+            "留在 V0.4 查看 Agent 计划、执行、审核与回退状态。",
+            (
+                ("需要一次性下载合并清单中的受限 PDF。",)
+                if recovery_status == "blocked"
+                else ()
+            ),
+        )
     if dependency.state != "complete":
         return _locked("writing", "V0.4 逐章写作", "先确认 V0.3 证据库和最终写作大纲。")
     legacy_project = None
@@ -586,6 +650,27 @@ def _writing_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage:
     )
 
 
+def _active_writing_recovery_status(state: Mapping[str, Any]) -> str | None:
+    raw = state.get("v04_evidence_recovery_json")
+    if not raw:
+        return None
+    try:
+        payload = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    status = payload.get("status")
+    return (
+        str(status)
+        if status in {
+            "pending_search",
+            "pending_full_text",
+            "ready_to_resume",
+            "blocked",
+        }
+        else None
+    )
+
+
 def _delivery_status(state: Mapping[str, Any], dependency: MvpStage) -> MvpStage:
     if dependency.state != "complete":
         return _locked("delivery", "最终交付", "先完成并确认全部正文章节。")
@@ -644,7 +729,7 @@ def _invalid_stage(stage_id: str, title: str, exc: Exception) -> MvpStage:
 
 
 def _navigation_label(stage_id: str, status: MvpProjectStatus) -> str:
-    if stage_id == "overview":
+    if stage_id in {"overview", "evaluation"}:
         return STAGE_LABELS[stage_id]
     stage = next(item for item in status.stages if item.stage_id == stage_id)
     marker = {
@@ -667,6 +752,13 @@ def _normalize_live_stage(value: Any) -> str:
     raw = str(value or "overview").strip()
     if raw in STAGE_LABELS:
         return raw
+    legacy_labels = {
+        "V0.4 逐章写作": "writing",
+        "最终交付": "delivery",
+    }
+    for label, stage_id in legacy_labels.items():
+        if raw == label or raw.endswith(f" {label}"):
+            return stage_id
     matching_ids = [
         stage_id
         for stage_id, label in STAGE_LABELS.items()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import streamlit as st
 from pydantic import ValidationError
@@ -17,16 +18,18 @@ from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
 from veriwrite_agent.services.literature_blueprint_confirmation import (
     LiteratureBlueprintConfirmationService,
 )
-from veriwrite_agent.services.literature_shortage_recovery import (
-    LiteratureShortageRecoveryService,
-)
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
-from veriwrite_agent.ui.literature_workbench import LiteratureWorkbench
+from veriwrite_agent.ui.literature_workbench import (
+    LITERATURE_RESULT_SCHEMA_VERSION,
+    LiteratureWorkbench,
+)
 from veriwrite_agent.ui.evidence_console import (
     PDF_STATE_KEYS,
     render_pdf_acquisition_console,
 )
 from veriwrite_agent.ui.workbench import project_root
+
+LITERATURE_AUTO_ADVANCE_KEY = "literature_auto_advance_requested"
 
 LITERATURE_STATE_KEYS = (
     "literature_blueprint_json",
@@ -37,6 +40,9 @@ LITERATURE_STATE_KEYS = (
     "literature_verification_json",
     "literature_run_dir",
     "literature_pool_multiplier",
+    "literature_recovery_seed_run_dir",
+    "literature_auto_run_requested",
+    LITERATURE_AUTO_ADVANCE_KEY,
     *PDF_STATE_KEYS,
     "mvp_final_matter_json",
     "mvp_final_paper_json",
@@ -44,6 +50,9 @@ LITERATURE_STATE_KEYS = (
     "mvp_final_repair_checkpoint_json",
     "mvp_final_semantic_review_attestation",
     "mvp_final_repair_auto_suppressed_id",
+    "mvp_external_writing_evaluation_json",
+    "mvp_external_writing_baseline_json",
+    "mvp_external_writing_failure_json",
     "v04_selected_section",
     "v04_selected_section_request",
 )
@@ -53,12 +62,16 @@ LITERATURE_DERIVED_STATE_KEYS = (
     "literature_ris",
     "literature_verification_json",
     "literature_run_dir",
+    "literature_recovery_seed_run_dir",
     *PDF_STATE_KEYS,
     "mvp_final_matter_json",
     "mvp_final_paper_json",
     "mvp_ai_declaration",
     "mvp_final_semantic_review_attestation",
     "mvp_final_repair_auto_suppressed_id",
+    "mvp_external_writing_evaluation_json",
+    "mvp_external_writing_baseline_json",
+    "mvp_external_writing_failure_json",
 )
 
 
@@ -72,7 +85,11 @@ def _clear_literature_derived_state() -> None:
         st.session_state.pop(key, None)
 
 
-def render_literature_console(*, include_downstream: bool = True) -> None:
+def render_literature_console(
+    *,
+    include_downstream: bool = True,
+    agent_embedded: bool = False,
+) -> None:
     """Render V0.2 only after V0.1 produced a confirmed requirement contract."""
 
     if "confirmed_json" not in st.session_state:
@@ -81,12 +98,14 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
         st.session_state["confirmed_json"]
     )
 
-    st.divider()
-    st.header("V0.2 查找并验证真实文献")
-    st.caption(
-        "先看检索方案，再一次完成 Crossref 检索、DOI/RIS 真实性验证和均衡选择。"
-    )
-    _render_requirement_handoff(confirmed_requirement)
+    if not agent_embedded:
+        st.divider()
+        st.header("V0.2 查找并验证真实文献")
+        st.caption(
+            "点击一次后，系统自动完成检索规划、Crossref 检索、真实性验证、"
+            "相关性筛选和缺口补搜。"
+        )
+        _render_requirement_handoff(confirmed_requirement)
 
     completed_payload = st.session_state.get("literature_result_json")
     if completed_payload:
@@ -114,44 +133,70 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
                 st.rerun()
             return
         if completed_selection.target_reached and not completed_selection.policy_issues:
+            if _route_completed_evidence_recovery():
+                st.rerun()
             _render_completed_literature_result(
                 completed_selection,
                 payload,
                 include_downstream=include_downstream,
             )
             return
+        result_uses_previous_engine = (
+            payload.get("schema_version") != LITERATURE_RESULT_SCHEMA_VERSION
+        )
+        if result_uses_previous_engine or not payload.get(
+            "automatic_search_exhausted", False
+        ):
+            # Legacy/in-progress results may have stopped at the old fixed 300-candidate
+            # ceiling or before a recovery bug was fixed. Resume automatically under
+            # the confirmed topic boundary and reuse every valid cached stage.
+            st.session_state["literature_auto_run_requested"] = True
+            st.session_state[LITERATURE_AUTO_ADVANCE_KEY] = True
 
     if "literature_blueprint_json" not in st.session_state:
-        st.subheader("生成检索方案")
+        st.subheader("检索真实文献")
         st.info(
-            "DeepSeek 会把课程要求拆成主题、研究问题、英文检索词和文献配额；"
-            "这一步不会联网搜索论文。"
+            "系统会根据已确认的课程要求自动生成检索主题和边界；"
+            "数量不足时会自行加深检索并改写缺口主题的检索式。"
         )
         if st.button(
-            "生成检索方案",
+            "确认并获取文献",
             type="primary",
             width="stretch",
         ):
             try:
-                with st.spinner("正在生成临时检索蓝图…"):
+                with st.spinner("正在规划检索并锁定主题边界…"):
                     blueprint = LiteratureWorkbench.live().plan(confirmed_requirement)
+                    confirmed_blueprint = LiteratureBlueprintConfirmationService().confirm(
+                        blueprint,
+                        confirmed_by=confirmed_requirement.confirmed_by,
+                        note="系统依据已确认的V0.1要求自动冻结检索计划。",
+                        expected_policy=blueprint.requirement_policy,
+                    )
             except Exception as exc:
-                st.error(f"检索蓝图生成失败：{exc}")
+                st.error(f"检索准备失败：{exc}")
             else:
                 serialized = blueprint.model_dump_json(indent=2)
                 st.session_state["literature_blueprint_json"] = serialized
                 st.session_state["literature_blueprint_editor"] = serialized
+                st.session_state["literature_confirmed_blueprint_json"] = (
+                    confirmed_blueprint.model_dump_json(indent=2)
+                )
+                _clear_literature_derived_state()
+                st.session_state["literature_auto_run_requested"] = True
+                st.session_state[LITERATURE_AUTO_ADVANCE_KEY] = True
                 st.rerun()
         return
 
     draft = LiteratureSearchBlueprint.model_validate_json(
         st.session_state["literature_blueprint_json"]
     )
-    st.subheader("检索方案")
-    _render_blueprint_summary(draft)
+    if not agent_embedded:
+        st.subheader("检索方案")
+        _render_blueprint_summary(draft)
 
     if "literature_confirmed_blueprint_json" not in st.session_state:
-        st.caption("如果主题和配额合理，直接开始；只有确实需要时才编辑底层 JSON。")
+        st.caption("系统会自动采用该方案；底层 JSON 仅供高级检查，不是必做步骤。")
         st.session_state.setdefault(
             "literature_blueprint_editor",
             draft.model_dump_json(indent=2),
@@ -167,7 +212,7 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
                 ),
             )
         submitted = st.button(
-            "采用此方案并开始检索",
+            "确认并获取文献",
             type="primary",
             width="stretch",
         )
@@ -188,40 +233,38 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
                 )
                 _clear_literature_derived_state()
                 st.session_state["literature_auto_run_requested"] = True
+                st.session_state[LITERATURE_AUTO_ADVANCE_KEY] = True
                 st.rerun()
         return
 
     confirmed_blueprint = ConfirmedLiteratureSearchBlueprint.model_validate_json(
         st.session_state["literature_confirmed_blueprint_json"]
     )
-    st.success("检索方案已锁定；检索只会使用这组主题、配额和年份限制。")
+    if not agent_embedded:
+        st.success("检索计划已准备完成。")
     pool_multiplier = int(st.session_state.get("literature_pool_multiplier", 2))
-    st.caption(
-        f"当前每个主题获取最终配额约 {pool_multiplier} 倍的候选；"
-        "运行结果自动缓存，中断后可继续。"
-    )
-    with st.expander("方案导出与高级检索设置"):
-        controls = st.columns([1, 1])
-        controls[0].download_button(
-            "下载检索方案",
-            st.session_state["literature_confirmed_blueprint_json"],
-            file_name="confirmed_literature_search_blueprint.json",
-            mime="application/json",
-            width="stretch",
+    if agent_embedded:
+        st.caption("Agent 正在复用已确认边界，只补搜当前缺失论点；成功结果逐批缓存。")
+    else:
+        st.caption(
+            f"首轮按每个主题最终配额的约 {pool_multiplier} 倍检索；"
+            "真实性验证和相关性筛选后若仍有缺口，系统只扩展缺口主题，"
+            "并从上次位置继续。每轮结果都会缓存。"
         )
-        if controls[1].button("修改主题或检索词", width="stretch"):
-            st.session_state.pop("literature_confirmed_blueprint_json", None)
-            _clear_literature_derived_state()
-            st.rerun()
-        _render_retrieval_adjustment_controls(confirmed_blueprint)
-
-    st.subheader("检索真实文献")
-    auto_run_requested = st.session_state.pop("literature_auto_run_requested", False)
-    if st.button(
-        "开始或继续检索",
-        type="primary",
-        width="stretch",
-    ) or auto_run_requested:
+        with st.expander("查看或导出检索计划"):
+            st.download_button(
+                "下载检索方案",
+                st.session_state["literature_confirmed_blueprint_json"],
+                file_name="confirmed_literature_search_blueprint.json",
+                mime="application/json",
+                width="stretch",
+            )
+        st.subheader("检索真实文献")
+    auto_run_requested = bool(
+        st.session_state.pop("literature_auto_run_requested", False)
+        or "literature_result_json" not in st.session_state
+    )
+    if auto_run_requested:
         progress_bar = st.progress(0, text="准备运行 V0.2…")
         status_box = st.empty()
         stage_names = {
@@ -253,6 +296,15 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
                 confirmed_blueprint,
                 cache_root=project_root() / "runtime" / "literature_console",
                 progress=update_progress,
+                seed_run_dir=(
+                    Path(seed_run_dir)
+                    if (
+                        seed_run_dir := st.session_state.get(
+                            "literature_recovery_seed_run_dir"
+                        )
+                    )
+                    else None
+                ),
             )
         except Exception as exc:
             st.error(f"V0.2 运行中断，已完成阶段仍保存在本地；修复问题后可继续。错误：{exc}")
@@ -263,6 +315,7 @@ def render_literature_console(*, include_downstream: bool = True) -> None:
                 indent=2
             )
             st.session_state["literature_run_dir"] = str(result.run_dir)
+            st.session_state.pop("literature_recovery_seed_run_dir", None)
             st.rerun()
 
     if "literature_result_json" in st.session_state:
@@ -325,7 +378,14 @@ def _render_completed_literature_result(
     metrics[3].metric("外文文献", sum(item.is_foreign for item in selection.selected))
 
     if not include_downstream:
-        if st.button("继续获取核心论文全文", type="primary", width="stretch"):
+        if st.session_state.pop(LITERATURE_AUTO_ADVANCE_KEY, False):
+            st.session_state["mvp_navigation_request"] = "evidence"
+            st.session_state["mvp_flash"] = (
+                "文献数量、主题配额与真实性门禁均已满足；系统已自动进入 V0.3，"
+                "开始检查可获取的核心全文。"
+            )
+            st.rerun()
+        if st.button("进入核心论文全文获取", type="primary", width="stretch"):
             st.session_state["mvp_navigation_request"] = "evidence"
             st.rerun()
 
@@ -385,13 +445,46 @@ def _render_completed_literature_result(
         render_pdf_acquisition_console(selection)
 
 
+def _route_completed_evidence_recovery() -> bool:
+    """Continue an internal V0.4 recovery without exposing a redundant user gate."""
+
+    raw = st.session_state.get("v04_evidence_recovery_json")
+    if not raw:
+        return False
+    try:
+        request = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if request.get("status") != "pending_search":
+        return False
+    request["status"] = "pending_full_text"
+    st.session_state["v04_evidence_recovery_json"] = json.dumps(
+        request,
+        ensure_ascii=False,
+        indent=2,
+    )
+    st.session_state["mvp_navigation_request"] = (
+        "writing"
+        if st.session_state.get("v04_autopilot_requested")
+        else "evidence"
+    )
+    st.session_state["mvp_flash"] = (
+        "定向补搜已满足文献数量与主题要求；系统正在自动检查本地全文、"
+        "更新证据库并恢复未完成章节。"
+    )
+    return True
+
+
 def _render_blueprint_summary(
     blueprint: LiteratureSearchBlueprint,
 ) -> None:
     metrics = st.columns(4)
     metrics[0].metric("主题数", len(blueprint.themes))
     metrics[1].metric("最终目标", blueprint.target_total)
-    metrics[2].metric("候选上限", blueprint.max_candidates)
+    metrics[2].metric(
+        "自动候选上限",
+        min(1000, blueprint.target_total * 10),
+    )
     metrics[3].metric(
         "年份",
         (f"{blueprint.year_from or '不限'}–{blueprint.year_to or '不限'}"),
@@ -438,6 +531,7 @@ def _selection_requires_admission_refresh(
         or item.centrality not in {"central", "supporting"}
         or not item.supported_claim
         or not item.suitable_section_id
+        or not item.use_boundary
         for item in selection.selected
     )
 
@@ -455,10 +549,23 @@ def _render_literature_result(*, include_downstream: bool = True) -> None:
     if selection.target_reached:
         st.success("最终文献数量和各主题配额均已达到。")
     else:
+        stop_labels = {
+            "candidate_capacity_exhausted": "已达到本项目的候选文献安全容量",
+            "search_stagnated": "连续多轮新检索式未发现新的合格 DOI",
+            "automatic_round_limit_reached": "已达到自动检索与查询改写轮次上限",
+        }
+        stop_reason = payload.get("stop_reason")
         st.warning(
-            "当前没有达到全部主题配额。系统不会用其他主题论文静默凑数。"
-            "可在上方高级检索设置中增加候选扫描上限或候选池倍率后补搜，"
-            "也可以返回蓝图修改关键词和限制。"
+            "系统已自动执行固定深度扩展、缺口主题查询改写、去重、真实性验证和"
+            "相关性筛选，但仍无法在已确认的主题边界与年份限制内补足配额。"
+            f"停止原因：{stop_labels.get(stop_reason, '自动检索空间已经穷尽')}。"
+            "系统不会用不相关论文凑数，也不需要重复点击检索。"
+        )
+        st.caption(
+            f"自动运行 {payload.get('automatic_rounds', '—')} 轮；"
+            f"候选安全容量 {payload.get('candidate_capacity', '—')}。"
+            "如硬性数量仍无法满足，需要回到 V0.1 修改年份、主题配额或研究边界，"
+            "而不是继续重复相同搜索。"
         )
         theme_targets = {
             theme.theme_id: theme.target_count for theme in selection.blueprint.themes
@@ -488,46 +595,6 @@ def _render_literature_result(*, include_downstream: bool = True) -> None:
                 f"V0.1 规定至少 {minimum_total} 篇；当前只有 {len(selection.selected)} 篇，"
                 "这是硬性要求，不能通过‘接受当前结果’绕过。"
             )
-        actions = st.columns(2)
-        if actions[0].button(
-            "扩大候选池并自动补搜",
-            type="primary",
-            width="stretch",
-            help="提高检索池容量，但不降低主题配额、相关性阈值或V0.1硬性要求。",
-        ):
-            try:
-                confirmed = ConfirmedLiteratureSearchBlueprint.model_validate_json(
-                    st.session_state["literature_confirmed_blueprint_json"]
-                )
-                recovery = LiteratureShortageRecoveryService().expand_candidate_pool(
-                    confirmed,
-                    current_pool_multiplier=int(
-                        st.session_state.get("literature_pool_multiplier", 2)
-                    ),
-                    shortages=selection.shortages,
-                )
-            except ValueError as exc:
-                st.error(f"无法继续扩大候选池：{exc}")
-            else:
-                expanded = recovery.confirmed_blueprint
-                serialized_blueprint = expanded.blueprint.model_dump_json(indent=2)
-                st.session_state["literature_blueprint_json"] = serialized_blueprint
-                st.session_state["literature_blueprint_editor"] = serialized_blueprint
-                st.session_state["literature_confirmed_blueprint_json"] = (
-                    expanded.model_dump_json(indent=2)
-                )
-                st.session_state["literature_pool_multiplier"] = recovery.pool_multiplier
-                _clear_literature_derived_state()
-                st.session_state["literature_auto_run_requested"] = True
-                st.rerun()
-        if actions[1].button(
-            "返回修改关键词或限制",
-            width="stretch",
-        ):
-            st.session_state.pop("literature_confirmed_blueprint_json", None)
-            _clear_literature_derived_state()
-            st.rerun()
-
     if selection.policy_issues:
         st.error("文献数量可能已达到，但 V0.1 策略仍未满足，因此不能进入 V0.3。")
         st.code("\n".join(selection.policy_issues))
@@ -664,90 +731,3 @@ def _render_literature_result(*, include_downstream: bool = True) -> None:
             st.rerun()
     if include_downstream:
         render_pdf_acquisition_console(selection)
-
-
-def _render_retrieval_adjustment_controls(
-    confirmed: ConfirmedLiteratureSearchBlueprint,
-) -> None:
-    """Always expose target and retrieval-scale controls before V0.2 execution."""
-
-    service = LiteratureShortageRecoveryService()
-    minimum_target = service.minimum_allowed_target(confirmed)
-    blueprint = confirmed.blueprint
-    current_multiplier = int(st.session_state.get("literature_pool_multiplier", 2))
-
-    st.markdown("#### 调整检索规模")
-    st.caption(
-        "提高最终目标会按原比例重算各主题配额；候选扫描上限控制 Crossref "
-        "最多检查多少条；候选池倍率控制每个主题为每个最终名额准备多少候选。"
-        "实际候选量受后两者共同限制。"
-    )
-    st.info(
-        f"V0.1 的硬性下限是 {minimum_target} 篇，不能在此处降低；"
-        "保存后会保留主题和检索词，清除旧的 V0.2 下游结果并自动重新检索。"
-    )
-    form_key = (
-        "literature_retrieval_adjustment_"
-        f"{confirmed.confirmed_at.isoformat()}_{blueprint.max_candidates}"
-    )
-    with st.form(form_key):
-        fields = st.columns(3)
-        target_total = int(
-            fields[0].number_input(
-                "最终目标文献数",
-                min_value=minimum_target,
-                max_value=100,
-                value=max(minimum_target, blueprint.target_total),
-                step=1,
-                help="这是最终要入选的论文篇数，不是期刊种类数。",
-            )
-        )
-        max_candidates = int(
-            fields[1].number_input(
-                "Crossref 候选扫描上限",
-                min_value=20,
-                max_value=1000,
-                value=blueprint.max_candidates,
-                step=50,
-                help="增大后会扫描更多候选，但网络请求、验证和评分耗时也会增加。",
-            )
-        )
-        pool_multiplier = int(
-            fields[2].number_input(
-                "每主题候选池倍率",
-                min_value=1,
-                max_value=10,
-                value=current_multiplier,
-                step=1,
-                help="例如 4 表示每个主题尽量为每个最终名额准备约 4 篇候选。",
-            )
-        )
-        submitted = st.form_submit_button(
-            "保存检索规模并重新检索",
-            type="primary",
-            width="stretch",
-        )
-
-    if submitted:
-        try:
-            adjustment = service.adjust_retrieval(
-                confirmed,
-                target_total=target_total,
-                max_candidates=max_candidates,
-                current_pool_multiplier=current_multiplier,
-                pool_multiplier=pool_multiplier,
-            )
-        except ValueError as exc:
-            st.error(f"检索参数修改失败：{exc}")
-        else:
-            adjusted = adjustment.confirmed_blueprint
-            serialized = adjusted.blueprint.model_dump_json(indent=2)
-            st.session_state["literature_blueprint_json"] = serialized
-            st.session_state["literature_blueprint_editor"] = serialized
-            st.session_state["literature_confirmed_blueprint_json"] = (
-                adjusted.model_dump_json(indent=2)
-            )
-            st.session_state["literature_pool_multiplier"] = adjustment.pool_multiplier
-            _clear_literature_derived_state()
-            st.session_state["literature_auto_run_requested"] = True
-            st.rerun()

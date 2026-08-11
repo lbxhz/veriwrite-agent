@@ -179,9 +179,14 @@ class LiteratureRelevanceAssessment(StrictModel):
         if self.admission_status == "admit":
             if self.centrality not in {"central", "supporting"}:
                 raise ValueError("admitted literature must be central or supporting")
-            if not self.supported_claim or not self.suitable_section_id:
+            if (
+                not self.supported_claim
+                or not self.suitable_section_id
+                or not self.use_boundary
+            ):
                 raise ValueError(
-                    "admitted literature must state its supported claim and section"
+                    "admitted literature must state its supported claim, section, "
+                    "and use boundary"
                 )
         if self.admission_status == "reject" and not self.exclusion_reason:
             raise ValueError("rejected literature must state an exclusion reason")

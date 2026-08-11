@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -52,6 +53,8 @@ from veriwrite_agent.services.evidence_runtime import EvidencePageRetriever
 from veriwrite_agent.services.final_delivery import (
     FinalPaperAssembler,
     FinalPaperDocxExporter,
+    _append_markdown,
+    _clean_reference_text,
 )
 from veriwrite_agent.services.grounded_writing import (
     GroundedSectionDraftService,
@@ -94,6 +97,30 @@ from veriwrite_agent.ui.writing_console import (
 
 
 DOIS = ["10.1000/gold.1", "10.1000/gold.2"]
+
+
+def test_docx_body_renders_numeric_citations_as_superscript() -> None:
+    document = Document()
+    _append_markdown(
+        document,
+        "证据比较支持这一判断[1, pp. 1, 2; 2; 3; 4]，并限定了适用范围。",
+        "宋体",
+        12,
+        numeric_superscript=True,
+    )
+
+    paragraph = document.paragraphs[-1]
+    assert paragraph.text == "证据比较支持这一判断[1, pp. 1, 2; 2; 3; 4]，并限定了适用范围。"
+    assert [run.text for run in paragraph.runs if run.font.superscript] == [
+        "[1, pp. 1, 2; 2; 3; 4]"
+    ]
+
+
+def test_reference_metadata_markup_is_cleaned_before_export() -> None:
+    assert _clean_reference_text("Air Quality &amp; Health") == "Air Quality & Health"
+    assert _clean_reference_text("OMI SO<sub>2</sub> retrieval") == "OMI SO2 retrieval"
+    legacy_doi = "10.1175/1520-0426(1994)011<0105:TPWNNI>2.0.CO;2"
+    assert _clean_reference_text(legacy_doi) == legacy_doi
 
 
 def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path) -> None:
@@ -371,6 +398,13 @@ def test_realistic_gold_path_reaches_confirmed_markdown_and_docx(tmp_path: Path)
                     )
                 ],
             ),
+        )
+        draft = draft.model_copy(
+            update={
+                "quality_review_status": "passed",
+                "quality_review_rounds": 1,
+                "quality_reviewed_at": datetime.now(timezone.utc),
+            }
         )
         project = writing.save_draft(project, draft)
         project = writing.confirm_section(

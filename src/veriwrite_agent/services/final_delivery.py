@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from html import unescape
 from datetime import datetime, timezone
 from io import BytesIO
 from math import ceil
@@ -18,6 +19,10 @@ from veriwrite_agent.models.final_delivery import (
     FinalPaperPackage,
     FinalReferenceEntry,
 )
+from veriwrite_agent.models.writing_quality import (
+    ManuscriptQualityFinding,
+    ManuscriptQualityReview,
+)
 from veriwrite_agent.models.writing import BodyDraftPackage
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.services.requirement_policy import (
@@ -25,7 +30,15 @@ from veriwrite_agent.services.requirement_policy import (
     ai_generation_prohibitions,
     source_restriction_reasons,
 )
-from veriwrite_agent.services.writing_quality import language_mismatch_detail
+from veriwrite_agent.services.pdf_acquisition import (
+    evidence_document_identity_conflicts,
+)
+from veriwrite_agent.services.topic_admission import audit_topic_admission
+from veriwrite_agent.services.writing_quality import (
+    content_similarity,
+    false_self_attribution_detail,
+    language_mismatch_detail,
+)
 
 
 class FinalDeliveryError(ValueError):
@@ -68,7 +81,20 @@ class LLMFinalMatterWriter:
                     "paper title, abstract, 3-8 keywords, and conclusion. When required, "
                     "also populate introduction, current_status_analysis, problems, and "
                     "technology_trends from the confirmed body. Each structural field must "
-                    "synthesize the body rather than introduce new evidence. Do not add "
+                    "perform a distinct editorial role rather than copy a body paragraph. "
+                    "For Chinese papers, keep the abstract around 300-400 Chinese counted "
+                    "units and include only scope, reviewed objects, core synthesis, and "
+                    "major challenges; omit named instruments and case-level details. The "
+                    "introduction must explain the problem, significance, scope, and paper "
+                    "structure; leave Aeolus, Himawari-8, GIIRS, datasets, algorithms, and "
+                    "specific performance details to the body. Current-status analysis "
+                    "must be 2-3 real paragraphs answering: what capability improved, what "
+                    "remains unresolved, and what domestic/international differences or "
+                    "next directions follow. It must not repeat the data-acquisition survey "
+                    "and must not include uncited exact metrics. This is a literature review: "
+                    "never claim that 本文、本研究 or 我们 proposed, used, measured, or "
+                    "validated methods/results belonging to cited authors. Synthesize the "
+                    "body rather than introduce new evidence. Do not add "
                     "citations, DOI values, papers, methods, results, numbers, or claims "
                     "that are absent from the body. "
                     f"The required optional fields for this paper are: {required_fields}. "
@@ -80,16 +106,16 @@ class LLMFinalMatterWriter:
             },
             {"role": "user", "content": body.markdown},
         ]
-        raw = self._client.complete(
-            messages,
-            response_format={"type": "json_object"},
-        )
+        raw = self._client.complete(messages, response_format={"type": "json_object"})
+        proposal: FinalMatterProposal | None = None
+        first_error: ValidationError | FinalDeliveryError | None = None
         try:
             proposal = _parse_final_matter(raw)
             _validate_required_final_matter_fields(proposal, required_fields)
             _validate_final_matter_has_no_self_authored_citations(proposal)
-            return proposal
-        except (ValidationError, FinalDeliveryError) as first_error:
+        except (ValidationError, FinalDeliveryError) as exc:
+            first_error = exc
+        if proposal is None:
             repaired_raw = self._client.complete(
                 [
                     *messages,
@@ -106,16 +132,393 @@ class LLMFinalMatterWriter:
                 ],
                 response_format={"type": "json_object"},
             )
-        try:
-            proposal = _parse_final_matter(repaired_raw)
-            _validate_required_final_matter_fields(proposal, required_fields)
-            _validate_final_matter_has_no_self_authored_citations(proposal)
-            return proposal
-        except (ValidationError, FinalDeliveryError) as exc:
-            raise FinalDeliveryError(
-                "LLM final matter violates the data contract after one repair: "
-                + _final_matter_error_detail(exc)
-            ) from exc
+            try:
+                proposal = _parse_final_matter(repaired_raw)
+                _validate_required_final_matter_fields(proposal, required_fields)
+                _validate_final_matter_has_no_self_authored_citations(proposal)
+            except (ValidationError, FinalDeliveryError) as exc:
+                raise FinalDeliveryError(
+                    "LLM final matter violates the data contract after one repair: "
+                    + _final_matter_error_detail(exc)
+                ) from exc
+        return self._global_edit(
+            proposal,
+            body,
+            required_fields=required_fields,
+            output_language=policy.output_language,
+            schema=schema,
+        )
+
+    def _global_edit(
+        self,
+        proposal: FinalMatterProposal,
+        body: BodyDraftPackage,
+        *,
+        required_fields: list[str],
+        output_language: str,
+        schema: str,
+    ) -> FinalMatterProposal:
+        """Run a separate full-manuscript editorial pass before final assembly."""
+
+        payload = {
+            "paper_genre": "literature_review",
+            "output_language": output_language,
+            "candidate_final_matter": proposal.model_dump(mode="json"),
+            "confirmed_body": body.markdown,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Act as an independent whole-manuscript editor, not the original writer. "
+                    "Return a revised final-matter JSON object only; do not rewrite or quote "
+                    "the body and do not create citations. Compare the candidate abstract, "
+                    "introduction, current-status analysis, problems, trends, and conclusion "
+                    "against every body section. Remove copied or near-duplicate passages and "
+                    "make each field perform its own role. The abstract contains only scope, "
+                    "review objects, core judgment, and major challenges. The introduction "
+                    "contains the research problem, significance, scope, and roadmap, without "
+                    "case-level instrument or algorithm details. Current-status analysis must "
+                    "be 2-3 concise synthesis paragraphs about capability gains, unresolved "
+                    "problems, and domestic/international differences or next directions; it "
+                    "must not retell the first technical chapter or contain exact metrics. "
+                    "Never attribute a cited study's method or result to 本文、本研究、本论文 "
+                    "or 我们. Preserve only claims already supported by the body. Required "
+                    f"fields: {required_fields}. Return JSON satisfying: {schema}"
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        last_error: ValidationError | FinalDeliveryError | None = None
+        last_edited: FinalMatterProposal | None = None
+        for attempt in range(3):
+            raw = self._client.complete(
+                messages,
+                response_format={"type": "json_object"},
+            )
+            try:
+                edited = _parse_final_matter(raw)
+                last_edited = edited
+                _validate_required_final_matter_fields(edited, required_fields)
+                _validate_final_matter_has_no_self_authored_citations(edited)
+                _validate_final_matter_editorial_quality(
+                    edited,
+                    body.markdown,
+                    output_language=output_language,
+                )
+                return edited
+            except (ValidationError, FinalDeliveryError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": raw},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Revise the final-matter JSON again. Fix every listed "
+                                    "structural problem instead of paraphrasing the same "
+                                    "content. Return JSON only. Deterministic review: "
+                                    f"{_final_matter_error_detail(exc)[:1800]}"
+                                ),
+                            },
+                        ]
+                    )
+        if last_edited is not None and last_error is not None:
+            error_detail = _final_matter_error_detail(last_error)
+            repaired = last_edited
+            if "abstract" in error_detail or "introduction" in error_detail:
+                repaired = self._repair_abstract_and_introduction(
+                    repaired,
+                    body,
+                    output_language=output_language,
+                )
+            if "current_status_analysis" in error_detail:
+                repaired = self._repair_current_status_analysis(
+                    repaired,
+                    body,
+                    output_language=output_language,
+                )
+            _validate_required_final_matter_fields(repaired, required_fields)
+            _validate_final_matter_has_no_self_authored_citations(repaired)
+            _validate_final_matter_editorial_quality(
+                repaired,
+                body.markdown,
+                output_language=output_language,
+            )
+            return repaired
+        raise FinalDeliveryError(
+            "full-manuscript editorial pass failed after adaptive repair: "
+            + _final_matter_error_detail(last_error or FinalDeliveryError("unknown error"))
+        )
+
+    def _repair_abstract_and_introduction(
+        self,
+        proposal: FinalMatterProposal,
+        body: BodyDraftPackage,
+        *,
+        output_language: str,
+    ) -> FinalMatterProposal:
+        """Give the two front-matter roles a small, independently validated task."""
+
+        payload = {
+            "output_language": output_language,
+            "abstract_candidate": proposal.abstract,
+            "introduction_candidate": proposal.introduction,
+            "confirmed_body": body.markdown,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Edit only the abstract and introduction of a literature review. Return "
+                    "JSON with abstract (one string) and introduction_paragraphs (an array "
+                    "of exactly two strings). For a Chinese paper, the abstract must contain "
+                    "300-400 counted units and only the research scope, reviewed object "
+                    "categories, central synthesis, and major challenges. It must contain no "
+                    "named instrument, satellite, dataset, algorithm, paper, author, exact "
+                    "metric, year, or case detail. Introduction paragraph 1 explains the "
+                    "problem, significance, and scope; paragraph 2 explains the paper's "
+                    "argument order. The introduction must also contain no named case, "
+                    "algorithm, dataset, metric, or result. Do not copy any body paragraph, "
+                    "add citations, or invent evidence. Return JSON only."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        last_error: Exception | None = None
+        last_candidate: FinalMatterProposal | None = None
+        for attempt in range(3):
+            raw = self._client.complete(
+                messages,
+                response_format={"type": "json_object"},
+            )
+            try:
+                parsed = json.loads(raw)
+                abstract = " ".join(str(parsed.get("abstract", "")).split())
+                paragraphs = parsed.get("introduction_paragraphs")
+                if not isinstance(paragraphs, list) or len(paragraphs) != 2:
+                    raise FinalDeliveryError(
+                        "introduction repair must return exactly two paragraphs"
+                    )
+                introduction_parts = [
+                    " ".join(str(paragraph).split())
+                    for paragraph in paragraphs
+                    if str(paragraph).strip()
+                ]
+                if len(introduction_parts) != 2:
+                    raise FinalDeliveryError(
+                        "introduction repair returned an empty paragraph"
+                    )
+                repaired = proposal.model_copy(
+                    update={
+                        "abstract": abstract,
+                        "introduction": "\n\n".join(introduction_parts),
+                    }
+                )
+                last_candidate = repaired
+                _validate_front_matter_roles(
+                    repaired,
+                    body.markdown,
+                    output_language=output_language,
+                )
+                return repaired
+            except (json.JSONDecodeError, ValidationError, FinalDeliveryError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": raw},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Repair only these two fields. Remove all named cases, "
+                                    "Latin model/instrument names and numbers; keep exactly "
+                                    "two introduction paragraphs. Error: "
+                                    f"{_final_matter_error_detail(exc)[:1200]}"
+                                ),
+                            },
+                        ]
+                    )
+        if last_candidate is not None:
+            return self._repair_abstract_only(
+                last_candidate,
+                body,
+                output_language=output_language,
+            )
+        raise FinalDeliveryError(
+            "targeted front-matter repair failed: "
+            + _final_matter_error_detail(last_error or FinalDeliveryError("unknown error"))
+        )
+
+    def _repair_abstract_only(
+        self,
+        proposal: FinalMatterProposal,
+        body: BodyDraftPackage,
+        *,
+        output_language: str,
+    ) -> FinalMatterProposal:
+        """Expand or condense an otherwise clean abstract without touching other fields."""
+
+        current_units = _final_text_units(proposal.abstract, output_language)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Edit only the abstract of this literature review. Return JSON with "
+                    "exactly one key: abstract. For Chinese output, write 340-400 Chinese "
+                    "Han characters (not an estimate and not 340 tokens). Cover research "
+                    "scope, reviewed object categories, central cross-study judgments, and "
+                    "major challenges. Use no named instrument, satellite, dataset, model, "
+                    "algorithm, author, paper, exact metric, year, digit, citation, or Latin "
+                    "identifier. Do not copy a body paragraph or add evidence. Return JSON "
+                    "only."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "output_language": output_language,
+                        "current_counted_units": current_units,
+                        "current_abstract": proposal.abstract,
+                        "confirmed_body": body.markdown,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        last_error: Exception | None = None
+        for attempt in range(3):
+            raw = self._client.complete(
+                messages,
+                response_format={"type": "json_object"},
+            )
+            abstract = ""
+            try:
+                parsed = json.loads(raw)
+                abstract = " ".join(str(parsed.get("abstract", "")).split())
+                repaired = proposal.model_copy(update={"abstract": abstract})
+                _validate_front_matter_roles(
+                    repaired,
+                    body.markdown,
+                    output_language=output_language,
+                )
+                return repaired
+            except (json.JSONDecodeError, ValidationError, FinalDeliveryError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    actual = _final_text_units(
+                        abstract,
+                        output_language,
+                    )
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": raw},
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"The deterministic count is {actual}. Rewrite the "
+                                    "abstract to 340-400 Chinese Han characters, while "
+                                    "keeping all case names, Latin identifiers and digits "
+                                    "out. Return only the one-key JSON object. Error: "
+                                    f"{_final_matter_error_detail(exc)[:900]}"
+                                ),
+                            },
+                        ]
+                    )
+        raise FinalDeliveryError(
+            "targeted abstract length repair failed: "
+            + _final_matter_error_detail(last_error or FinalDeliveryError("unknown error"))
+        )
+
+    def _repair_current_status_analysis(
+        self,
+        proposal: FinalMatterProposal,
+        body: BodyDraftPackage,
+        *,
+        output_language: str,
+    ) -> FinalMatterProposal:
+        """Repair one structural field without asking the model to rewrite everything."""
+
+        payload = {
+            "output_language": output_language,
+            "current_status_candidate": proposal.current_status_analysis,
+            "confirmed_body": body.markdown,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Act only as the current-status-analysis editor for a literature "
+                    "review. Return JSON with exactly one key, paragraphs, whose value is "
+                    "an array of exactly three non-empty prose strings. Paragraph 1 "
+                    "synthesizes where technical capability has improved. Paragraph 2 "
+                    "synthesizes unresolved limitations. Paragraph 3 compares domestic and "
+                    "international emphases only when supported by the confirmed body, then "
+                    "states bounded next directions; if the body cannot support a regional "
+                    "comparison, say that comparative evidence is insufficient instead of "
+                    "inventing one. Do not retell individual studies, named instruments, "
+                    "datasets, or algorithms. Do not include exact performance metrics, "
+                    "citations, DOI values, or claims absent from the body. Each paragraph "
+                    "must stay below 700 counted units. This is a review: never claim that "
+                    "本文、本研究、本论文 or 我们 proposed, used, measured, or validated a "
+                    "cited method or result. Return JSON only."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        last_error: Exception | None = None
+        for attempt in range(3):
+            raw = self._client.complete(
+                messages,
+                response_format={"type": "json_object"},
+            )
+            try:
+                parsed = json.loads(raw)
+                paragraphs = parsed.get("paragraphs")
+                if not isinstance(paragraphs, list) or len(paragraphs) != 3:
+                    raise FinalDeliveryError(
+                        "current-status repair must return exactly three paragraphs"
+                    )
+                cleaned = [
+                    " ".join(str(paragraph).split())
+                    for paragraph in paragraphs
+                    if str(paragraph).strip()
+                ]
+                if len(cleaned) != 3:
+                    raise FinalDeliveryError(
+                        "current-status repair returned an empty paragraph"
+                    )
+                repaired = proposal.model_copy(
+                    update={"current_status_analysis": "\n\n".join(cleaned)}
+                )
+                _validate_final_matter_editorial_quality(
+                    repaired,
+                    body.markdown,
+                    output_language=output_language,
+                )
+                return repaired
+            except (json.JSONDecodeError, ValidationError, FinalDeliveryError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": raw},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Repair only this JSON. Return exactly three concise "
+                                    "paragraph strings and remove every exact metric. Error: "
+                                    f"{_final_matter_error_detail(exc)[:1200]}"
+                                ),
+                            },
+                        ]
+                    )
+        raise FinalDeliveryError(
+            "targeted current-status repair failed: "
+            + _final_matter_error_detail(last_error or FinalDeliveryError("unknown error"))
+        )
 
 
 class FinalPaperAssembler:
@@ -128,6 +531,7 @@ class FinalPaperAssembler:
         body: BodyDraftPackage,
         final_matter: FinalMatterProposal,
         ai_declaration: str | None = None,
+        manuscript_review: ManuscriptQualityReview | None = None,
     ) -> FinalPaperPackage:
         policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
             handoff.requirement
@@ -176,6 +580,7 @@ class FinalPaperAssembler:
             ai_declaration=ai_declaration,
             unknown_citation_keys=unknown_keys,
             markdown=markdown,
+            manuscript_review=manuscript_review,
         )
         return FinalPaperPackage(
             status=("needs_revision" if audit.blocking_count else "ready_for_confirmation"),
@@ -193,6 +598,7 @@ class FinalPaperAssembler:
             references=references,
             markdown=markdown,
             audit=audit,
+            manuscript_review=manuscript_review,
         )
 
     def confirm(
@@ -337,9 +743,16 @@ class FinalPaperDocxExporter:
                 _demote_body_headings(package.body_markdown),
                 body_font,
                 body_size,
+                numeric_superscript=_numeric_citations(policy),
             )
         else:
-            _append_markdown(document, package.body_markdown, body_font, body_size)
+            _append_markdown(
+                document,
+                package.body_markdown,
+                body_font,
+                body_size,
+                numeric_superscript=_numeric_citations(policy),
+            )
         if package.current_status_analysis:
             _add_section(
                 document,
@@ -377,9 +790,12 @@ class FinalPaperDocxExporter:
         )
         document.add_heading("References" if english else "参考文献", level=1)
         for entry in package.references:
-            paragraph = document.add_paragraph(entry.formatted_text)
+            paragraph = document.add_paragraph(_clean_reference_text(entry.formatted_text))
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
             paragraph.paragraph_format.left_indent = Inches(0.25)
             paragraph.paragraph_format.first_line_indent = Inches(-0.25)
+            paragraph.paragraph_format.line_spacing = 1.15
+            paragraph.paragraph_format.space_after = Pt(4)
         if package.ai_declaration:
             _add_section(
                 document,
@@ -410,8 +826,41 @@ def _audit_final_paper(
     ai_declaration: str | None,
     unknown_citation_keys: list[str],
     markdown: str,
+    manuscript_review: ManuscriptQualityReview | None = None,
 ) -> FinalPaperAudit:
     issues: list[FinalPaperAuditIssue] = []
+    identity_conflicts = evidence_document_identity_conflicts(
+        handoff.evidence_library
+    )
+    for expected_doi, detected_dois in identity_conflicts.items():
+        issues.append(
+            _issue(
+                "document_identity_mismatch",
+                "blocking",
+                "evidence_library.documents",
+                (
+                    f"文献 {expected_doi} 绑定的 PDF 首页实际检测到 DOI "
+                    f"{', '.join(detected_dois)}；该文献的证据卡、正文引文和编号均不可信，"
+                    "必须返回 V0.3 重新核验 PDF 身份。"
+                ),
+            )
+        )
+    admission = audit_topic_admission(
+        handoff.evidence_library,
+        policy,
+        valid_section_ids=(
+            section.section_id for section in handoff.outline.outline.sections
+        ),
+    )
+    if not admission.passed:
+        issues.append(
+            _issue(
+                "topic_admission_incomplete",
+                "blocking",
+                "literature.topic_admission",
+                admission.detail,
+            )
+        )
     counted = body.counted_words
     body_prose = re.sub(r"\[@[^\]]+\]", "", body.markdown)
     language_detail = language_mismatch_detail(
@@ -425,6 +874,43 @@ def _audit_final_paper(
                 "blocking",
                 "output_language",
                 language_detail,
+            )
+        )
+    for finding in manuscript_review.findings if manuscript_review else []:
+        issues.append(
+            _issue(
+                f"body_{finding.code}",
+                _manuscript_finding_audit_severity(finding),
+                "writing.global_manuscript_review",
+                (
+                    f"{finding.section_id}:{finding.paragraph_number}="
+                    f"{finding.detail} 修订要求：{finding.revision_instruction}"
+                ),
+            )
+        )
+    if manuscript_review and manuscript_review.review_status == "deterministic_fallback":
+        issues.append(
+            _issue(
+                "global_manuscript_review_fallback",
+                "warning",
+                "writing.global_manuscript_review",
+                "独立全文审稿模型返回异常；已执行确定性重复、超长段落与错误归属检查。",
+            )
+        )
+    for section_id, paragraph_number, detail in _body_false_attributions(body):
+        identity = f"{section_id}:{paragraph_number}="
+        if any(
+            issue.code == "body_false_self_attribution"
+            and issue.detail.startswith(identity)
+            for issue in issues
+        ):
+            continue
+        issues.append(
+            _issue(
+                "body_false_self_attribution",
+                "blocking",
+                "writing.review_genre",
+                identity + detail,
             )
         )
     if policy.length.minimum_units is not None and counted < policy.length.minimum_units:
@@ -519,6 +1005,24 @@ def _audit_final_paper(
         issues.append(
             _issue(
                 "unknown_citation_key", "blocking", "references", ", ".join(unknown_citation_keys)
+            )
+        )
+    visible_citation_keys = set(
+        re.findall(r"@([a-z0-9][a-z0-9_]{2,79})", body.markdown)
+    )
+    uncited_entries = [
+        entry for entry in references if entry.citation_key not in visible_citation_keys
+    ]
+    if uncited_entries:
+        issues.append(
+            _issue(
+                "uncited_bibliography_item",
+                "blocking",
+                "references",
+                "文后条目未在正文出现："
+                + ", ".join(
+                    f"[{entry.index}] {entry.doi}" for entry in uncited_entries
+                ),
             )
         )
     cluster_limit = policy.references.max_references_per_citation_cluster
@@ -643,6 +1147,16 @@ def _audit_final_paper(
     )
 
 
+def _manuscript_finding_audit_severity(
+    finding: ManuscriptQualityFinding,
+) -> str:
+    """Turn high-confidence editor actions into the existing repair workflow."""
+
+    if finding.disposition == "targeted_repair":
+        return "blocking"
+    return finding.severity
+
+
 def _resolved_by_executable_policy(policy, unresolved: str) -> bool:
     compact = re.sub(r"\s+", "", unresolved)
     has_minimum_wording = any(token in compact for token in ("至少", "以上"))
@@ -661,29 +1175,38 @@ def _issue(code: str, severity: str, path: str, detail: str) -> FinalPaperAuditI
 def _reference_entry(
     record, *, index: int, citation_key: str, bibliography_style: str, numeric: bool
 ) -> FinalReferenceEntry:
-    authors = record.authors or ["Anonymous"]
+    authors = [_clean_reference_text(author) for author in record.authors] or ["Anonymous"]
     author_text = ", ".join(authors)
-    journal = record.journal or record.publisher or "Unknown source"
+    title = _clean_reference_text(record.title)
+    journal = _clean_reference_text(record.journal or record.publisher or "Unknown source")
     doi_url = f"https://doi.org/{record.doi}"
     if "gb/t" in bibliography_style.casefold() or "7714" in bibliography_style:
-        formatted = f"[{index}] {author_text}. {record.title}[J]. {journal}, {record.year}. DOI:{record.doi}."
+        formatted = f"[{index}] {author_text}. {title}[J]. {journal}, {record.year}. DOI:{record.doi}."
     elif numeric:
-        formatted = f"[{index}] {author_text}. {record.title}. {journal}. {record.year}. {doi_url}."
+        formatted = f"[{index}] {author_text}. {title}. {journal}. {record.year}. {doi_url}."
     else:
-        formatted = f"{author_text} ({record.year}). {record.title}. {journal}. {doi_url}."
+        formatted = f"{author_text} ({record.year}). {title}. {journal}. {doi_url}."
     return FinalReferenceEntry(
         citation_key=citation_key,
         index=index,
         doi=record.doi,
-        authors=record.authors,
+        authors=authors,
         year=record.year,
-        title=record.title,
-        journal=record.journal,
+        title=title,
+        journal=journal,
         publisher=record.publisher,
         source_type=record.source_type,
         is_foreign=record.is_foreign,
         formatted_text=formatted,
     )
+
+
+def _clean_reference_text(value: str) -> str:
+    """Remove presentation markup returned by metadata providers before export."""
+
+    cleaned = unescape(value)
+    cleaned = re.sub(r"<\s*/?\s*(?:sub|sup|i|b|em|strong)\s*>", "", cleaned, flags=re.I)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def _numeric_citations(policy) -> bool:
@@ -706,16 +1229,16 @@ def _render_final_citations(
             parsed = re.fullmatch(r"@([a-z0-9_]+)(?:,\s*(.+))?", item)
             if parsed is None:
                 return match.group(0)
-            key, locator = parsed.groups()
+            key, _locator = parsed.groups()
             reference = references.get(key)
             if reference is None:
                 unknown.append(key)
                 return match.group(0)
             if numeric:
-                rendered.append(f"{reference.index}{', ' + locator if locator else ''}")
+                rendered.append(str(reference.index))
             else:
                 surname = _surname(reference.authors[0] if reference.authors else "Anonymous")
-                rendered.append(f"{surname}, {reference.year}{', ' + locator if locator else ''}")
+                rendered.append(f"{surname}, {reference.year}")
         return f"[{'; '.join(rendered)}]" if numeric else f"({'; '.join(rendered)})"
 
     return re.sub(r"\[(@[^\]]+)\]", replace, markdown), list(dict.fromkeys(unknown))
@@ -951,6 +1474,257 @@ def _validate_final_matter_has_no_self_authored_citations(
         )
 
 
+def _validate_final_matter_editorial_quality(
+    proposal: FinalMatterProposal,
+    body_markdown: str,
+    *,
+    output_language: str,
+) -> None:
+    """Enforce distinct section roles after the independent global edit."""
+
+    problems: list[str] = []
+    abstract_units = _final_text_units(proposal.abstract, output_language)
+    if output_language == "Chinese" and not 250 <= abstract_units <= 450:
+        problems.append(
+            f"Chinese abstract has {abstract_units} counted units; expected about 300-400 "
+            "(accepted range 250-450)"
+        )
+    elif output_language == "English" and not 120 <= abstract_units <= 260:
+        problems.append(
+            f"English abstract has {abstract_units} words; accepted range is 120-260"
+        )
+
+    _collect_front_matter_role_problems(
+        proposal,
+        body_markdown,
+        output_language=output_language,
+        problems=problems,
+    )
+
+    named_fields = {
+        "abstract": proposal.abstract,
+        "introduction": proposal.introduction,
+        "current_status_analysis": proposal.current_status_analysis,
+        "problems": proposal.problems,
+        "technology_trends": proposal.technology_trends,
+        "conclusion": proposal.conclusion,
+    }
+    for field_name, value in named_fields.items():
+        if value and (detail := false_self_attribution_detail(value)):
+            problems.append(f"{field_name}: {detail}")
+
+    if proposal.current_status_analysis:
+        status_paragraphs = _split_prose_paragraphs(proposal.current_status_analysis)
+        if not 2 <= len(status_paragraphs) <= 3:
+            problems.append(
+                "current_status_analysis must contain 2-3 concise synthesis paragraphs; "
+                f"actual={len(status_paragraphs)}"
+            )
+        status_units = [
+            _final_text_units(paragraph, output_language)
+            for paragraph in status_paragraphs
+        ]
+        if any(units > 900 for units in status_units) or sum(status_units) > 1800:
+            problems.append(
+                "current_status_analysis is oversized; each paragraph must be <=900 "
+                "counted units and the section <=1800"
+            )
+        if re.search(r"(?<![A-Za-z])\d+(?:\.\d+)?\s*(?:%|米|公里|km|m\b|nm\b)", proposal.current_status_analysis):
+            problems.append(
+                "current_status_analysis contains exact uncited performance metrics; "
+                "replace them with evidence-bounded synthesis"
+            )
+        if output_language == "Chinese" and (
+            terms := _case_level_terms(proposal.current_status_analysis)
+        ):
+            problems.append(
+                "current_status_analysis contains named case-level terms "
+                f"({', '.join(terms[:6])}); synthesize capabilities and limits instead"
+            )
+
+    body_paragraphs = _body_prose_paragraphs(body_markdown)
+    role_fields = {
+        key: value
+        for key, value in named_fields.items()
+        if key in {"abstract", "introduction", "current_status_analysis"} and value
+    }
+    for field_name, value in role_fields.items():
+        best = max(
+            (content_similarity(value, paragraph) for paragraph in body_paragraphs),
+            default=0.0,
+        )
+        if best >= 0.78:
+            problems.append(
+                f"{field_name} repeats a body paragraph at similarity {best:.0%}; "
+                "rewrite it for its distinct structural role"
+            )
+    role_items = list(role_fields.items())
+    for left in range(len(role_items)):
+        for right in range(left + 1, len(role_items)):
+            left_name, left_text = role_items[left]
+            right_name, right_text = role_items[right]
+            similarity = content_similarity(left_text, right_text)
+            if similarity >= 0.74:
+                problems.append(
+                    f"{left_name} and {right_name} overlap at {similarity:.0%}; "
+                    "separate their rhetorical functions"
+                )
+    if problems:
+        raise FinalDeliveryError("; ".join(problems[:10]))
+
+
+def _validate_front_matter_roles(
+    proposal: FinalMatterProposal,
+    body_markdown: str,
+    *,
+    output_language: str,
+) -> None:
+    problems: list[str] = []
+    abstract_units = _final_text_units(proposal.abstract, output_language)
+    if output_language == "Chinese" and not 250 <= abstract_units <= 450:
+        problems.append(
+            f"Chinese abstract has {abstract_units} counted units; accepted range 250-450"
+        )
+    elif output_language == "English" and not 120 <= abstract_units <= 260:
+        problems.append(
+            f"English abstract has {abstract_units} words; accepted range 120-260"
+        )
+    _collect_front_matter_role_problems(
+        proposal,
+        body_markdown,
+        output_language=output_language,
+        problems=problems,
+    )
+    if problems:
+        raise FinalDeliveryError("; ".join(problems[:8]))
+
+
+def _collect_front_matter_role_problems(
+    proposal: FinalMatterProposal,
+    body_markdown: str,
+    *,
+    output_language: str,
+    problems: list[str],
+) -> None:
+    if proposal.introduction and not _has_introduction_roadmap(
+        proposal.introduction,
+        output_language=output_language,
+    ):
+        problems.append(
+            "introduction is missing an explicit paper-structure roadmap; explain "
+            "the order in which the review develops its argument"
+        )
+    if output_language == "Chinese":
+        for field_name, value in (
+            ("abstract", proposal.abstract),
+            ("introduction", proposal.introduction),
+        ):
+            terms = _case_level_terms(value or "")
+            if terms:
+                problems.append(
+                    f"{field_name} contains named case-level terms "
+                    f"({', '.join(terms[:6])}); keep only its structural role"
+                )
+            if value and re.search(r"\d", value):
+                problems.append(
+                    f"{field_name} contains case-level numbers; move them to the body"
+                )
+    body_paragraphs = _body_prose_paragraphs(body_markdown)
+    for field_name, value in (
+        ("abstract", proposal.abstract),
+        ("introduction", proposal.introduction),
+    ):
+        if not value:
+            continue
+        best = max(
+            (content_similarity(value, paragraph) for paragraph in body_paragraphs),
+            default=0.0,
+        )
+        if best >= 0.78:
+            problems.append(
+                f"{field_name} repeats a body paragraph at similarity {best:.0%}; "
+                "rewrite it for its distinct structural role"
+            )
+
+
+def _has_introduction_roadmap(text: str, *, output_language: str) -> bool:
+    """Return whether an introduction explicitly previews the paper's argument order."""
+
+    compact = " ".join(text.split())
+    if output_language == "Chinese":
+        patterns = (
+            r"(?:本文|本综述|全文|文章).{0,48}(?:结构|安排|分为|组织|依次)",
+            r"(?:下文|以下).{0,36}(?:依次|分为|讨论|综述|介绍|展开)",
+            r"(?:首先|第一).{0,220}(?:其次|随后|接着).{0,220}(?:最后|最终)",
+        )
+    else:
+        patterns = (
+            r"(?:this paper|this review|the paper|the review).{0,80}"
+            r"(?:is organized|is structured|is divided|proceeds)",
+            r"(?:first|firstly).{0,260}(?:next|then|second).{0,260}"
+            r"(?:finally|lastly)",
+        )
+    return any(re.search(pattern, compact, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def _case_level_terms(text: str) -> list[str]:
+    """Return Latin instrument/model identifiers embedded in Chinese synthesis prose."""
+
+    return list(
+        dict.fromkeys(
+            token
+            for token in re.findall(
+                r"(?<![A-Za-z])[A-Za-z][A-Za-z0-9]*(?:[-–][A-Za-z0-9]+)*(?![A-Za-z])",
+                text,
+            )
+            if len(token) >= 4
+        )
+    )
+
+
+def _split_prose_paragraphs(text: str) -> list[str]:
+    return [
+        paragraph.strip()
+        for paragraph in re.split(r"\n\s*\n|\r\n\s*\r\n", text)
+        if paragraph.strip()
+    ]
+
+
+def _body_prose_paragraphs(markdown: str) -> list[str]:
+    return [
+        re.sub(r"\s*\[@[^\]]+\]\s*$", "", block.strip())
+        for block in re.split(r"\n\s*\n", markdown)
+        if block.strip() and not block.lstrip().startswith("#")
+    ]
+
+
+def _final_text_units(text: str, output_language: str) -> int:
+    if output_language == "English":
+        return len(re.findall(r"\b[\w]+(?:[-'][\w]+)*\b", text, re.UNICODE))
+    han = len(re.findall(r"[\u3400-\u9fff]", text))
+    without_han = re.sub(r"[\u3400-\u9fff]", " ", text)
+    words = len(re.findall(r"\b[\w]+(?:[-'][\w]+)*\b", without_han, re.UNICODE))
+    return han + words
+
+
+def _body_false_attributions(
+    body: BodyDraftPackage,
+) -> list[tuple[str, int, str]]:
+    prose = _body_prose_paragraphs(body.markdown)
+    targets = list(
+        dict.fromkeys(
+            (citation.section_id, citation.paragraph_number)
+            for citation in body.citations
+        )
+    )
+    findings: list[tuple[str, int, str]] = []
+    for (section_id, paragraph_number), paragraph in zip(targets, prose, strict=False):
+        detail = false_self_attribution_detail(paragraph)
+        if detail:
+            findings.append((section_id, paragraph_number, detail))
+    return findings
+
+
 def _final_matter_error_detail(exc: ValidationError | FinalDeliveryError) -> str:
     if isinstance(exc, ValidationError):
         return str(exc.errors(include_url=False)[:8])
@@ -1008,10 +1782,18 @@ def _set_run_font(run, font_name: str, size: float, *, bold: bool = False) -> No
 
 def _add_section(document, title: str, content: str, *, level: int) -> None:
     document.add_heading(title, level=level)
-    document.add_paragraph(content)
+    for paragraph in _split_prose_paragraphs(content):
+        document.add_paragraph(paragraph)
 
 
-def _append_markdown(document, markdown: str, font_name: str, font_size: float) -> None:
+def _append_markdown(
+    document,
+    markdown: str,
+    font_name: str,
+    font_size: float,
+    *,
+    numeric_superscript: bool = False,
+) -> None:
     for block in re.split(r"\n\s*\n", markdown.strip()):
         clean = block.strip()
         if not clean:
@@ -1021,5 +1803,34 @@ def _append_markdown(document, markdown: str, font_name: str, font_size: float) 
             document.add_heading(heading.group(2).strip(), level=len(heading.group(1)))
             continue
         paragraph = document.add_paragraph()
-        run = paragraph.add_run(re.sub(r"\*\*([^*]+)\*\*", r"\1", clean))
+        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", clean)
+        if not numeric_superscript:
+            run = paragraph.add_run(text)
+            _set_run_font(run, font_name, font_size)
+            continue
+        _append_numeric_citation_runs(paragraph, text, font_name, font_size)
+
+
+def _append_numeric_citation_runs(
+    paragraph,
+    text: str,
+    font_name: str,
+    font_size: float,
+) -> None:
+    """Render code-owned numeric citation clusters as Word superscripts."""
+
+    citation_pattern = re.compile(
+        r"\[(?:\d+(?:,\s*[^;\]\[]+)?)(?:;\s*\d+(?:,\s*[^;\]\[]+)?)*\s*\]"
+    )
+    cursor = 0
+    for match in citation_pattern.finditer(text):
+        if match.start() > cursor:
+            run = paragraph.add_run(text[cursor : match.start()])
+            _set_run_font(run, font_name, font_size)
+        citation_run = paragraph.add_run(match.group(0))
+        _set_run_font(citation_run, font_name, font_size)
+        citation_run.font.superscript = True
+        cursor = match.end()
+    if cursor < len(text):
+        run = paragraph.add_run(text[cursor:])
         _set_run_font(run, font_name, font_size)

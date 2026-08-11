@@ -96,6 +96,11 @@ def test_llm_designs_themes_but_code_enforces_confirmed_bounds() -> None:
     assert blueprint.year_from == 2022
     assert blueprint.year_to == 2026
     assert blueprint.topic_boundary.is_actionable is True
+    assert blueprint.requirement_policy is not None
+    assert (
+        blueprint.requirement_policy.topic_boundary
+        == blueprint.topic_boundary
+    )
     assert blueprint.accepted_tiers == ["T1", "T2", "T3", "T4", "T5", "T6"]
     assert client.calls[0]["response_format"] == {"type": "json_object"}
 

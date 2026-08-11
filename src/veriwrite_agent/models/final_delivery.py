@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
 from veriwrite_agent.models.literature_discovery import canonicalize_doi
 from veriwrite_agent.models.requirements import StrictModel
+from veriwrite_agent.models.writing_quality import ManuscriptQualityReview
 
 
 class FinalMatterProposal(StrictModel):
@@ -60,6 +61,7 @@ class FinalPaperAuditIssue(StrictModel):
 
 
 class FinalPaperAudit(StrictModel):
+    audit_method: Literal["citation-integrity-v2"] = "citation-integrity-v2"
     policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     counted_units: int = Field(ge=0)
     reference_count: int = Field(ge=0)
@@ -75,7 +77,11 @@ class FinalPaperAudit(StrictModel):
 class FinalPaperPackage(StrictModel):
     """Complete Markdown paper, references, audit, and confirmation state."""
 
-    schema_version: Literal["mvp-1.0"] = "mvp-1.0"
+    schema_version: Literal[
+        "mvp-1.0", "mvp-1.1", "mvp-1.2", "mvp-1.3", "mvp-1.4", "mvp-1.5",
+        "mvp-1.6", "mvp-1.7", "mvp-1.8", "mvp-1.9", "mvp-2.0", "mvp-2.1",
+        "mvp-2.2"
+    ] = "mvp-2.2"
     status: Literal["needs_revision", "ready_for_confirmation", "confirmed"]
     requirement_policy: ExecutableRequirementPolicy
     title: str = Field(min_length=1)
@@ -91,6 +97,7 @@ class FinalPaperPackage(StrictModel):
     references: list[FinalReferenceEntry] = Field(default_factory=list)
     markdown: str = Field(min_length=1)
     audit: FinalPaperAudit
+    manuscript_review: ManuscriptQualityReview | None = None
     user_review_attestations: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confirmed_by: str | None = None

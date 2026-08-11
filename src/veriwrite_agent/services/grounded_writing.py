@@ -32,6 +32,7 @@ from veriwrite_agent.services.requirement_policy import (
     RequirementPolicyCompiler,
     ai_generation_prohibitions,
 )
+from veriwrite_agent.services.topic_admission import audit_topic_admission
 from veriwrite_agent.services.writing_quality import (
     language_mismatch_detail,
     repeated_sentence_pairs,
@@ -99,17 +100,6 @@ class SectionEvidencePacketBuilder:
                 + ", ".join(missing_records)
             )
         sources = [_source_record(records[doi]) for doi in source_dois]
-        misplaced_sources = [
-            source.doi
-            for source in sources
-            if source.admission_status == "admitted"
-            and source.suitable_section_id != section.section_id
-        ]
-        if misplaced_sources:
-            raise GroundedWritingError(
-                "section contains literature admitted for a different section: "
-                + ", ".join(misplaced_sources)
-            )
         if not evidence_items:
             raise GroundedWritingError(
                 "section has no confirmed full-text evidence cards"
@@ -117,6 +107,18 @@ class SectionEvidencePacketBuilder:
         policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
             handoff.requirement
         )
+        admission = audit_topic_admission(
+            library,
+            policy,
+            valid_section_ids=(
+                item.section_id for item in handoff.outline.outline.sections
+            ),
+        )
+        if not admission.passed:
+            raise GroundedWritingError(
+                "section writing is blocked until literature topic admission is "
+                f"revalidated: {admission.detail}"
+            )
         policy_reasons = _ai_generation_prohibitions(handoff)
         return SectionEvidencePacket(
             section_id=section.section_id,
@@ -126,6 +128,9 @@ class SectionEvidencePacketBuilder:
             counting_policy=section.counting_policy,
             output_language=policy.output_language,
             research_questions=section.research_questions,
+            max_sources_per_paragraph=(
+                policy.references.max_references_per_citation_cluster or 3
+            ),
             evidence_items=evidence_items,
             sources=sources,
             ai_writing_mode=(
@@ -459,6 +464,11 @@ class GroundedSectionDraftService:
             raise GroundedWritingError(
                 "section has blocking citation or evidence issues"
             )
+        if draft.quality_review_status != "passed":
+            raise GroundedWritingError(
+                "section cannot be confirmed until the independent quality review passes; "
+                f"current status={draft.quality_review_status}"
+            )
         name = confirmed_by.strip()
         if not name:
             raise GroundedWritingError("confirmed_by cannot be blank")
@@ -549,6 +559,16 @@ class WritingProjectService:
         drafts = [
             state.draft for state in project.sections if state.draft is not None
         ]
+        incomplete_reviews = [
+            draft.section_id
+            for draft in drafts
+            if draft.quality_review_status != "passed"
+        ]
+        if incomplete_reviews:
+            raise GroundedWritingError(
+                "body assembly requires every section quality review to pass: "
+                + ", ".join(incomplete_reviews)
+            )
         markdown = f"# {project.handoff.outline.outline.topic}\n\n" + (
             "\n\n".join(draft.markdown for draft in drafts)
         )
@@ -752,12 +772,10 @@ def _render_paragraph(
 ) -> str:
     if not citations:
         return text.strip()
-    markers = []
-    for citation in citations:
-        locator = _page_locator(citation.page_numbers)
-        markers.append(
-            f"@{citation.citation_key}{', ' + locator if locator else ''}"
-        )
+    # Page numbers remain available in CitationBinding and the audit export.
+    # Generated paragraphs are paraphrases, not direct quotations, so the
+    # submission text uses ordinary in-text citations without page locators.
+    markers = [f"@{citation.citation_key}" for citation in citations]
     return f"{text.strip()} [{'; '.join(markers)}]"
 
 

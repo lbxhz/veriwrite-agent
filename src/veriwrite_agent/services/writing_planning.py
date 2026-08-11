@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -37,6 +38,7 @@ from veriwrite_agent.services.grounded_writing import (
 )
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 from veriwrite_agent.services.writing_quality import (
+    false_self_attribution_detail,
     language_mismatch_detail,
     output_language_instruction,
 )
@@ -50,12 +52,20 @@ class ParagraphLengthError(ValueError):
     """Raised when one model paragraph greatly exceeds its locked word budget."""
 
 
+class ParagraphTooShortError(ParagraphLengthError):
+    """Raised when a normal body paragraph materially misses its planned budget."""
+
+
 class ParagraphCitationError(ValueError):
     """Raised when paragraph prose attempts to create its own citation."""
 
 
 class ParagraphLanguageError(ValueError):
     """Raised when prose violates the confirmed output language."""
+
+
+class ParagraphGenreAttributionError(ValueError):
+    """Raised when review prose claims a cited study as the current paper's work."""
 
 
 @dataclass(frozen=True)
@@ -75,10 +85,12 @@ class GroundedWritingPlanner:
         *,
         cache: WritingPlanRuntimeCache | None = None,
         reuse_cache: bool = True,
+        repair_feedback_by_section: dict[str, list[str]] | None = None,
     ) -> None:
         self._client = client
         self._cache = cache
         self._reuse_cache = reuse_cache
+        self._repair_feedback_by_section = repair_feedback_by_section or {}
 
     def plan(self, handoff: V04WritingHandoff) -> GroundedWritingPlan:
         policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
@@ -131,8 +143,30 @@ class GroundedWritingPlanner:
             sections=section_plans,
         )
 
-    def _plan_section(self, packet: SectionEvidencePacket) -> WritingSectionPlan:
-        paragraph_count = _paragraph_count(packet.target_words)
+    def replan_section(
+        self,
+        packet: SectionEvidencePacket,
+        *,
+        paragraph_count: int,
+    ) -> WritingSectionPlan:
+        """Semantically replan one structurally edited section under the same contracts."""
+
+        if not 2 <= paragraph_count <= 12:
+            raise WritingPlanError("replanned paragraph count must be between 2 and 12")
+        return self._plan_section(
+            packet,
+            paragraph_count_override=paragraph_count,
+        )
+
+    def _plan_section(
+        self,
+        packet: SectionEvidencePacket,
+        *,
+        paragraph_count_override: int | None = None,
+    ) -> WritingSectionPlan:
+        paragraph_count = paragraph_count_override or _paragraph_count(
+            packet.target_words
+        )
         sources_by_doi = {source.doi: source for source in packet.sources}
         evidence_aliases = {
             f"E{index:03d}": item
@@ -150,6 +184,7 @@ class GroundedWritingPlanner:
                 "target_words": packet.target_words,
                 "research_questions": packet.research_questions,
                 "required_paragraph_count": paragraph_count,
+                "max_sources_per_paragraph": packet.max_sources_per_paragraph,
             },
             "evidence_catalog": [
                 {
@@ -211,6 +246,10 @@ class GroundedWritingPlanner:
                     "synthesis",
                 )
             },
+            "repair_feedback": self._repair_feedback_by_section.get(
+                packet.section_id,
+                [],
+            ),
         }
         schema = json.dumps(
             SectionPlanProposal.model_json_schema(),
@@ -230,8 +269,15 @@ class GroundedWritingPlanner:
                     "permitted_use is background_only may support only background or "
                     "synthesis, never section_support or detailed_evidence. Every paragraph "
                     "needs at least one permitted evidence_ref or source_ref. "
-                    "Select only the one to three sources necessary for the paragraph's "
-                    "central claim; unused bibliography items are handled separately by "
+                    "Select only the sources necessary for the paragraph's central claim, "
+                    "never exceeding section.max_sources_per_paragraph. "
+                    "Do not attach an evidence_ref unless its normalized_claim directly "
+                    "supports that paragraph's claim_focus. Background and synthesis "
+                    "paragraphs may rely on source_refs alone. For a source whose "
+                    "permitted_use is background_only, claim_focus may paraphrase only its "
+                    "supported_claim: do not plan instrument specifications, performance "
+                    "numbers, methods, datasets, comparisons, or conclusions that are not "
+                    "stated there. Unused bibliography items are handled separately by "
                     "the admission and planning stages. Every source marked "
                     "required_for_reference_policy must appear in at least one paragraph "
                     "where it supports that paragraph's central claim. Compare sources by "
@@ -247,6 +293,18 @@ class GroundedWritingPlanner:
                     "only when one representative study is genuinely needed as detailed "
                     "evidence; do not create a sequence of paper summaries. relative_weight is "
                     "an integer from 1 to 10; code assigns exact word budgets. "
+                    "When repair_feedback is non-empty, treat it as a mandatory diagnosis "
+                    "from an independent reviewer. Replace the defective paragraph intent: "
+                    "narrow topic-drifted claims to this section's purpose, and weaken or "
+                    "remove unsupported claims so they state only what the supplied evidence "
+                    "and source use boundaries permit. Rebuild the complete paragraph-role "
+                    "map so every surviving paragraph has one distinct question and no two "
+                    "paragraphs summarize the same studies or conclusion. Assign sources by "
+                    "semantic support, not merely to fill capacity. Do not merely paraphrase "
+                    "the rejected claim. The opening paragraph establishes only the section "
+                    "scope and organizing problem; the closing paragraph states limitations "
+                    "and a section-level judgment. Neither may repeat the middle paragraphs' "
+                    "study details. "
                     f"The response must satisfy this JSON Schema: {schema}"
                 ),
             },
@@ -263,6 +321,35 @@ class GroundedWritingPlanner:
             )
             try:
                 proposal = SectionPlanProposal.model_validate_json(raw)
+                if attempt > 0 and len(proposal.paragraphs) > paragraph_count:
+                    proposal = _trim_excess_paragraph_plans(
+                        proposal,
+                        expected_count=paragraph_count,
+                    )
+                proposal = _assign_required_sources_to_problem_paragraphs(
+                    packet,
+                    proposal,
+                    evidence_aliases=evidence_aliases,
+                    source_aliases=source_aliases,
+                    repair_invalid_permissions=attempt > 0,
+                )
+                proposal = _drop_semantically_misaligned_optional_evidence(
+                    proposal,
+                    evidence_aliases=evidence_aliases,
+                    source_aliases=source_aliases,
+                )
+                # Removing an unrelated optional evidence card can also remove the
+                # only occurrence of that source from the coverage table. Re-run the
+                # deterministic allocator so the DOI is placed as a bounded source
+                # reference in a semantically closer paragraph instead of restoring
+                # the misleading evidence card.
+                proposal = _assign_required_sources_to_problem_paragraphs(
+                    packet,
+                    proposal,
+                    evidence_aliases=evidence_aliases,
+                    source_aliases=source_aliases,
+                    repair_invalid_permissions=attempt > 0,
+                )
                 return _compile_section_plan(
                     packet,
                     proposal,
@@ -291,13 +378,51 @@ class GroundedWritingPlanner:
         ) from last_error
 
 
+def _trim_excess_paragraph_plans(
+    proposal: SectionPlanProposal,
+    *,
+    expected_count: int,
+) -> SectionPlanProposal:
+    """Honor a structural paragraph count after the model repeats an over-count.
+
+    The first mismatch is returned to the semantic planner. If its repaired JSON still
+    contains too many paragraphs, code removes the lowest-value interior plan. Required
+    source coverage is deliberately not migrated here: the ordinary deterministic
+    allocator that runs immediately afterwards redistributes every hard-required DOI
+    under the final roles and citation capacities.
+    """
+
+    paragraphs = list(proposal.paragraphs)
+    while len(paragraphs) > expected_count:
+        interior = range(1, len(paragraphs) - 1)
+        candidates = list(interior) or list(range(len(paragraphs)))
+        chosen = min(
+            candidates,
+            key=lambda index: (
+                bool(paragraphs[index].evidence_refs),
+                len(paragraphs[index].evidence_refs)
+                + len(paragraphs[index].source_refs),
+                paragraphs[index].relative_weight,
+                -index,
+            ),
+        )
+        paragraphs.pop(chosen)
+    return proposal.model_copy(update={"paragraphs": paragraphs})
+
+
 def repair_writing_plan_source_coverage(
     handoff: V04WritingHandoff,
     plan: GroundedWritingPlan,
+    *,
+    required_source_dois: list[str] | None = None,
 ) -> WritingPlanCoverageRepair:
     """Validate coverage without manufacturing bibliography-policy prose."""
 
-    required_source_dois = _required_source_dois(handoff)
+    required_source_dois = (
+        list(dict.fromkeys(required_source_dois))
+        if required_source_dois is not None
+        else _required_source_dois(handoff)
+    )
     repaired_sections = _apply_required_source_coverage(
         handoff,
         plan.sections,
@@ -422,6 +547,7 @@ class LLMGroundedParagraphWriter:
         packet: ParagraphEvidencePacket,
         *,
         revision_instruction: str | None = None,
+        editorial_context: list[dict[str, object]] | None = None,
     ) -> ParagraphTextProposal:
         if packet.paragraph.coverage_only:
             raise WritingPlanError(
@@ -434,16 +560,42 @@ class LLMGroundedParagraphWriter:
             separators=(",", ":"),
         )
         maximum_units = _paragraph_maximum_units(packet)
+        minimum_units = _paragraph_minimum_units(packet)
+        length_instruction = (
+            f"at least {minimum_units} and no more than {maximum_units}"
+            if minimum_units
+            else f"no more than {maximum_units}"
+        )
         source_instruction = (
             "The plan has already narrowed the support set to the sources necessary "
             "for this central claim. Build one coherent argument around claim_focus; "
             "synthesize the sources and do not turn the paragraph into a source list."
         )
         revision_text = (
-            f" Editorial revision requirement: {revision_instruction}"
+            " Editorial revision requirement (this overrides old wording and any "
+            "conflicting legacy claim-focus detail): "
+            f"{revision_instruction} Replace the old paragraph; do not merely paraphrase "
+            "it. For repetition, role overlap, or excessive size, keep only one unique "
+            "argument move and omit repeated cases. The output contract still requires "
+            "exactly one paragraph, so turn any request to delete, merge, move, or split "
+            "material into one concise evidence-bounded replacement paragraph."
             if revision_instruction
             else ""
         )
+        context_instruction = (
+            " The user payload also contains read-only editorial_context from the "
+            "existing chapter. Use it only to avoid repetition, preserve the chapter's "
+            "argument progression, and keep this paragraph in its assigned role. It is "
+            "not evidence and must never authorize a new fact, number, source, or claim."
+            if editorial_context
+            else ""
+        )
+        user_payload: object = packet.model_dump(mode="json")
+        if editorial_context:
+            user_payload = {
+                "locked_evidence_packet": packet.model_dump(mode="json"),
+                "editorial_context": editorial_context,
+            }
         messages = [
             {
                 "role": "system",
@@ -457,19 +609,41 @@ class LLMGroundedParagraphWriter:
                     "argument_move. Lead with the paragraph's central judgment, then "
                     "compare or synthesize evidence along comparison_axis when supplied. "
                     "Do not organize the paragraph as one-paper-at-a-time notes. "
-                    f"and stay close to target_words={packet.paragraph.target_words}; the "
-                    f"paragraph must not exceed {maximum_units} counted units under "
-                    f"counting_policy={packet.counting_policy}. Metadata-only sources permit "
-                    "only general statements. Encode line breaks and control characters "
+                    "This paper is a literature review, not an original empirical study. "
+                    "Never write that 本文、本研究、本论文 or 我们 proposed, designed, "
+                    "used, measured, retrieved, validated, discovered, or obtained a cited "
+                    "method, dataset, experiment, or result. When reporting source-specific "
+                    "work, use the author names supplied in packet.sources as the grammatical "
+                    "subject (for example, 'Yang 等针对 EMI-02……'). The current review may "
+                    "only claim its own scope, organization, comparison, synthesis, and "
+                    "cautious judgment. Avoid abstract-like summaries and perform only this "
+                    "paragraph's declared argument move. "
+                    "For a global editorial repair, brevity and a unique rhetorical role "
+                    "take priority over preserving the previous paragraph's coverage or "
+                    "length; discuss only sources that remain in the refined packet. Never "
+                    "mention the revision process or write meta-prose such as 'this paragraph "
+                    "no longer repeats the preceding text', 'according to the review', or "
+                    "'as a transition'. The replacement must read like ordinary submit-ready "
+                    "scholarly prose. "
+                    f"Stay close to target_words={packet.paragraph.target_words}; the "
+                    f"paragraph must contain {length_instruction} counted units under "
+                    f"counting_policy={packet.counting_policy}. A metadata-only/background-"
+                    "only source authorizes only a cautious paraphrase of its supplied "
+                    "supported_claim and use_boundary. It does NOT authorize any number, "
+                    "instrument specification, channel count, accuracy, named method detail, "
+                    "dataset property, experiment result, or comparison absent from those "
+                    "fields—even if you know the paper. When detail is unavailable, deepen "
+                    "the paragraph through bounded comparison and limitations rather than "
+                    "inventing specifics. Encode line breaks and control characters "
                     "legally inside the JSON string. "
                     f"{output_language_instruction(packet.output_language)} "
-                    f"{source_instruction}{revision_text} "
+                    f"{source_instruction}{revision_text}{context_instruction} "
                     f"The response must satisfy this JSON Schema: {schema}"
                 ),
             },
             {
                 "role": "user",
-                "content": json.dumps(packet.model_dump(mode="json"), ensure_ascii=False),
+                "content": json.dumps(user_payload, ensure_ascii=False),
             },
         ]
         last_error: Exception | None = None
@@ -481,13 +655,16 @@ class LLMGroundedParagraphWriter:
             try:
                 proposal = _parse_paragraph_text(raw)
                 _ensure_paragraph_has_no_authored_citation(proposal)
+                _ensure_review_genre_attribution(proposal)
                 _ensure_paragraph_not_too_long(packet, proposal)
+                _ensure_paragraph_not_too_short(packet, proposal)
                 _ensure_paragraph_language(packet, proposal)
                 return proposal
             except (
                 ValidationError,
                 ParagraphLengthError,
                 ParagraphCitationError,
+                ParagraphGenreAttributionError,
                 ParagraphLanguageError,
             ) as exc:
                 last_error = exc
@@ -506,6 +683,23 @@ class LLMGroundedParagraphWriter:
                                 "or citation markers. The previous output failed validation: "
                                 f"{_short_error(exc)} "
                                 f"{output_language_instruction(packet.output_language)}"
+                            ),
+                        },
+                    ]
+                    continue
+                if attempt == 1 and isinstance(exc, ParagraphTooShortError):
+                    messages = [
+                        *messages,
+                        {"role": "assistant", "content": raw},
+                        {
+                            "role": "user",
+                            "content": (
+                                "The paragraph is still materially under its writing "
+                                f"budget. Expand the same argument to {minimum_units}-"
+                                f"{maximum_units} counted units by adding deeper comparison, "
+                                "synthesis, limitations, and cautious implications already "
+                                "authorized by the locked evidence. Do not add sources or "
+                                "repeat neighbouring paragraphs. Return one text field."
                             ),
                         },
                     ]
@@ -533,12 +727,15 @@ class LLMGroundedParagraphWriter:
                     ]
                     continue
                 if attempt == 2 and isinstance(exc, ParagraphLengthError):
+                    if isinstance(exc, ParagraphTooShortError):
+                        break
                     compacted = _compact_paragraph_to_limit(
                         proposal,
                         maximum_units=maximum_units,
                         counting_policy=packet.counting_policy,
                     )
                     _ensure_paragraph_has_no_authored_citation(compacted)
+                    _ensure_review_genre_attribution(compacted)
                     _ensure_paragraph_not_too_long(packet, compacted)
                     _ensure_paragraph_language(packet, compacted)
                     return compacted
@@ -581,11 +778,26 @@ class PlannedSectionDraftService:
             if text_proposal is None and not should_force and cache is not None:
                 text_proposal = cache.load(paragraph_packet)
             if text_proposal is None:
+                editorial_context = None
+                if should_force and existing_draft is not None:
+                    editorial_context = [
+                        {
+                            "paragraph_number": number,
+                            "role": paragraph.role,
+                            "text": paragraph.text,
+                        }
+                        for number, paragraph in enumerate(
+                            existing_draft.paragraphs,
+                            1,
+                        )
+                        if number != paragraph_plan.paragraph_number
+                    ]
                 text_proposal = writer.write(
                     paragraph_packet,
                     revision_instruction=(revision_instructions or {}).get(
                         paragraph_plan.paragraph_number
                     ),
+                    editorial_context=editorial_context,
                 )
                 if cache:
                     cache.save(paragraph_packet, text_proposal)
@@ -626,9 +838,16 @@ def _reuse_existing_paragraph(
     proposal = ParagraphTextProposal(text=existing.text)
     try:
         _ensure_paragraph_has_no_authored_citation(proposal)
+        _ensure_review_genre_attribution(proposal)
         _ensure_paragraph_not_too_long(packet, proposal)
+        _ensure_paragraph_not_too_short(packet, proposal)
         _ensure_paragraph_language(packet, proposal)
-    except (ParagraphCitationError, ParagraphLengthError, ParagraphLanguageError):
+    except (
+        ParagraphCitationError,
+        ParagraphGenreAttributionError,
+        ParagraphLengthError,
+        ParagraphLanguageError,
+    ):
         return None
     return proposal
 
@@ -687,7 +906,9 @@ class ParagraphWritingRuntimeCache:
                 return None
             proposal = ParagraphTextProposal.model_validate(payload["proposal"])
             _ensure_paragraph_not_too_long(packet, proposal)
+            _ensure_paragraph_not_too_short(packet, proposal)
             _ensure_paragraph_has_no_authored_citation(proposal)
+            _ensure_review_genre_attribution(proposal)
             _ensure_paragraph_language(packet, proposal)
             return proposal
         except Exception:
@@ -699,7 +920,9 @@ class ParagraphWritingRuntimeCache:
         proposal: ParagraphTextProposal,
     ) -> None:
         _ensure_paragraph_not_too_long(packet, proposal)
+        _ensure_paragraph_not_too_short(packet, proposal)
         _ensure_paragraph_has_no_authored_citation(proposal)
+        _ensure_review_genre_attribution(proposal)
         _ensure_paragraph_language(packet, proposal)
         path = self._path(packet)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -722,6 +945,432 @@ class ParagraphWritingRuntimeCache:
             / packet.section_id
             / f"{packet.paragraph.paragraph_id}.json"
         )
+
+
+def _assign_required_sources_to_problem_paragraphs(
+    packet: SectionEvidencePacket,
+    proposal: SectionPlanProposal,
+    *,
+    evidence_aliases: dict[str, SectionEvidenceItem],
+    source_aliases: dict[str, SectionSourceRecord],
+    repair_invalid_permissions: bool = False,
+) -> SectionPlanProposal:
+    """Complete the chapter coverage table without adding coverage prose.
+
+    The semantic planner often produces a useful argument skeleton but omits part of
+    a large, hard-required bibliography. Code assigns each omitted source to the most
+    lexically compatible existing problem paragraph with spare citation capacity. If
+    a low-permission metadata source needs a home, a non-detailed paragraph is safely
+    generalized to synthesis; no new paragraph or claim is manufactured.
+    """
+
+    alias_by_doi = {source.doi: alias for alias, source in source_aliases.items()}
+    required_aliases = [
+        alias_by_doi[doi]
+        for doi in packet.required_source_dois
+        if doi in alias_by_doi
+    ]
+    paragraphs = list(proposal.paragraphs)
+    unknown_evidence = [
+        ref
+        for paragraph in paragraphs
+        for ref in paragraph.evidence_refs
+        if ref not in evidence_aliases
+    ]
+    unknown_sources = [
+        ref
+        for paragraph in paragraphs
+        for ref in paragraph.source_refs
+        if ref not in source_aliases
+    ]
+    if unknown_evidence or unknown_sources:
+        raise WritingPlanError(
+            "problem-driven plan used unknown short evidence/source aliases"
+        )
+
+    def evidence_dois(paragraph: ParagraphPlanProposal) -> set[str]:
+        return {
+            evidence_aliases[ref].doi
+            for ref in paragraph.evidence_refs
+            if ref in evidence_aliases
+            and _permission_allows(
+                source_aliases[alias_by_doi[evidence_aliases[ref].doi]].permitted_use,
+                paragraph.role,
+            )
+        }
+
+    def permitted_source_refs(paragraph: ParagraphPlanProposal) -> list[str]:
+        return [
+            ref
+            for ref in paragraph.source_refs
+            if ref in source_aliases
+            and _permission_allows(source_aliases[ref].permitted_use, paragraph.role)
+            and source_aliases[ref].doi not in evidence_dois(paragraph)
+        ]
+
+    normalized: list[ParagraphPlanProposal] = []
+    for paragraph in paragraphs:
+        evidence_refs = list(dict.fromkeys(paragraph.evidence_refs))
+        source_refs = list(dict.fromkeys(paragraph.source_refs))
+        if repair_invalid_permissions:
+            evidence_refs = [
+                ref
+                for ref in evidence_refs
+                if _permission_allows(
+                    source_aliases[
+                        alias_by_doi[evidence_aliases[ref].doi]
+                    ].permitted_use,
+                    paragraph.role,
+                )
+            ]
+            source_refs = [
+                ref
+                for ref in source_refs
+                if _permission_allows(
+                    source_aliases[ref].permitted_use,
+                    paragraph.role,
+                )
+            ]
+        normalized.append(
+            paragraph.model_copy(
+                update={
+                    "evidence_refs": evidence_refs,
+                    "source_refs": source_refs,
+                }
+            )
+        )
+    paragraphs = []
+    globally_seen_dois: set[str] = set()
+    for paragraph in normalized:
+        paragraph_evidence_dois = evidence_dois(paragraph)
+        globally_seen_dois.update(paragraph_evidence_dois)
+        retained_refs: list[str] = []
+        for ref in paragraph.source_refs:
+            source = source_aliases[ref]
+            if not _permission_allows(source.permitted_use, paragraph.role):
+                # The first attempt preserves this mismatch so the semantic planner
+                # receives a precise repair instruction. If the repaired response
+                # repeats it, the second pass removes the invalid ref above and code
+                # assigns compatible support instead of failing the whole section.
+                retained_refs.append(ref)
+                continue
+            if source.doi in paragraph_evidence_dois or source.doi in globally_seen_dois:
+                continue
+            retained_refs.append(ref)
+            globally_seen_dois.add(source.doi)
+        paragraphs.append(
+            paragraph.model_copy(update={"source_refs": retained_refs})
+        )
+
+    def covered_dois() -> set[str]:
+        return {
+            *(
+                doi
+                for paragraph in paragraphs
+                for doi in evidence_dois(paragraph)
+            ),
+            *(
+                source_aliases[ref].doi
+                for paragraph in paragraphs
+                for ref in permitted_source_refs(paragraph)
+            ),
+        }
+
+    missing_aliases = [
+        alias
+        for alias in required_aliases
+        if source_aliases[alias].doi not in covered_dois()
+    ]
+    # Allocate the least flexible permissions first. Otherwise a broadly usable
+    # detailed/section-support source can greedily occupy the few synthesis slots
+    # that a background-only source is allowed to use, producing a false
+    # "no remaining capacity" failure even when total paragraph capacity is ample.
+    permission_priority = {
+        "background_only": 0,
+        "section_support": 1,
+        "detailed_claims": 2,
+    }
+    missing_aliases.sort(
+        key=lambda alias: (
+            permission_priority[source_aliases[alias].permitted_use],
+            source_aliases[alias].doi,
+        )
+    )
+    required_dois = {source_aliases[alias].doi for alias in required_aliases}
+    for source_alias in missing_aliases:
+        source = source_aliases[source_alias]
+        candidates: list[tuple[float, int, int]] = []
+        for index, paragraph in enumerate(paragraphs):
+            current_dois = evidence_dois(paragraph) | {
+                source_aliases[ref].doi
+                for ref in permitted_source_refs(paragraph)
+            }
+            if (
+                len(current_dois) >= packet.max_sources_per_paragraph
+                or not _permission_allows(source.permitted_use, paragraph.role)
+            ):
+                continue
+            candidates.append(
+                (
+                    _source_paragraph_fit(source, paragraph),
+                    -len(current_dois),
+                    -index,
+                )
+            )
+        if not candidates:
+            convertible = []
+            for index, paragraph in enumerate(paragraphs):
+                synthesized = paragraph.model_copy(update={"role": "synthesis"})
+                synthesized_dois = evidence_dois(synthesized) | {
+                    source_aliases[ref].doi
+                    for ref in permitted_source_refs(synthesized)
+                }
+                if (
+                    len(synthesized_dois) < packet.max_sources_per_paragraph
+                ):
+                    convertible.append(index)
+            if convertible:
+                index = min(
+                    convertible,
+                    key=lambda item: len(
+                        evidence_dois(
+                            paragraphs[item].model_copy(update={"role": "synthesis"})
+                        )
+                        | {
+                            source_aliases[ref].doi
+                            for ref in permitted_source_refs(
+                                paragraphs[item].model_copy(
+                                    update={"role": "synthesis"}
+                                )
+                            )
+                        }
+                    ),
+                )
+                paragraphs[index] = paragraphs[index].model_copy(
+                    update={"role": "synthesis"}
+                )
+                candidates = [
+                    (
+                        _source_paragraph_fit(source, paragraphs[index]),
+                        -len(paragraphs[index].source_refs),
+                        -index,
+                    )
+                ]
+        if not candidates:
+            # A semantic proposal may fill every citation slot with optional
+            # metadata sources before placing all contract-required sources. Do
+            # not fail or raise the citation-cluster limit: replace the weakest
+            # optional source ref in a compatible paragraph with the missing
+            # required source. Evidence cards and other required sources remain
+            # untouched.
+            occurrence_counts: dict[str, int] = {}
+            for planned in paragraphs:
+                for doi in (
+                    evidence_dois(planned)
+                    | {
+                        source_aliases[ref].doi
+                        for ref in permitted_source_refs(planned)
+                    }
+                ):
+                    occurrence_counts[doi] = occurrence_counts.get(doi, 0) + 1
+            replacements: list[tuple[float, int, str]] = []
+            for index, paragraph in enumerate(paragraphs):
+                if not _permission_allows(source.permitted_use, paragraph.role):
+                    continue
+                optional_refs = [
+                    ref
+                    for ref in paragraph.source_refs
+                    if (
+                        source_aliases[ref].doi not in required_dois
+                        or occurrence_counts.get(source_aliases[ref].doi, 0) > 1
+                    )
+                ]
+                for optional_ref in optional_refs:
+                    replacements.append(
+                        (
+                            _source_paragraph_fit(source, paragraph)
+                            - _source_paragraph_fit(
+                                source_aliases[optional_ref],
+                                paragraph,
+                            ),
+                            -index,
+                            optional_ref,
+                        )
+                    )
+            if replacements:
+                _, negative_index, optional_ref = max(replacements)
+                index = -negative_index
+                retained_refs = [
+                    ref
+                    for ref in paragraphs[index].source_refs
+                    if ref != optional_ref
+                ]
+                paragraphs[index] = paragraphs[index].model_copy(
+                    update={"source_refs": retained_refs}
+                )
+                candidates = [
+                    (
+                        _source_paragraph_fit(source, paragraphs[index]),
+                        -len(
+                            evidence_dois(paragraphs[index])
+                            | {
+                                source_aliases[ref].doi
+                                for ref in permitted_source_refs(paragraphs[index])
+                            }
+                        ),
+                        -index,
+                    )
+                ]
+        if not candidates:
+            raise WritingPlanError(
+                "problem-driven paragraph plan has no remaining capacity for required "
+                f"source {source.doi}"
+            )
+        _, _, negative_index = max(candidates)
+        chosen = -negative_index
+        refs = [*paragraphs[chosen].source_refs, source_alias]
+        paragraphs[chosen] = paragraphs[chosen].model_copy(
+            update={"source_refs": list(dict.fromkeys(refs))}
+        )
+    for index, paragraph in enumerate(paragraphs):
+        if paragraph.evidence_refs or paragraph.source_refs:
+            continue
+        if paragraph.role == "detailed_evidence":
+            compatible_evidence = [
+                alias
+                for alias, item in evidence_aliases.items()
+                if _permission_allows(
+                    source_aliases[alias_by_doi[item.doi]].permitted_use,
+                    paragraph.role,
+                )
+            ]
+            if compatible_evidence:
+                paragraphs[index] = paragraph.model_copy(
+                    update={"evidence_refs": [compatible_evidence[0]]}
+                )
+                continue
+        compatible_sources = [
+            alias
+            for alias, source in source_aliases.items()
+            if _permission_allows(source.permitted_use, paragraph.role)
+        ]
+        if not compatible_sources:
+            raise WritingPlanError(
+                f"paragraph {index + 1} has no compatible source after coverage assignment"
+            )
+        chosen_source = max(
+            compatible_sources,
+            key=lambda alias: _source_paragraph_fit(
+                source_aliases[alias],
+                paragraph,
+            ),
+        )
+        paragraphs[index] = paragraph.model_copy(
+            update={"source_refs": [chosen_source]}
+        )
+    return proposal.model_copy(update={"paragraphs": paragraphs})
+
+
+def _source_paragraph_fit(
+    source: SectionSourceRecord,
+    paragraph: ParagraphPlanProposal,
+) -> float:
+    source_tokens = _semantic_tokens(
+        " ".join(
+            value
+            for value in (
+                source.title,
+                source.abstract or "",
+                source.supported_claim or "",
+            )
+            if value
+        )
+    )
+    paragraph_tokens = _semantic_tokens(
+        " ".join(
+            (
+                paragraph.purpose,
+                paragraph.claim_focus,
+                paragraph.central_question,
+                paragraph.comparison_axis or "",
+            )
+        )
+    )
+    if not source_tokens or not paragraph_tokens:
+        return 0.0
+    return len(source_tokens & paragraph_tokens) / len(source_tokens | paragraph_tokens)
+
+
+def _semantic_tokens(text: str) -> set[str]:
+    latin = {
+        token.casefold()
+        for token in re.findall(r"[A-Za-z]{3,}", text)
+    }
+    compact_han = "".join(re.findall(r"[\u3400-\u9fff]", text))
+    han_bigrams = {
+        compact_han[index : index + 2]
+        for index in range(max(0, len(compact_han) - 1))
+    }
+    return latin | han_bigrams
+
+
+def _drop_semantically_misaligned_optional_evidence(
+    proposal: SectionPlanProposal,
+    *,
+    evidence_aliases: dict[str, SectionEvidenceItem],
+    source_aliases: dict[str, SectionSourceRecord],
+) -> SectionPlanProposal:
+    """Remove detailed cards that do not support a general paragraph intent.
+
+    Background and synthesis paragraphs may be supported by admitted metadata records.
+    Keeping an unrelated full-text card merely to make the packet look stronger confuses
+    both the writer and reviewer: the writer borrows detail from the wrong study, while the
+    reviewer correctly reports a topic/evidence mismatch. Detailed-evidence paragraphs keep
+    their cards and continue through the stricter normal validation path.
+    """
+
+    source_by_doi = {source.doi: source for source in source_aliases.values()}
+    paragraphs: list[ParagraphPlanProposal] = []
+    for paragraph in proposal.paragraphs:
+        if paragraph.role in {"detailed_evidence", "section_support"}:
+            paragraphs.append(paragraph)
+            continue
+        focus_tokens = _semantic_tokens(
+            " ".join(
+                str(value or "")
+                for value in (
+                    paragraph.purpose,
+                    paragraph.claim_focus,
+                    paragraph.central_question,
+                    paragraph.comparison_axis,
+                )
+            )
+        )
+        scored: list[tuple[float, str]] = []
+        for ref in paragraph.evidence_refs:
+            evidence = evidence_aliases.get(ref)
+            if evidence is None:
+                scored.append((1.0, ref))
+                continue
+            source = source_by_doi.get(evidence.doi)
+            authority_tokens = _semantic_tokens(
+                " ".join(
+                    (
+                        evidence.normalized_claim,
+                        source.title if source is not None else "",
+                        (source.supported_claim or "") if source is not None else "",
+                    )
+                )
+            )
+            denominator = max(1, min(len(focus_tokens), len(authority_tokens)))
+            scored.append((len(focus_tokens & authority_tokens) / denominator, ref))
+        retained = [ref for score, ref in scored if score >= 0.07]
+        if not retained and not paragraph.source_refs and scored:
+            retained = [max(scored)[1]]
+        paragraphs.append(
+            paragraph.model_copy(update={"evidence_refs": retained})
+        )
+    return proposal.model_copy(update={"paragraphs": paragraphs})
 
 
 def _compile_section_plan(
@@ -754,6 +1403,7 @@ def _compile_section_plan(
         )
         for number, proposal_item in enumerate(proposal.paragraphs, 1)
     ]
+    paragraphs = _repair_compiled_required_source_coverage(packet, paragraphs)
     planned_source_dois = {
         doi for paragraph in paragraphs for doi in paragraph.source_dois
     }
@@ -775,6 +1425,96 @@ def _compile_section_plan(
         counting_policy=packet.counting_policy,
         paragraphs=paragraphs,
     )
+
+
+def _repair_compiled_required_source_coverage(
+    packet: SectionEvidencePacket,
+    paragraphs: list[WritingParagraphPlan],
+) -> list[WritingParagraphPlan]:
+    """Keep hard-required sources after paragraph compilation trims optional support.
+
+    Proposal allocation and paragraph compilation enforce the same citation-cluster
+    limit at different representations. A proposal can therefore appear to cover a
+    required DOI, then lose that DOI when compilation removes excess optional metadata
+    support. Repair the compiled representation once, without changing prose or
+    inventing evidence: use compatible spare capacity first, otherwise replace only an
+    optional metadata-only DOI. Evidence-backed and other hard-required sources are never
+    evicted.
+    """
+
+    if not packet.required_source_dois:
+        return paragraphs
+    source_by_doi = {source.doi: source for source in packet.sources}
+    evidence_doi_by_id = {
+        item.evidence_id: item.doi for item in packet.evidence_items
+    }
+    required = set(packet.required_source_dois)
+    updated = list(paragraphs)
+
+    def covered() -> set[str]:
+        return {
+            doi for paragraph in updated for doi in paragraph.source_dois
+        }
+
+    def occurrence_counts() -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for paragraph in updated:
+            for doi in set(paragraph.source_dois):
+                counts[doi] = counts.get(doi, 0) + 1
+        return counts
+
+    for missing_doi in (
+        doi for doi in packet.required_source_dois if doi not in covered()
+    ):
+        source = source_by_doi.get(missing_doi)
+        if source is None:
+            continue
+        candidates: list[tuple[int, float, int, int, str | None]] = []
+        for index, paragraph in enumerate(updated):
+            if not _permission_allows(source.permitted_use, paragraph.role):
+                continue
+            paragraph_dois = list(dict.fromkeys(paragraph.source_dois))
+            eviction: str | None = None
+            if len(paragraph_dois) >= packet.max_sources_per_paragraph:
+                occurrences = occurrence_counts()
+                evidence_dois = {
+                    evidence_doi_by_id[evidence_id]
+                    for evidence_id in paragraph.evidence_card_ids
+                    if evidence_id in evidence_doi_by_id
+                }
+                removable = [
+                    doi
+                    for doi in reversed(paragraph_dois)
+                    if (
+                        (doi not in required or occurrences.get(doi, 0) > 1)
+                        and doi not in evidence_dois
+                    )
+                ]
+                if not removable:
+                    continue
+                eviction = removable[0]
+            candidates.append(
+                (
+                    1 if eviction is None else 0,
+                    _source_paragraph_fit(source, paragraph),
+                    -len(paragraph_dois),
+                    -index,
+                    eviction,
+                )
+            )
+        if not candidates:
+            continue
+        _, _, _, negative_index, eviction = max(candidates)
+        chosen_index = -negative_index
+        chosen = updated[chosen_index]
+        source_dois = [
+            doi for doi in chosen.source_dois if doi != eviction
+        ]
+        source_dois.append(missing_doi)
+        updated[chosen_index] = chosen.model_copy(
+            update={"source_dois": list(dict.fromkeys(source_dois))}
+        )
+    return updated
 
 
 def _compile_paragraph(
@@ -850,20 +1590,43 @@ def _compile_paragraph(
         raise WritingPlanError(
             f"paragraph {number} is detailed_evidence but has no evidence card"
         )
-    if len(source_dois) > 3:
-        raise WritingPlanError(
-            f"paragraph {number} selected {len(source_dois)} sources; "
-            "ordinary argument paragraphs permit at most 3 necessary sources"
-        )
     if (
-        proposal.argument_move
+        not evidence_ids
+        and proposal.role in {"background", "synthesis"}
+        and _contains_unsupported_metadata_detail(proposal)
+    ):
+        raise WritingPlanError(
+            f"paragraph {number} plans a numeric performance/specification claim "
+            "without a full-text evidence card; replace it with a cautious paraphrase "
+            "of the selected sources' supported_claim fields"
+        )
+    if len(source_dois) > packet.max_sources_per_paragraph:
+        # Source-count policy is deterministic. Keep evidence-backed sources first,
+        # then trim optional metadata sources instead of discarding a semantically
+        # useful section plan and asking the model to reproduce the whole JSON.
+        source_dois = source_dois[: packet.max_sources_per_paragraph]
+        permitted_dois = set(source_dois)
+        evidence_items = [
+            item for item in evidence_items if item.doi in permitted_dois
+        ]
+        evidence_ids = [item.evidence_id for item in evidence_items]
+    argument_move = proposal.argument_move
+    comparison_axis = proposal.comparison_axis
+    if (
+        argument_move
         in {"compare_studies", "synthesize_consensus", "analyze_difference"}
         and len(source_dois) < 2
     ):
-        raise WritingPlanError(
-            f"paragraph {number} declares {proposal.argument_move} but has fewer "
-            "than two supporting studies"
+        # A model can choose a valid representative source but leave an internally
+        # inconsistent comparison label. Preserve the locked evidence and safely
+        # downgrade the rhetorical move instead of inventing a second source or
+        # discarding the whole section plan.
+        argument_move = (
+            "evaluate_limitation"
+            if proposal.role in {"detailed_evidence", "section_support"}
+            else "frame_problem"
         )
+        comparison_axis = None
 
     return WritingParagraphPlan(
         paragraph_id=f"{packet.section_id}_p{number:02d}",
@@ -873,11 +1636,31 @@ def _compile_paragraph(
         purpose=proposal.purpose,
         claim_focus=proposal.claim_focus,
         central_question=proposal.central_question,
-        argument_move=proposal.argument_move,
-        comparison_axis=proposal.comparison_axis,
+        argument_move=argument_move,
+        comparison_axis=comparison_axis,
         target_words=target_words,
         evidence_card_ids=evidence_ids,
         source_dois=source_dois,
+    )
+
+
+def _contains_unsupported_metadata_detail(proposal: ParagraphPlanProposal) -> bool:
+    text = " ".join(
+        str(value or "")
+        for value in (
+            proposal.purpose,
+            proposal.claim_focus,
+            proposal.central_question,
+            proposal.comparison_axis,
+        )
+    )
+    return bool(
+        re.search(
+            r"\d+(?:\.\d+)?(?:\s*[-–—]\s*\d+(?:\.\d+)?)?\s*"
+            r"(?:%|m/s|m·s|cm(?:-1|⁻¹)?|nm|μm|km|K\b|channels?\b|通道|误差|精度)",
+            text,
+            re.IGNORECASE,
+        )
     )
 
 
@@ -907,7 +1690,7 @@ def _allowed_roles(permitted_use: str) -> list[str]:
 
 
 def _paragraph_count(target_words: int) -> int:
-    return max(3, min(10, round(target_words / 400)))
+    return max(3, min(12, round(target_words / 400)))
 
 
 def _allocate_targets(
@@ -995,21 +1778,13 @@ def _required_source_dois(handoff: V04WritingHandoff) -> list[str]:
         handoff.requirement
     )
     records = handoff.evidence_library.records
-    required_count = (
-        len(records)
-        if policy.references.all_bibliography_items_must_be_cited_and_discussed
-        else (
-            policy.references.minimum_total
-            if policy.references.target_is_approximate
-            else policy.references.target_total
-        )
-    )
-    if len(records) < required_count:
-        raise WritingPlanError(
-            "confirmed evidence library contains fewer sources than the required "
-            f"writing coverage: required={required_count}; available={len(records)}"
-        )
-    return [record.doi for record in records[:required_count]]
+    if not policy.references.all_bibliography_items_must_be_cited_and_discussed:
+        # A bibliography count is a retrieval/release requirement, not permission to
+        # manufacture prose around every selected paper. The planner may use only the
+        # sources needed by each central claim; the final audit still checks the actual
+        # citation count and routes a genuine shortage back to literature retrieval.
+        return []
+    return [record.doi for record in records]
 
 
 def _apply_required_source_coverage(
@@ -1057,7 +1832,7 @@ def _paragraph_requires_rewrite(
 def _paragraph_signature(packet: ParagraphEvidencePacket) -> str:
     canonical = json.dumps(
         {
-            "pipeline_version": "grounded-paragraph-writer-v1",
+            "pipeline_version": "grounded-paragraph-writer-v3-length-floor",
             "packet": packet.model_dump(mode="json"),
         },
         ensure_ascii=False,
@@ -1079,7 +1854,36 @@ def _parse_paragraph_text(raw: str) -> ParagraphTextProposal:
 
 
 def _paragraph_maximum_units(packet: ParagraphEvidencePacket) -> int:
-    return max(packet.paragraph.target_words, int(packet.paragraph.target_words * 1.6))
+    # The full-manuscript reviewer treats a paragraph above 1200 counted units as a
+    # structural defect.  Keep the writer contract aligned with that downstream gate.
+    return min(
+        1200,
+        max(packet.paragraph.target_words, int(packet.paragraph.target_words * 1.6)),
+    )
+
+
+def _paragraph_minimum_units(packet: ParagraphEvidencePacket) -> int:
+    # Paragraph budgets are internal planning targets, not user-declared hard minima.
+    # The manuscript-level audit owns the actual length requirement. Keep only a
+    # catastrophic under-generation floor here so a usable concise paragraph does
+    # not trigger three expensive rewrites.
+    effective_target = min(packet.paragraph.target_words, 1100)
+    if effective_target < 300:
+        return 0
+    return int(effective_target * 0.5)
+
+
+def _paragraph_minimum_tolerance(minimum_units: int) -> int:
+    """Allow harmless rounding drift around an internal paragraph budget.
+
+    This floor is a planning heuristic, not a user-declared manuscript minimum.
+    Rejecting an otherwise valid paragraph for a two-character shortfall causes
+    expensive, unstable rewrites without improving the finished paper.  Keep the
+    tolerance small enough that an empty or severely truncated paragraph still enters
+    repair. Manuscript-level length compliance remains deterministic downstream.
+    """
+
+    return max(4, int(minimum_units * 0.1 + 0.999))
 
 
 def _ensure_paragraph_not_too_long(
@@ -1097,6 +1901,25 @@ def _ensure_paragraph_not_too_long(
         )
 
 
+def _ensure_paragraph_not_too_short(
+    packet: ParagraphEvidencePacket,
+    proposal: ParagraphTextProposal,
+) -> None:
+    minimum_units = _paragraph_minimum_units(packet)
+    if not minimum_units:
+        return
+    counted_units = count_writing_units(
+        proposal.text,
+        counting_policy=packet.counting_policy,
+    )
+    enforced_minimum = minimum_units - _paragraph_minimum_tolerance(minimum_units)
+    if counted_units < enforced_minimum:
+        raise ParagraphTooShortError(
+            f"paragraph has {counted_units} counted units; planned minimum is "
+            f"{minimum_units}, tolerated minimum is {enforced_minimum}"
+        )
+
+
 def _ensure_paragraph_has_no_authored_citation(
     proposal: ParagraphTextProposal,
 ) -> None:
@@ -1108,6 +1931,12 @@ def _ensure_paragraph_has_no_authored_citation(
         raise ParagraphCitationError(
             "paragraph text attempted to author a citation or DOI marker"
         )
+
+
+def _ensure_review_genre_attribution(proposal: ParagraphTextProposal) -> None:
+    detail = false_self_attribution_detail(proposal.text)
+    if detail:
+        raise ParagraphGenreAttributionError(detail)
 
 
 def _ensure_paragraph_language(
@@ -1127,6 +1956,13 @@ def _paragraph_repair_instruction(
     *,
     maximum_units: int,
 ) -> str:
+    if isinstance(exc, ParagraphTooShortError):
+        return (
+            "Rewrite only the paragraph text and develop the same evidence-bound central "
+            "argument more fully. Add comparison, synthesis, limitations, and cautious "
+            "implications already supported by the packet; do not add sources or filler. "
+            "Return exactly one text field."
+        )
     if isinstance(exc, ParagraphLengthError):
         return (
             "Rewrite only the paragraph text and shorten it to no more than "
@@ -1138,6 +1974,14 @@ def _paragraph_repair_instruction(
             "Remove every citation marker, DOI value, DOI URL, and reference label from "
             "the paragraph text while preserving the evidence-bound prose. Return exactly "
             "one text field."
+        )
+    if isinstance(exc, ParagraphGenreAttributionError):
+        return (
+            "Rewrite only the paragraph text as literature-review prose. Do not claim "
+            "that the current paper or its authors conducted a cited method, dataset, "
+            "measurement, experiment, or result. Use the responsible source author names "
+            "from packet.sources as the subject and preserve the locked evidence scope. "
+            "Return exactly one text field."
         )
     if isinstance(exc, ParagraphLanguageError):
         return (
@@ -1236,6 +2080,13 @@ def _short_error(exc: Exception | None) -> str:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(content, encoding="utf-8")
-    temporary.replace(path)
+    # Multiple Streamlit sessions can finish the same cached paragraph together.
+    # A shared ``.tmp`` filename lets one session replace a file while another still
+    # owns it on Windows (WinError 32). Per-writer temp names keep the final replace
+    # atomic and make repeated writes idempotent.
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)

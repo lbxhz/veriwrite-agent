@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "veriwrite-evaluator"
+version = "0.2.0"
+description = "MCP-callable academic writing quality evaluation, powered by the hermes-rubric engine with a Chinese rubric template and an OpenAI-compatible (DeepSeek) backend."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "hermes-rubric>=1.0,<2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0,<2"]
+dev = ["pytest>=8,<9", "ruff>=0.8"]
+
+[project.scripts]
+veriwrite-eval = "veriwrite_evaluator.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/veriwrite_evaluator"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

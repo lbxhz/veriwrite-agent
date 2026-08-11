@@ -62,6 +62,8 @@ class LiteratureSearchPlan(StrictModel):
     journal_ranking_policy: Literal["required", "preferred"] = "required"
     target_eligible_count: int = Field(default=50, ge=1, le=100)
     max_candidates: int = Field(default=300, ge=1, le=1000)
+    query_offsets: dict[str, int] = Field(default_factory=dict)
+    query_limits: dict[str, int] = Field(default_factory=dict)
     requirement_policy: ExecutableRequirementPolicy | None = None
 
     @field_validator(
@@ -113,6 +115,18 @@ class LiteratureSearchPlan(StrictModel):
             and self.year_to < self.year_from
         ):
             raise ValueError("year_to cannot be before year_from")
+        if self.query_offsets or self.query_limits:
+            query_set = set(self.search_queries)
+            if set(self.query_offsets) != query_set:
+                raise ValueError("query_offsets must cover every search query exactly once")
+            if set(self.query_limits) != query_set:
+                raise ValueError("query_limits must cover every search query exactly once")
+            if any(value < 0 for value in self.query_offsets.values()):
+                raise ValueError("query_offsets cannot contain negative values")
+            if any(value < 0 for value in self.query_limits.values()):
+                raise ValueError("query_limits cannot contain negative values")
+            if sum(self.query_limits.values()) != self.max_candidates:
+                raise ValueError("query_limits must sum to max_candidates")
         return self
 
 

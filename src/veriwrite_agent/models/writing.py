@@ -94,6 +94,7 @@ class SectionEvidencePacket(StrictModel):
     ] = "pending_confirmation"
     research_questions: list[str] = Field(default_factory=list)
     required_source_dois: list[str] = Field(default_factory=list)
+    max_sources_per_paragraph: int = Field(default=3, ge=1, le=8)
     evidence_items: list[SectionEvidenceItem] = Field(min_length=1)
     sources: list[SectionSourceRecord] = Field(min_length=1)
     ai_writing_mode: Literal["generation_allowed", "generation_blocked"] = (
@@ -246,12 +247,25 @@ class SectionDraftIssue(StrictModel):
         "terminology_inconsistent",
         "academic_style_problem",
         "quality_review_failed",
+        "quality_review_degraded",
+        "quality_review_deferred",
         "unsupported_claim",
         "overstated_evidence",
+        "false_self_attribution",
+        "oversized_paragraph",
     ]
     severity: Literal["warning", "blocking"]
     detail: str = Field(min_length=1)
     paragraph_number: int | None = Field(default=None, ge=1)
+
+
+class SectionQualityReviewTrace(StrictModel):
+    """Small persisted signal used to detect a non-converging review loop."""
+
+    round_number: int = Field(ge=1)
+    body_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    blocking_signatures: list[str] = Field(default_factory=list, max_length=20)
+    blocking_count: int = Field(ge=0)
 
 
 class SectionDraft(StrictModel):
@@ -272,6 +286,15 @@ class SectionDraft(StrictModel):
     )
     confirmed_by: str | None = None
     confirmed_at: datetime | None = None
+    quality_review_status: Literal[
+        "not_run", "passed", "findings", "failed"
+    ] = "not_run"
+    quality_review_rounds: int = Field(default=0, ge=0)
+    quality_reviewed_at: datetime | None = None
+    quality_review_history: list[SectionQualityReviewTrace] = Field(
+        default_factory=list,
+        max_length=6,
+    )
 
     @model_validator(mode="after")
     def status_must_match_issues_and_confirmation(self) -> SectionDraft:
@@ -287,6 +310,11 @@ class SectionDraft(StrictModel):
                 raise ValueError("confirmed sections need confirmation audit fields")
         elif self.confirmed_by is not None or self.confirmed_at is not None:
             raise ValueError("unconfirmed sections cannot claim confirmation")
+        if self.quality_review_status == "not_run":
+            if self.quality_reviewed_at is not None:
+                raise ValueError("the current unreviewed revision cannot have a review time")
+        elif self.quality_review_rounds < 1 or self.quality_reviewed_at is None:
+            raise ValueError("quality-reviewed sections need review audit fields")
         return self
 
 

@@ -30,6 +30,9 @@ ocr = [
     "pypdfium2>=5.12,<6",
     "rapidocr>=3.9,<4",
 ]
+evaluation = [
+    "mcp>=1.0,<2",
+]
 
 [project.scripts]
 veriwrite = "veriwrite_agent.cli:main"

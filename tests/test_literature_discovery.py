@@ -151,3 +151,21 @@ def test_discovery_preserves_independent_norwegian_ranking_evidence() -> None:
     assert norwegian is not None
     assert norwegian.resolved_level == 2
     assert norwegian.match_basis == "issn"
+
+
+def test_discovery_skips_dois_persisted_by_an_earlier_search_window() -> None:
+    search = FakeLiteratureSearchProvider([candidate(1), candidate(2)])
+    service = LiteratureDiscoveryService(
+        search,
+        CugJournalRankingProvider.from_default_catalog(),
+    )
+
+    result = service.discover(
+        plan().model_copy(update={"target_eligible_count": 1}),
+        known_dois={candidate(1).doi},
+        stop_when_target_reached=False,
+    )
+
+    assert result.duplicate_count == 1
+    assert result.scanned_count == 1
+    assert [item.candidate.doi for item in result.decisions] == [candidate(2).doi]

@@ -12,4 +12,13 @@ build/
 runtime/
 .playwright-cli/
 output/
+outputs/
 tmp/
+work/
+*.log
+*.exe
+
+# Local evaluator runs are reproducible outputs, not source inputs.
+veriwrite-evaluator/result*.json
+veriwrite-evaluator/summary*.json
+veriwrite-evaluator/tmp_*.md

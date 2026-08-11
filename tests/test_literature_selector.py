@@ -469,3 +469,48 @@ def test_theme_quotas_prevent_one_topic_from_filling_the_final_pool() -> None:
     assert result.shortages == {}
     assert [item.theme_id for item in result.selected].count("aerosol") == 2
     assert [item.theme_id for item in result.selected].count("methane") == 2
+
+
+def test_exhausted_internal_quota_can_move_to_other_direct_evidence() -> None:
+    candidates = [
+        selection_candidate(
+            doi=f"10.1000/aerosol-{index}",
+            title=f"Direct aerosol evidence {index}",
+            year=2025 - index,
+            tier="T1",
+            aerosol_score=0.95 - index * 0.01,
+            methane_score=0.1,
+        )
+        for index in range(3)
+    ]
+    candidates.append(
+        selection_candidate(
+            doi="10.1000/methane-1",
+            title="Direct methane evidence",
+            year=2025,
+            tier="T1",
+            aerosol_score=0.1,
+            methane_score=0.95,
+        )
+    )
+    selector = BalancedLiteratureSelector()
+    search_blueprint = blueprint(aerosol_target=2, methane_target=2)
+
+    strict = selector.select(search_blueprint, candidates)
+    recovered = selector.select_with_internal_quota_reallocation(
+        search_blueprint,
+        candidates,
+    )
+
+    assert strict.shortages == {"methane": 1}
+    assert recovered.target_reached is True
+    assert recovered.shortages == {}
+    assert {theme.theme_id: theme.target_count for theme in recovered.blueprint.themes} == {
+        "aerosol": 3,
+        "methane": 1,
+    }
+    assert any(
+        "内部主题配额" in reason
+        for item in recovered.selected
+        for reason in item.selection_reasons
+    )

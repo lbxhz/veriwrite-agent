@@ -44,11 +44,17 @@ from veriwrite_agent.ui.mvp_console import (
     render_project_sidebar,
     restore_local_project_if_needed,
 )
+from veriwrite_agent.ui.paper_evaluation_console import (
+    render_paper_evaluation_console,
+)
 from veriwrite_agent.ui.writing_console import (
+    active_writing_recovery_status,
     render_final_delivery_console,
     render_final_repair_checkpoint_restore,
     render_grounded_writing_console,
+    render_writing_agent_recovery_shell,
     rollback_blocked_delivery_to_v04,
+    rollback_outdated_delivery_to_v04,
     upgrade_legacy_full_rebuild_repair,
 )
 from veriwrite_agent.ui.workbench import (
@@ -84,7 +90,13 @@ def run() -> None:
             local_store,
         )
         upgrade_legacy_full_rebuild_repair(st.session_state)
+        rollback_outdated_delivery_to_v04(st.session_state)
         rollback_blocked_delivery_to_v04(st.session_state)
+        if active_writing_recovery_status(st.session_state) is not None:
+            # Literature/PDF recovery is an internal Agent tool call.  A restored
+            # browser session must return to the V0.4 control surface even when
+            # an older checkpoint did not persist the transient autopilot flag.
+            st.session_state["mvp_navigation"] = "writing"
         autosave_local_project(st.session_state, local_store)
     except (OSError, ValueError) as exc:
         autosave_error = str(exc)
@@ -115,22 +127,49 @@ def run() -> None:
     stages = {stage.stage_id: stage for stage in status.stages}
     if selected_stage == "overview":
         render_mvp_overview(status)
+    elif selected_stage == "evaluation":
+        render_paper_evaluation_console()
     elif selected_stage == "requirements":
         render_requirement_console()
     elif selected_stage == "literature":
         if stages["literature"].state == "locked":
-            render_locked_stage(stages["literature"], "requirements")
+            render_locked_stage(stages["literature"], status.next_stage_id)
         else:
             render_literature_console(include_downstream=False)
     elif selected_stage == "evidence":
         if stages["evidence"].state == "locked":
-            render_locked_stage(stages["evidence"], "literature")
+            render_locked_stage(stages["evidence"], status.next_stage_id)
         else:
             selection = _restore_literature_selection()
             render_pdf_acquisition_console(selection, include_writing=False)
     elif selected_stage == "writing":
-        if stages["writing"].state == "locked":
-            render_locked_stage(stages["writing"], "evidence")
+        recovery_status = active_writing_recovery_status(st.session_state)
+        if recovery_status in {"pending_search", "pending_full_text", "blocked"}:
+            render_writing_agent_recovery_shell()
+            if recovery_status == "pending_search":
+                render_literature_console(
+                    include_downstream=False,
+                    agent_embedded=True,
+                )
+            else:
+                selection = _restore_literature_selection()
+                render_pdf_acquisition_console(
+                    selection,
+                    include_writing=False,
+                    agent_embedded=True,
+                )
+        elif recovery_status == "ready_to_resume" and not st.session_state.get(
+            "v03_writing_handoff_json"
+        ):
+            render_writing_agent_recovery_shell()
+            selection = _restore_literature_selection()
+            render_pdf_acquisition_console(
+                selection,
+                include_writing=False,
+                agent_embedded=True,
+            )
+        elif stages["writing"].state == "locked":
+            render_locked_stage(stages["writing"], status.next_stage_id)
         else:
             handoff = V04WritingHandoff.model_validate_json(
                 st.session_state["v03_writing_handoff_json"]
@@ -138,7 +177,7 @@ def run() -> None:
             render_grounded_writing_console(handoff, include_final_delivery=False)
     elif selected_stage == "delivery":
         if stages["delivery"].state == "locked":
-            render_locked_stage(stages["delivery"], "writing")
+            render_locked_stage(stages["delivery"], status.next_stage_id)
         else:
             handoff = V04WritingHandoff.model_validate_json(
                 st.session_state["v03_writing_handoff_json"]

@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from veriwrite_agent.llm.base import LLMClient
+from veriwrite_agent.llm.base import LLMClient, LLMOutputTruncatedError
 from veriwrite_agent.models.literature_selection import (
     LiteratureRelevanceAssessment,
     LiteratureRelevanceAssessmentBatch,
@@ -21,11 +21,22 @@ from veriwrite_agent.models.literature_verification import (
 class RelevanceScoringError(ValueError):
     """Raised when the LLM cannot score exactly the supplied papers and themes."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_with_smaller_batch: bool = False,
+        retry_single: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.retry_with_smaller_batch = retry_with_smaller_batch
+        self.retry_single = retry_single
+
 
 class LLMLiteratureRelevanceScorer:
     """Let the LLM judge semantic fit, never DOI truth or journal level."""
 
-    def __init__(self, client: LLMClient, *, batch_size: int = 20) -> None:
+    def __init__(self, client: LLMClient, *, batch_size: int = 4) -> None:
         if not 1 <= batch_size <= 50:
             raise ValueError("batch_size must be between 1 and 50")
         self._client = client
@@ -41,8 +52,39 @@ class LLMLiteratureRelevanceScorer:
         assessments: list[LiteratureRelevanceAssessment] = []
         for start in range(0, len(verifications), self._batch_size):
             batch = verifications[start : start + self._batch_size]
-            assessments.extend(self._score_batch(blueprint, batch))
+            assessments.extend(self._score_with_adaptive_split(blueprint, batch))
         return assessments
+
+    def _score_with_adaptive_split(
+        self,
+        blueprint: LiteratureSearchBlueprint,
+        batch: list[LiteratureVerificationResult],
+    ) -> list[LiteratureRelevanceAssessment]:
+        """Retry malformed or truncated output with progressively smaller batches."""
+
+        try:
+            return self._score_batch(blueprint, batch)
+        except (LLMOutputTruncatedError, RelevanceScoringError) as exc:
+            can_split = isinstance(exc, LLMOutputTruncatedError) or (
+                exc.retry_with_smaller_batch
+            )
+            if not can_split:
+                raise
+            if len(batch) == 1:
+                if (
+                    isinstance(exc, RelevanceScoringError)
+                    and not exc.retry_single
+                ):
+                    raise
+                # A compact single-paper request gets one fresh attempt. Any second
+                # failure is surfaced so a persistent provider/schema problem does
+                # not turn into an infinite retry loop.
+                return self._score_batch(blueprint, batch)
+            midpoint = len(batch) // 2
+            return [
+                *self._score_with_adaptive_split(blueprint, batch[:midpoint]),
+                *self._score_with_adaptive_split(blueprint, batch[midpoint:]),
+            ]
 
     def _score_batch(
         self,
@@ -101,6 +143,10 @@ class LLMLiteratureRelevanceScorer:
                     "be admitted only as supporting context and must not define the section. "
                     "Use manual_review when the title and abstract are insufficient. "
                     "每篇必须覆盖全部且仅覆盖给定theme_id，best_theme_id必须是最高分主题。"
+                    "为控制输出长度，每个rationale不超过30个汉字，matched_concepts最多5项；"
+                    "supported_claim、use_boundary和exclusion_reason各不超过80个汉字。"
+                    f"assessments数组必须恰好包含{len(batch)}项，"
+                    "并逐字复制输入中的每一个DOI且每个只出现一次。"
                     "不要添加、删除或修改任何DOI。"
                     f"输出必须符合以下JSON Schema：{schema}"
                 ),
@@ -142,11 +188,13 @@ class LLMLiteratureRelevanceScorer:
         try:
             payload = json.loads(raw)
             _repair_redundant_best_theme_ids(payload)
+            _repair_inconsistent_admission_states(payload)
             return LiteratureRelevanceAssessmentBatch.model_validate(payload)
         except (json.JSONDecodeError, ValidationError) as exc:
             raise RelevanceScoringError(
                 "LLM relevance output violates the data contract: "
-                f"{_validation_details(exc)}"
+                f"{_validation_details(exc)}",
+                retry_with_smaller_batch=True,
             ) from exc
 
     @staticmethod
@@ -158,20 +206,26 @@ class LLMLiteratureRelevanceScorer:
         actual_dois = [item.doi for item in batch.assessments]
         if sorted(actual_dois) != sorted(expected_dois):
             raise RelevanceScoringError(
-                "relevance output must contain every supplied DOI exactly once"
+                "relevance output must contain every supplied DOI exactly once",
+                retry_with_smaller_batch=True,
+                retry_single=False,
             )
         expected_theme_set = set(expected_themes)
         for assessment in batch.assessments:
             if assessment.admission_status == "legacy_unreviewed":
                 raise RelevanceScoringError(
-                    f"admission decision is missing for DOI {assessment.doi}"
+                    f"admission decision is missing for DOI {assessment.doi}",
+                    retry_with_smaller_batch=True,
+                    retry_single=False,
                 )
             actual_themes = {
                 score.theme_id for score in assessment.theme_scores
             }
             if actual_themes != expected_theme_set:
                 raise RelevanceScoringError(
-                    f"relevance output has wrong themes for DOI {assessment.doi}"
+                    f"relevance output has wrong themes for DOI {assessment.doi}",
+                    retry_with_smaller_batch=True,
+                    retry_single=False,
                 )
             if (
                 assessment.admission_status == "admit"
@@ -179,7 +233,9 @@ class LLMLiteratureRelevanceScorer:
             ):
                 raise RelevanceScoringError(
                     "admission output has an unknown suitable section for DOI "
-                    f"{assessment.doi}"
+                    f"{assessment.doi}",
+                    retry_with_smaller_batch=True,
+                    retry_single=False,
                 )
 
 
@@ -216,6 +272,34 @@ def _repair_redundant_best_theme_ids(payload: Any) -> None:
         highest = [theme_id for theme_id, score in scored_themes if score == maximum]
         if assessment.get("best_theme_id") not in highest:
             assessment["best_theme_id"] = highest[0]
+
+
+def _repair_inconsistent_admission_states(payload: Any) -> None:
+    """Downgrade self-contradictory semantic decisions instead of losing a batch.
+
+    This repair never upgrades a paper into the admitted pool. When the model says
+    ``admit`` but also calls the paper peripheral/out of scope or omits the concrete
+    claim/section required for admission, deterministic code changes the status to
+    ``manual_review``. A rejection without a reason is handled the same way.
+    """
+
+    if not isinstance(payload, dict):
+        return
+    assessments = payload.get("assessments")
+    if not isinstance(assessments, list):
+        return
+    for assessment in assessments:
+        if not isinstance(assessment, dict):
+            continue
+        status = assessment.get("admission_status")
+        if status == "admit" and (
+            assessment.get("centrality") not in {"central", "supporting"}
+            or not assessment.get("supported_claim")
+            or not assessment.get("suitable_section_id")
+        ):
+            assessment["admission_status"] = "manual_review"
+        elif status == "reject" and not assessment.get("exclusion_reason"):
+            assessment["admission_status"] = "manual_review"
 
 
 def _validation_details(exc: json.JSONDecodeError | ValidationError) -> object:

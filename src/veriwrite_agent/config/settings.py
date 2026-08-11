@@ -20,6 +20,7 @@ class LLMSettings(BaseSettings):
     base_url: AnyHttpUrl = "https://api.deepseek.com"
     model: str = Field(default="deepseek-v4-flash", min_length=1)
     structured_model: str | None = Field(default="deepseek-chat", min_length=1)
+    reviewer_model: str | None = Field(default=None, min_length=1)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_retries: int = Field(default=2, ge=0, le=10)
     temperature: float = Field(default=0.2, ge=0, le=2)
@@ -40,6 +41,9 @@ class LLMSettings(BaseSettings):
             "base_url": str(self.base_url),
             "model": self.model,
             "structured_model": self.structured_model or self.model,
+            "reviewer_model": (
+                self.reviewer_model or self.structured_model or self.model
+            ),
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
             "temperature": self.temperature,
@@ -50,3 +54,13 @@ class LLMSettings(BaseSettings):
         """Use the configured stable JSON model for contract-heavy stages."""
 
         return self.model_copy(update={"model": self.structured_model or self.model})
+
+    def for_quality_review(self) -> LLMSettings:
+        """Allow the independent reviewer role to use a separately chosen model."""
+
+        return self.model_copy(
+            update={
+                "model": self.reviewer_model or self.structured_model or self.model,
+                "temperature": min(self.temperature, 0.1),
+            }
+        )

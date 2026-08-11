@@ -92,3 +92,46 @@ def test_project_snapshot_rejects_unknown_state_fields() -> None:
             project_name="invalid",
             state={"secret": "value"},
         )
+
+
+def test_independent_evaluation_is_a_valid_navigation_target() -> None:
+    snapshot = create_project_snapshot(
+        {
+            "mvp_project_id": "project-1",
+            "mvp_project_name": "外部论文评测",
+            "mvp_navigation": "evaluation",
+        }
+    )
+
+    assert snapshot.active_stage == "evaluation"
+
+
+def test_active_agent_recovery_keeps_writing_visible_while_evidence_is_internal() -> None:
+    recovery = {
+        "schema_version": "0.4-evidence-recovery.0",
+        "status": "pending_search",
+        "source_plan_fingerprint": "a" * 64,
+        "affected_section_ids": ["methods"],
+        "gaps": [
+            {
+                "section_id": "methods",
+                "section_title": "方法比较",
+                "paragraph_number": 1,
+                "reason": "comparison_requires_full_text",
+                "claim_focus": "比较两类方法",
+                "central_question": "两类方法有何差异？",
+                "search_queries": ["atmospheric retrieval comparison"],
+                "detail": "需要第二篇可追溯全文。",
+            }
+        ],
+    }
+
+    status = inspect_mvp_status(
+        {
+            "v04_evidence_recovery_json": json.dumps(recovery),
+        }
+    )
+
+    assert status.stages[3].state == "in_progress"
+    assert "内部回退" in status.stages[3].summary
+    assert status.next_stage_id == "requirements"

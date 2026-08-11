@@ -13,6 +13,7 @@ from veriwrite_agent.models.writing_handoff import (
 )
 from veriwrite_agent.models.executable_policy import ExecutableRequirementPolicy
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
+from veriwrite_agent.services.topic_admission import audit_topic_admission
 
 
 class WritingOutlineBuilder:
@@ -251,18 +252,18 @@ class WritingHandoffService:
         policy: ExecutableRequirementPolicy | None = None,
     ) -> V04WritingHandoff:
         active_policy = policy or RequirementPolicyCompiler().compile(requirement)
-        if active_policy.topic_boundary.is_actionable:
-            unreviewed = [
-                record.doi
-                for record in evidence_library.records
-                if record.admission_status != "admitted"
-            ]
-            if unreviewed:
-                raise ValueError(
-                    "V0.4 requires every literature record to pass the topic-admission "
-                    "gate: "
-                    + ", ".join(unreviewed)
-                )
+        admission = audit_topic_admission(
+            evidence_library,
+            active_policy,
+            valid_section_ids=(
+                section.section_id for section in outline.outline.sections
+            ),
+        )
+        if not admission.passed:
+            raise ValueError(
+                "V0.4 requires an actionable topic boundary and complete literature "
+                f"admission records: {admission.detail}"
+            )
         if (
             evidence_library.requirement_policy_fingerprint
             and evidence_library.requirement_policy_fingerprint

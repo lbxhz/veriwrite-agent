@@ -31,12 +31,18 @@ class LiteratureDiscoveryService:
         self._ranking_provider = ranking_provider
         self._international_ranking_provider = international_ranking_provider
 
-    def discover(self, plan: LiteratureSearchPlan) -> LiteratureDiscoveryResult:
+    def discover(
+        self,
+        plan: LiteratureSearchPlan,
+        *,
+        known_dois: set[str] | None = None,
+        stop_when_target_reached: bool = True,
+    ) -> LiteratureDiscoveryResult:
         if plan.discipline not in self._ranking_provider.available_disciplines:
             raise ValueError(f"unsupported journal discipline: {plan.discipline}")
 
         decisions: list[CandidateDecision] = []
-        seen_dois: set[str] = set()
+        seen_dois = set(known_dois or ())
         scanned_count = 0
         duplicate_count = 0
         eligible_count = 0
@@ -54,7 +60,10 @@ class LiteratureDiscoveryService:
             decisions.append(decision)
             if decision.status == "eligible":
                 eligible_count += 1
-                if eligible_count >= plan.target_eligible_count:
+                if (
+                    stop_when_target_reached
+                    and eligible_count >= plan.target_eligible_count
+                ):
                     break
 
         target_reached = eligible_count >= plan.target_eligible_count

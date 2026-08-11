@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from veriwrite_agent.llm.fake_client import FakeLLMClient
+from veriwrite_agent.llm.fake_client import FakeLLMClient, ScriptedLLMClient
 from veriwrite_agent.models.evidence import (
     DocumentAcquisition,
     DocumentPage,
@@ -18,13 +18,22 @@ from veriwrite_agent.models.requirements import (
     AIUsagePolicy,
     ReferenceRequirement,
     RequirementSpec,
+    TopicBoundary,
 )
 from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftIssue,
     SectionDraftProposal,
 )
-from veriwrite_agent.models.writing_plan import ParagraphTextProposal
+from veriwrite_agent.models.writing_plan import (
+    GroundedWritingPlan,
+    ParagraphTextProposal,
+    SectionPlanProposal,
+)
+from veriwrite_agent.models.writing_quality import (
+    ManuscriptQualityFinding,
+    ManuscriptQualityReview,
+)
 from veriwrite_agent.models.writing_handoff import (
     ConfirmedWritingOutline,
     V04WritingHandoff,
@@ -39,6 +48,11 @@ from veriwrite_agent.services.grounded_writing import (
     WritingProjectService,
     count_writing_units,
 )
+from veriwrite_agent.services.agent_runtime_store import AgentRuntimeStore
+from veriwrite_agent.services.manuscript_structural_editing import (
+    merge_redundant_manuscript_paragraphs,
+    semantically_replan_manuscript_sections,
+)
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
 from veriwrite_agent.services.writing_planning import (
     GroundedWritingPlanner,
@@ -48,12 +62,27 @@ from veriwrite_agent.services.writing_planning import (
     PlannedSectionDraftService,
     WritingPlanError,
     WritingPlanRuntimeCache,
+    _assign_required_sources_to_problem_paragraphs,
+    _repair_compiled_required_source_coverage,
     align_writing_plan_language,
     repair_writing_plan_source_coverage,
 )
 from veriwrite_agent.services.writing_quality import (
+    FullManuscriptEditorialService,
+    LLMManuscriptQualityReviewer,
     LLMSectionQualityReviewer,
+    _validate_manuscript_review,
     apply_section_quality_review,
+    mark_section_quality_review_failed,
+    refine_writing_plan_for_manuscript_review,
+)
+from veriwrite_agent.services.writing_autopilot import (
+    ContinuousSectionWritingService,
+    ContinuousWritingPolicy,
+)
+from veriwrite_agent.services.writing_agent_runtime import WritingAgentRuntimeService
+from veriwrite_agent.ui.writing_console import (
+    reopen_entire_body_for_regeneration,
 )
 
 DOI = "10.1000/core.1"
@@ -131,6 +160,11 @@ def handoff() -> V04WritingHandoff:
         evidence_tier="A_core",
         evidence_status="full_text_verified",
         permitted_use="detailed_claims",
+        admission_status="admitted",
+        centrality="central",
+        supported_claim="Supports comparison of atmospheric retrieval methods.",
+        suitable_section_id="method",
+        use_boundary="Use only for atmospheric retrieval method evidence.",
     )
     supporting = LiteratureLibraryRecord(
         doi=SUPPORTING_DOI,
@@ -144,6 +178,11 @@ def handoff() -> V04WritingHandoff:
         evidence_tier="B_supporting",
         evidence_status="metadata_verified",
         permitted_use="section_support",
+        admission_status="admitted",
+        centrality="supporting",
+        supported_claim="Supports the atmospheric retrieval background.",
+        suitable_section_id="method",
+        use_boundary="Use only as section-level atmospheric retrieval support.",
     )
     library = EvidenceLibrary(
         status="confirmed",
@@ -181,6 +220,13 @@ def handoff() -> V04WritingHandoff:
             document_type="literature_review",
             output_language="English",
             topic="Atmospheric remote sensing",
+            topic_boundary=TopicBoundary(
+                central_question="How can atmospheric retrieval uncertainty be reduced?",
+                included_objects=["atmospheric retrieval methods"],
+                excluded_objects=["soil moisture"],
+                contextual_only_topics=["edge computing"],
+                origin="explicit",
+            ),
         ),
     )
     return V04WritingHandoff(
@@ -201,6 +247,27 @@ def chinese_handoff() -> V04WritingHandoff:
                 update={"requirement": requirement}
             ),
             "requirement_policy": None,
+        }
+    )
+
+
+def two_section_handoff() -> V04WritingHandoff:
+    active = handoff()
+    first = active.outline.outline.sections[0]
+    second = first.model_copy(
+        update={
+            "section_id": "discussion",
+            "title": "Evidence synthesis",
+            "purpose": "Synthesize the verified retrieval evidence.",
+            "research_questions": ["What conclusion follows from the evidence?"],
+        }
+    )
+    outline_draft = active.outline.outline.model_copy(
+        update={"target_words": 600, "sections": [first, second]}
+    )
+    return active.model_copy(
+        update={
+            "outline": active.outline.model_copy(update={"outline": outline_draft})
         }
     )
 
@@ -237,6 +304,11 @@ def handoff_with_background_source() -> V04WritingHandoff:
         evidence_tier="C_background",
         evidence_status="metadata_verified",
         permitted_use="background_only",
+        admission_status="admitted",
+        centrality="supporting",
+        supported_claim="Provides background on environmental remote sensing.",
+        suitable_section_id="method",
+        use_boundary="Use only as brief background, never as the section subject.",
     )
     library = active.evidence_library.model_copy(
         update={"records": [*active.evidence_library.records, background]}
@@ -275,6 +347,16 @@ def proposal(
                 source_dois=[] if source_dois is None else source_dois,
             )
         ],
+    )
+
+
+def quality_passed(draft):
+    return draft.model_copy(
+        update={
+            "quality_review_status": "passed",
+            "quality_review_rounds": max(1, draft.quality_review_rounds),
+            "quality_reviewed_at": datetime.now(timezone.utc),
+        }
     )
 
 
@@ -336,6 +418,7 @@ def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
 
     section = plan.sections[0]
     assert plan.status == "draft"
+    assert plan.required_source_dois == []
     assert len(section.paragraphs) == 3
     assert sum(item.target_words for item in section.paragraphs) == 300
     assert section.paragraphs[0].evidence_card_ids == [EVIDENCE_ID]
@@ -351,6 +434,670 @@ def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
         "background",
         "synthesis",
     ]
+
+
+def test_required_source_replaces_optional_ref_when_repair_capacity_is_full() -> None:
+    active_handoff = handoff_with_background_source()
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    packet = packet.model_copy(
+        update={
+            "required_source_dois": [BACKGROUND_DOI],
+            "max_sources_per_paragraph": 1,
+        }
+    )
+    proposal_payload = json.loads(plan_response())
+    proposal_payload["paragraphs"][2]["evidence_refs"] = []
+    proposal_payload["paragraphs"][2]["source_refs"] = ["S002"]
+    proposal_plan = SectionPlanProposal.model_validate(proposal_payload)
+    evidence_aliases = {
+        "E001": packet.evidence_items[0],
+    }
+    source_aliases = {
+        f"S{index:03d}": source
+        for index, source in enumerate(packet.sources, 1)
+    }
+
+    repaired = _assign_required_sources_to_problem_paragraphs(
+        packet,
+        proposal_plan,
+        evidence_aliases=evidence_aliases,
+        source_aliases=source_aliases,
+        repair_invalid_permissions=True,
+    )
+
+    assert repaired.paragraphs[2].source_refs == ["S003"]
+
+
+def test_required_source_uses_fourth_policy_authorized_source_slot() -> None:
+    active_handoff = handoff_with_background_source()
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    fourth = packet.sources[2].model_copy(
+        update={
+            "doi": "10.1000/background.2",
+            "title": "Additional bounded background source",
+        }
+    )
+    packet = packet.model_copy(
+        update={
+            "sources": [*packet.sources, fourth],
+            "required_source_dois": [fourth.doi],
+            "max_sources_per_paragraph": 4,
+        }
+    )
+    proposal_payload = json.loads(plan_response())
+    proposal_payload["paragraphs"][0].update(
+        {
+            "role": "synthesis",
+            "evidence_refs": [],
+            "source_refs": ["S001", "S002", "S003"],
+        }
+    )
+    proposal_payload["paragraphs"][2].update(
+        {
+            "role": "detailed_evidence",
+            "evidence_refs": ["E001"],
+            "source_refs": [],
+        }
+    )
+    proposal_plan = SectionPlanProposal.model_validate(proposal_payload)
+    evidence_aliases = {"E001": packet.evidence_items[0]}
+    source_aliases = {
+        f"S{index:03d}": source
+        for index, source in enumerate(packet.sources, 1)
+    }
+
+    repaired = _assign_required_sources_to_problem_paragraphs(
+        packet,
+        proposal_plan,
+        evidence_aliases=evidence_aliases,
+        source_aliases=source_aliases,
+        repair_invalid_permissions=True,
+    )
+
+    assert repaired.paragraphs[0].source_refs == [
+        "S001",
+        "S002",
+        "S003",
+        "S004",
+    ]
+
+
+def test_missing_required_source_replaces_duplicate_required_occurrence() -> None:
+    active_handoff = handoff_with_background_source()
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    supporting_card = packet.evidence_items[0].model_copy(
+        update={
+            "evidence_id": "ev_method_support_002",
+            "doi": SUPPORTING_DOI,
+        }
+    )
+    supporting_source = packet.sources[1].model_copy(
+        update={"permitted_use": "detailed_claims"}
+    )
+    packet = packet.model_copy(
+        update={
+            "evidence_items": [*packet.evidence_items, supporting_card],
+            "sources": [
+                packet.sources[0],
+                supporting_source,
+                packet.sources[2],
+            ],
+            "required_source_dois": [SUPPORTING_DOI, BACKGROUND_DOI],
+            "max_sources_per_paragraph": 1,
+        }
+    )
+    proposal_payload = json.loads(plan_response())
+    proposal_payload["paragraphs"][0].update(
+        {
+            "role": "synthesis",
+            "evidence_refs": [],
+            "source_refs": ["S002"],
+        }
+    )
+    proposal_payload["paragraphs"][1].update(
+        {
+            "role": "detailed_evidence",
+            "evidence_refs": ["E002"],
+            "source_refs": [],
+        }
+    )
+    proposal_payload["paragraphs"][2].update(
+        {
+            "role": "detailed_evidence",
+            "evidence_refs": ["E001"],
+            "source_refs": [],
+        }
+    )
+    proposal_plan = SectionPlanProposal.model_validate(proposal_payload)
+    evidence_aliases = {
+        "E001": packet.evidence_items[0],
+        "E002": supporting_card,
+    }
+    source_aliases = {
+        f"S{index:03d}": source
+        for index, source in enumerate(packet.sources, 1)
+    }
+
+    repaired = _assign_required_sources_to_problem_paragraphs(
+        packet,
+        proposal_plan,
+        evidence_aliases=evidence_aliases,
+        source_aliases=source_aliases,
+        repair_invalid_permissions=True,
+    )
+
+    assert repaired.paragraphs[0].source_refs == ["S003"]
+    assert repaired.paragraphs[1].evidence_refs == ["E002"]
+
+
+def test_required_sources_allocate_restricted_permission_before_flexible_source() -> None:
+    active_handoff = handoff_with_background_source()
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    packet = packet.model_copy(
+        update={
+            "required_source_dois": [SUPPORTING_DOI, BACKGROUND_DOI],
+            "max_sources_per_paragraph": 1,
+        }
+    )
+    proposal_plan = SectionPlanProposal.model_validate(
+        {
+            "section_id": "method",
+            "paragraphs": [
+                {
+                    "role": "synthesis",
+                    "purpose": "establish the contextual boundary",
+                    "claim_focus": "background constraints and context",
+                    "central_question": "Which contextual boundary matters?",
+                    "argument_move": "synthesize_consensus",
+                    "comparison_axis": "context",
+                    "relative_weight": 5,
+                    "evidence_refs": [],
+                    "source_refs": [],
+                },
+                {
+                    "role": "section_support",
+                    "purpose": "compare the supporting result",
+                    "claim_focus": "supporting methodological result",
+                    "central_question": "Which result supports the section?",
+                    "argument_move": "compare_studies",
+                    "comparison_axis": "method",
+                    "relative_weight": 5,
+                    "evidence_refs": [],
+                    "source_refs": [],
+                },
+            ],
+        }
+    )
+    source_aliases = {
+        f"S{index:03d}": source
+        for index, source in enumerate(packet.sources, 1)
+    }
+
+    repaired = _assign_required_sources_to_problem_paragraphs(
+        packet,
+        proposal_plan,
+        evidence_aliases={},
+        source_aliases=source_aliases,
+        repair_invalid_permissions=True,
+    )
+
+    assert repaired.paragraphs[0].source_refs == ["S003"]
+    assert repaired.paragraphs[1].source_refs == ["S002"]
+
+
+def test_semantic_replan_requires_only_sources_previously_used_by_section() -> None:
+    active_handoff = handoff_with_background_source()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section = plan.sections[0]
+    paragraphs = []
+    for paragraph in section.paragraphs:
+        source_dois = [
+            doi for doi in paragraph.source_dois if doi != BACKGROUND_DOI
+        ]
+        if not source_dois and not paragraph.evidence_card_ids:
+            source_dois = [DOI]
+        paragraphs.append(paragraph.model_copy(update={"source_dois": source_dois}))
+    section = section.model_copy(update={"paragraphs": paragraphs})
+    plan = GroundedWritingPlan.model_validate(
+        plan.model_copy(update={"sections": [section]}).model_dump(mode="json")
+    )
+
+    class CapturePlanner:
+        packet = None
+
+        def replan_section(self, packet, *, paragraph_count):
+            self.packet = packet
+            assert paragraph_count == len(section.paragraphs)
+            return section
+
+    planner = CapturePlanner()
+    project = WritingProjectService().start(active_handoff)
+
+    semantically_replan_manuscript_sections(
+        plan,
+        project,
+        section_ids={section.section_id},
+        planner=planner,
+    )
+
+    assert planner.packet is not None
+    assert BACKGROUND_DOI not in planner.packet.required_source_dois
+    assert set(planner.packet.required_source_dois) <= {
+        doi
+        for paragraph in section.paragraphs
+        for doi in paragraph.source_dois
+    } | {DOI}
+
+
+def test_semantic_replan_failure_keeps_refined_section_for_targeted_repair() -> None:
+    active_handoff = handoff_with_background_source()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    project = WritingProjectService().start(active_handoff)
+
+    class FailingPlanner:
+        def replan_section(self, packet, *, paragraph_count):
+            raise WritingPlanError("synthetic capacity conflict")
+
+    result = semantically_replan_manuscript_sections(
+        plan,
+        project,
+        section_ids={plan.sections[0].section_id},
+        planner=FailingPlanner(),
+    )
+
+    assert result.sections == plan.sections
+
+
+def test_global_editor_refines_plan_before_targeted_rewrite() -> None:
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(handoff())
+    original = plan.sections[0]
+    finding = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=3,
+        code="cross_section_repetition",
+        disposition="targeted_repair",
+        detail="The synthesis repeats both earlier paragraphs.",
+        revision_instruction=(
+            "Keep only the distinct boundary judgment and omit repeated study details."
+        ),
+    )
+
+    refined = refine_writing_plan_for_manuscript_review(
+        plan,
+        ManuscriptQualityReview(findings=[finding]),
+        evidence_doi_by_id={EVIDENCE_ID: DOI},
+    )
+
+    target = refined.sections[0].paragraphs[2]
+    assert refined.plan_fingerprint != plan.plan_fingerprint
+    assert target.target_words <= 240
+    assert target.claim_focus == finding.revision_instruction
+    assert target.argument_move == "author_judgment"
+    assert target.source_dois == [DOI]
+    assert target.evidence_card_ids == [EVIDENCE_ID]
+    assert sum(
+        paragraph.target_words for paragraph in refined.sections[0].paragraphs
+    ) == original.target_words
+
+
+def test_global_editor_warning_cannot_drive_an_endless_rewrite_loop() -> None:
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(handoff())
+    warning = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=3,
+        code="global_coherence_gap",
+        severity="warning",
+        disposition="targeted_repair",
+        detail="A transition could be clearer.",
+        revision_instruction="Add a short transition.",
+    )
+
+    normalized = _validate_manuscript_review(
+        ManuscriptQualityReview(findings=[warning]),
+        plan,
+    )
+
+    assert normalized.findings[0].disposition == "report_only"
+
+
+def test_material_manuscript_warning_is_promoted_to_targeted_repair() -> None:
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(handoff())
+    warning = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=3,
+        code="cross_section_repetition",
+        severity="warning",
+        disposition="report_only",
+        detail="The paragraph repeats a prior argument.",
+        revision_instruction="Merge it into another paragraph.",
+    )
+
+    normalized = _validate_manuscript_review(
+        ManuscriptQualityReview(findings=[warning]),
+        plan,
+    )
+
+    finding = normalized.findings[0]
+    assert finding.severity == "blocking"
+    assert finding.disposition == "targeted_repair"
+    assert "不得移动段落" in finding.revision_instruction
+
+
+def test_manuscript_reviewer_deduplicates_the_same_paragraph_issue() -> None:
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(handoff())
+    duplicate = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=3,
+        code="cross_section_repetition",
+        severity="warning",
+        disposition="report_only",
+        detail="The paragraph repeats a prior argument.",
+        revision_instruction="Retain only the unique synthesis.",
+    )
+
+    normalized = _validate_manuscript_review(
+        ManuscriptQualityReview(findings=[duplicate, duplicate]),
+        plan,
+    )
+
+    assert len(normalized.findings) == 1
+    assert normalized.findings[0].severity == "blocking"
+    assert normalized.findings[0].disposition == "targeted_repair"
+
+
+def test_v05_explicitly_carries_deferred_chapter_finding() -> None:
+    active = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active).confirm(
+        confirmed_by="student"
+    )
+    packet = SectionEvidencePacketBuilder().build(active, "method")
+    paragraphs = [
+        DraftParagraphProposal(
+            role=item.role,
+            text=f"Evidence-bound paragraph {item.paragraph_number}.",
+            evidence_card_ids=item.evidence_card_ids,
+            source_dois=item.source_dois,
+        )
+        for item in plan.sections[0].paragraphs
+    ]
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(section_id="method", paragraphs=paragraphs),
+    )
+    draft = quality_passed(
+        draft.model_copy(
+            update={
+                "issues": [
+                    *draft.issues,
+                    SectionDraftIssue(
+                        code="terminology_inconsistent",
+                        severity="warning",
+                        paragraph_number=2,
+                        detail="V0.4 deferred inconsistent terminology.",
+                    ),
+                    SectionDraftIssue(
+                        code="quality_review_deferred",
+                        severity="warning",
+                        detail="Local repair converged without removing the finding.",
+                    ),
+                ]
+            }
+        )
+    )
+    projects = WritingProjectService()
+    project = projects.save_draft(projects.start(active), draft)
+    project = projects.confirm_section(project, "method", confirmed_by="student")
+    client = FakeLLMClient(json.dumps({"findings": []}))
+
+    checkpoint = FullManuscriptEditorialService(
+        LLMManuscriptQualityReviewer(client)
+    ).run(plan, project)
+
+    assert checkpoint.status == "passed"
+    assert checkpoint.warning_count == 1
+    assert checkpoint.review.findings[0].code == "terminology_inconsistent"
+    payload = json.loads(client.calls[0]["messages"][1]["content"])
+    assert payload["deferred_chapter_findings"][0]["code"] == (
+        "terminology_inconsistent"
+    )
+
+
+def test_v05_reviewer_can_promote_deferred_repetition_to_targeted_repair() -> None:
+    active = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active).confirm(
+        confirmed_by="student"
+    )
+    packet = SectionEvidencePacketBuilder().build(active, "method")
+    paragraphs = [
+        DraftParagraphProposal(
+            role=item.role,
+            text=f"Distinct evidence-bound paragraph {item.paragraph_number}.",
+            evidence_card_ids=item.evidence_card_ids,
+            source_dois=item.source_dois,
+        )
+        for item in plan.sections[0].paragraphs
+    ]
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(section_id="method", paragraphs=paragraphs),
+    ).model_copy(
+        update={
+            "issues": [
+                SectionDraftIssue(
+                    code="paragraph_repetition",
+                    severity="warning",
+                    paragraph_number=2,
+                    detail="V0.4 deferred repeated argument.",
+                ),
+                SectionDraftIssue(
+                    code="quality_review_deferred",
+                    severity="warning",
+                    detail="Local repair converged without removing the finding.",
+                ),
+            ]
+        }
+    )
+    draft = quality_passed(draft)
+    projects = WritingProjectService()
+    project = projects.save_draft(projects.start(active), draft)
+    project = projects.confirm_section(project, "method", confirmed_by="student")
+    response = json.dumps(
+        {
+            "findings": [
+                {
+                    "section_id": "method",
+                    "paragraph_number": 2,
+                    "code": "paragraph_repetition",
+                    "severity": "warning",
+                    "disposition": "report_only",
+                    "detail": "The repeated argument remains material in full context.",
+                    "revision_instruction": "Retain only the distinct comparison.",
+                }
+            ]
+        }
+    )
+
+    checkpoint = FullManuscriptEditorialService(
+        LLMManuscriptQualityReviewer(FakeLLMClient(response))
+    ).run(plan, project)
+
+    assert checkpoint.status == "needs_revision"
+    finding = checkpoint.review.findings[0]
+    assert finding.code == "paragraph_repetition"
+    assert finding.severity == "blocking"
+    assert finding.disposition == "targeted_repair"
+
+
+def test_structural_editor_merges_redundant_paragraph_and_support_scope() -> None:
+    active = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active)
+    packet = SectionEvidencePacketBuilder().build(active, "method")
+    paragraphs = [
+        DraftParagraphProposal(
+            role=item.role,
+            text=f"Evidence-bound paragraph {item.paragraph_number}.",
+            evidence_card_ids=item.evidence_card_ids,
+            source_dois=item.source_dois,
+        )
+        for item in plan.sections[0].paragraphs
+    ]
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(section_id="method", paragraphs=paragraphs),
+    )
+    service = WritingProjectService()
+    project = service.save_draft(service.start(active), quality_passed(draft))
+    project = service.confirm_section(
+        project,
+        "method",
+        confirmed_by="student",
+    )
+    finding = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=3,
+        code="cross_section_repetition",
+        severity="blocking",
+        disposition="targeted_repair",
+        detail="The final paragraph repeats the preceding synthesis.",
+        revision_instruction="Delete or merge the redundant paragraph.",
+    )
+
+    edited = merge_redundant_manuscript_paragraphs(
+        plan,
+        project,
+        ManuscriptQualityReview(findings=[finding]),
+    )
+
+    assert len(edited.plan.sections[0].paragraphs) == 2
+    assert len(edited.project.sections[0].draft.paragraphs) == 2
+    assert edited.target_remap[("method", 3)] == ("method", 2)
+    assert {
+        doi
+        for paragraph in edited.plan.sections[0].paragraphs
+        for doi in paragraph.source_dois
+    } == {
+        DOI,
+        SUPPORTING_DOI,
+    }
+    assert all(
+        len(paragraph.source_dois) == 1
+        for paragraph in edited.plan.sections[0].paragraphs
+    )
+    assert sum(
+        paragraph.target_words for paragraph in edited.plan.sections[0].paragraphs
+    ) == plan.sections[0].target_words
+    assert edited.project.status == "drafting"
+
+
+def test_v05_rejection_reopens_every_v04_paragraph_without_losing_plan() -> None:
+    active = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active)
+    plan = plan.confirm(confirmed_by="student")
+    packet = SectionEvidencePacketBuilder().build(active, "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(
+            section_id="method",
+            paragraphs=[
+                DraftParagraphProposal(
+                    role=item.role,
+                    text=f"Evidence-bound paragraph {item.paragraph_number}.",
+                    evidence_card_ids=item.evidence_card_ids,
+                    source_dois=item.source_dois,
+                )
+                for item in plan.sections[0].paragraphs
+            ],
+        ),
+    )
+    service = WritingProjectService()
+    project = service.save_draft(service.start(active), quality_passed(draft))
+    project = service.confirm_section(project, "method", confirmed_by="student")
+    state = {
+        "v04_writing_plan_json": plan.model_dump_json(indent=2),
+        "v04_writing_project_json": project.model_dump_json(indent=2),
+        "mvp_navigation": "delivery",
+    }
+
+    assert reopen_entire_body_for_regeneration(state) is True
+
+    reopened = type(project).model_validate_json(state["v04_writing_project_json"])
+    reopened_draft = reopened.sections[0].draft
+    assert reopened.status == "drafting"
+    assert reopened.sections[0].status == "needs_review"
+    assert reopened_draft is not None
+    assert len(reopened_draft.issues) == len(reopened_draft.paragraphs)
+    assert {issue.paragraph_number for issue in reopened_draft.issues} == {1, 2, 3}
+    assert state["v04_writing_plan_json"] == plan.model_dump_json(indent=2)
+    assert state["mvp_navigation_request"] == "writing"
+    assert state["v04_autopilot_requested"] is True
+    assert "mvp_final_repair_checkpoint_json" in state
+
+
+def test_planner_injects_independent_review_feedback_into_replanning_prompt() -> None:
+    client = FakeLLMClient(plan_response())
+    feedback = {"method": ["第 2 段 [topic_drift]：偏离章节研究对象。"]}
+
+    GroundedWritingPlanner(
+        client,
+        repair_feedback_by_section=feedback,
+    ).plan(handoff())
+
+    prompt_payload = json.loads(client.calls[0]["messages"][1]["content"])
+    assert prompt_payload["repair_feedback"] == feedback["method"]
+    assert "mandatory diagnosis" in client.calls[0]["messages"][0]["content"]
+
+
+def test_section_packet_rejects_legacy_unreviewed_literature() -> None:
+    active = handoff()
+    legacy_records = [
+        record.model_copy(
+            update={
+                "admission_status": "legacy_unreviewed",
+                "centrality": "peripheral",
+                "supported_claim": None,
+                "suitable_section_id": None,
+                "use_boundary": None,
+            }
+        )
+        for record in active.evidence_library.records
+    ]
+    legacy = active.model_copy(
+        update={
+            "evidence_library": active.evidence_library.model_copy(
+                update={"records": legacy_records}
+            )
+        }
+    )
+
+    with pytest.raises(GroundedWritingError, match="topic admission"):
+        SectionEvidencePacketBuilder().build(legacy, "method")
+
+
+def test_planner_downgrades_comparison_move_when_only_one_source_is_locked() -> None:
+    payload = json.loads(plan_response())
+    payload["paragraphs"][2]["source_refs"] = []
+
+    plan = GroundedWritingPlanner(FakeLLMClient(json.dumps(payload))).plan(handoff())
+
+    paragraph = plan.sections[0].paragraphs[2]
+    assert paragraph.source_dois == [DOI]
+    assert paragraph.argument_move == "frame_problem"
+    assert paragraph.comparison_axis is None
+
+
+def test_planner_assigns_omitted_required_source_to_existing_problem_paragraph() -> None:
+    payload = json.loads(plan_response())
+    for paragraph in payload["paragraphs"]:
+        paragraph["source_refs"] = []
+
+    plan = GroundedWritingPlanner(FakeLLMClient(json.dumps(payload))).plan(handoff())
+
+    assert SUPPORTING_DOI in {
+        doi
+        for paragraph in plan.sections[0].paragraphs
+        for doi in paragraph.source_dois
+    }
+    assert len(plan.sections[0].paragraphs) == 3
 
 
 def test_planner_repairs_once_then_rejects_unknown_aliases() -> None:
@@ -410,6 +1157,112 @@ def test_planner_repairs_background_source_used_for_section_support() -> None:
     assert "S003" in prompt_payload["allowed_support_refs_by_role"]["background"][
         "source_refs"
     ]
+
+
+def test_planner_deterministically_replaces_repeated_permission_mismatch() -> None:
+    active_handoff = handoff_with_background_source()
+    invalid_payload = json.loads(plan_response())
+    invalid_payload["paragraphs"][1]["source_refs"] = ["S003"]
+    repeated = json.dumps(invalid_payload)
+    client = SequenceLLMClient([repeated, repeated])
+
+    plan = GroundedWritingPlanner(client).plan(active_handoff)
+
+    repaired = plan.sections[0].paragraphs[1]
+    assert repaired.role == "section_support"
+    assert repaired.source_dois
+    assert BACKGROUND_DOI not in repaired.source_dois
+    assert len(client.calls) == 2
+
+
+def test_replanner_trims_repeated_excess_paragraph_plan() -> None:
+    payload = json.loads(plan_response())
+    payload["paragraphs"].insert(
+        2,
+        {
+            "role": "section_support",
+            "purpose": "Repeat a lower-priority contextual bridge.",
+            "claim_focus": "The supporting record provides section context.",
+            "central_question": "What context frames the retrieval problem?",
+            "argument_move": "evaluate_limitation",
+            "comparison_axis": "scope of application",
+            "relative_weight": 1,
+            "evidence_refs": [],
+            "source_refs": ["S002"],
+        },
+    )
+    repeated = json.dumps(payload)
+    client = SequenceLLMClient([repeated, repeated])
+    packet = SectionEvidencePacketBuilder().build(handoff(), "method")
+
+    section = GroundedWritingPlanner(client).replan_section(
+        packet,
+        paragraph_count=3,
+    )
+
+    assert len(section.paragraphs) == 3
+    assert len(client.calls) == 2
+
+
+def test_compiled_plan_preserves_required_source_over_optional_metadata() -> None:
+    active_handoff = handoff_with_background_source()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method").model_copy(
+        update={
+            "required_source_dois": [BACKGROUND_DOI],
+            "max_sources_per_paragraph": 2,
+        }
+    )
+    paragraphs = list(plan.sections[0].paragraphs)
+    paragraphs[2] = paragraphs[2].model_copy(
+        update={
+            "evidence_card_ids": [EVIDENCE_ID],
+            "source_dois": [DOI, SUPPORTING_DOI],
+        }
+    )
+
+    repaired = _repair_compiled_required_source_coverage(packet, paragraphs)
+
+    assert repaired[2].source_dois == [DOI, BACKGROUND_DOI]
+    assert repaired[2].evidence_card_ids == [EVIDENCE_ID]
+
+
+def test_compiled_plan_replaces_duplicate_required_occurrence_for_missing_source() -> None:
+    active_handoff = handoff_with_background_source()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method").model_copy(
+        update={
+            "required_source_dois": [DOI, SUPPORTING_DOI, BACKGROUND_DOI],
+            "max_sources_per_paragraph": 2,
+        }
+    )
+    paragraphs = list(plan.sections[0].paragraphs)
+    paragraphs[0] = paragraphs[0].model_copy(
+        update={
+            "evidence_card_ids": [EVIDENCE_ID],
+            "source_dois": [DOI, SUPPORTING_DOI],
+        }
+    )
+    paragraphs[1] = paragraphs[1].model_copy(
+        update={"source_dois": [DOI, SUPPORTING_DOI]}
+    )
+    paragraphs[2] = paragraphs[2].model_copy(
+        update={
+            "evidence_card_ids": [],
+            "source_dois": [DOI, SUPPORTING_DOI],
+        }
+    )
+
+    repaired = _repair_compiled_required_source_coverage(packet, paragraphs)
+
+    covered = {doi for paragraph in repaired for doi in paragraph.source_dois}
+    assert covered == {DOI, SUPPORTING_DOI, BACKGROUND_DOI}
+    assert BACKGROUND_DOI in repaired[2].source_dois
+    assert len(repaired[2].source_dois) == 2
 
 
 def test_planner_covers_every_source_required_by_reference_policy() -> None:
@@ -504,6 +1357,22 @@ def test_source_coverage_repair_refuses_to_manufacture_coverage_paragraphs() -> 
         repair_writing_plan_source_coverage(active_handoff, legacy)
 
 
+def test_source_coverage_repair_accepts_an_explicit_recovery_bibliography() -> None:
+    active_handoff = handoff_with_background_source()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
+
+    repair = repair_writing_plan_source_coverage(
+        active_handoff,
+        plan,
+        required_source_dois=[DOI, SUPPORTING_DOI],
+    )
+
+    assert repair.plan.required_source_dois == [DOI, SUPPORTING_DOI]
+    assert BACKGROUND_DOI not in repair.plan.required_source_dois
+
+
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:
     active_handoff = handoff()
     plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
@@ -564,6 +1433,40 @@ def test_chinese_language_contract_flows_to_plan_packet_and_repairs_prose() -> N
     assert result.text.startswith("现有证据表明")
     assert len(client.calls) == 2
     assert "natural academic Chinese" in client.calls[0]["messages"][0]["content"]
+
+
+def test_review_writer_repairs_false_self_attribution_with_source_authors() -> None:
+    active_handoff = chinese_handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    client = SequenceLLMClient(
+        [
+            json.dumps(
+                {"text": "本文提出了一种新的大气反演方法，并完成了实验验证。"},
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "text": (
+                        "Smith 等提出了该大气反演方法，并在锁定证据所述研究区域"
+                        "完成验证；该结果为本综述比较现有方法提供了依据。"
+                    )
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert result.text.startswith("Smith 等提出")
+    assert len(client.calls) == 2
+    assert "literature review" in client.calls[0]["messages"][0]["content"]
+    assert "source author names" in client.calls[1]["messages"][-1]["content"]
 
 
 def test_cached_plan_migration_adds_language_and_marks_legacy_coverage() -> None:
@@ -632,10 +1535,38 @@ def test_chapter_quality_reviewer_creates_targeted_editorial_issue() -> None:
     reviewed = apply_section_quality_review(draft, review)
 
     assert reviewed.issues[-1].code == "overstated_evidence"
-    assert reviewed.issues[-1].severity == "warning"
-    assert reviewed.status == "draft"
+    assert reviewed.issues[-1].severity == "blocking"
+    assert reviewed.status == "needs_review"
     assert reviewed.issues[-1].paragraph_number == 1
     assert "qualified wording" in reviewed.issues[-1].detail
+
+
+def test_chapter_quality_reviewer_deduplicates_repeated_findings() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(packet, proposal())
+    finding = {
+        "paragraph_number": 1,
+        "code": "topic_drift",
+        "severity": "warning",
+        "detail": "The paragraph gives too much space to context.",
+        "revision_instruction": "Keep the chapter's central question in focus.",
+    }
+    client = FakeLLMClient(
+        json.dumps({"section_id": "method", "findings": [finding, finding]})
+    )
+
+    review = LLMSectionQualityReviewer(client).review(
+        plan.sections[0],
+        draft,
+        packet,
+        output_language="English",
+    )
+
+    assert len(review.findings) == 1
+    assert review.findings[0].code == "topic_drift"
+    assert len(client.calls) == 1
 
 
 def test_chapter_quality_reviewer_drops_out_of_scope_evidence_ids() -> None:
@@ -667,6 +1598,39 @@ def test_chapter_quality_reviewer_drops_out_of_scope_evidence_ids() -> None:
     )
 
     assert review.findings[0].evidence_card_ids == []
+
+
+def test_chapter_quality_reviewer_drops_false_author_attribution_alarm() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        proposal(text="Smith et al. proposed the evidence-bound retrieval method."),
+    )
+    response = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 1,
+                    "code": "false_self_attribution",
+                    "severity": "blocking",
+                    "detail": "The verb proposed may look like self attribution.",
+                    "revision_instruction": "Use the cited author as subject.",
+                }
+            ],
+        }
+    )
+
+    review = LLMSectionQualityReviewer(FakeLLMClient(response)).review(
+        plan.sections[0],
+        draft,
+        packet,
+        output_language="English",
+    )
+
+    assert review.findings == []
 
 
 def test_quality_review_reopens_needs_review_draft_when_only_warnings_remain() -> None:
@@ -709,7 +1673,568 @@ def test_quality_review_reopens_needs_review_draft_when_only_warnings_remain() -
     reviewed = apply_section_quality_review(draft, review)
 
     assert reviewed.status == "draft"
+    assert reviewed.quality_review_status == "passed"
     assert all(issue.severity == "warning" for issue in reviewed.issues)
+
+
+def test_continuous_writing_confirms_a_clean_independently_reviewed_section() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    paragraph_text = " ".join(["grounded"] * 100)
+    writer_client = FakeLLMClient(
+        json.dumps({"text": paragraph_text})
+    )
+    reviewer_client = FakeLLMClient(
+        json.dumps({"section_id": "method", "findings": []})
+    )
+    project = WritingProjectService().start(active_handoff)
+    checkpoints = []
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+    ).run(
+        project,
+        plan,
+        confirmed_by="student (continuous authorization)",
+        on_checkpoint=lambda active, event: checkpoints.append(
+            (active.status, event.stage)
+        ),
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert result.stopped_section_id is None
+    assert draft is not None
+    assert draft.status == "confirmed"
+    assert draft.quality_review_status == "passed"
+    assert draft.quality_review_rounds == 1
+    assert len(writer_client.calls) == 3
+    assert len(reviewer_client.calls) == 1
+    assert ("body_complete", "confirmed") in checkpoints
+
+
+def test_continuous_writing_degrades_reviewer_contract_failure_without_stopping() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    writer_client = FakeLLMClient(
+        json.dumps({"text": " ".join(["grounded"] * 100)})
+    )
+    reviewer_client = SequenceLLMClient(["not-json", "still-not-json"])
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert result.stopped_section_id is None
+    assert draft is not None
+    assert draft.status == "confirmed"
+    assert draft.quality_review_status == "passed"
+    assert any(issue.code == "quality_review_degraded" for issue in draft.issues)
+    assert len(reviewer_client.calls) == 2
+
+
+def test_continuous_writing_routes_evidence_gap_before_calling_llms() -> None:
+    active_handoff = handoff_with_background_source()
+    draft_plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    )
+    section = draft_plan.sections[0]
+    background_comparison = section.paragraphs[1].model_copy(
+        update={
+            "role": "background",
+            "purpose": "Compare model architectures and accuracy.",
+            "claim_focus": "Compare the performance of two retrieval models.",
+            "central_question": "Which model is more accurate and why?",
+            "argument_move": "compare_studies",
+            "comparison_axis": "accuracy and architecture",
+            "evidence_card_ids": [],
+            "source_dois": [BACKGROUND_DOI],
+        }
+    )
+    section = section.model_copy(
+        update={
+            "paragraphs": [
+                section.paragraphs[0],
+                background_comparison,
+                section.paragraphs[2],
+            ]
+        }
+    )
+    plan = GroundedWritingPlan.model_validate(
+        draft_plan.model_copy(update={"sections": [section]}).model_dump(mode="json")
+    ).confirm(confirmed_by="student")
+    writer_client = FakeLLMClient(json.dumps({"text": "should not be called"}))
+    reviewer_client = FakeLLMClient(
+        json.dumps({"section_id": "method", "findings": []})
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student",
+    )
+
+    assert result.stop_code == "evidence_gap"
+    assert result.recovery_request is not None
+    assert result.recovery_request.requested_core_dois == [BACKGROUND_DOI]
+    assert writer_client.calls == []
+    assert reviewer_client.calls == []
+
+
+def test_non_prose_deterministic_blocker_does_not_call_writer_or_reviewer() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    blocked = GroundedSectionDraftService().create(
+        packet,
+        proposal(evidence_ids=["ev_missing_from_packet"]),
+    )
+    projects = WritingProjectService()
+    project = projects.save_draft(projects.start(active_handoff), blocked)
+    writer = FakeLLMClient(json.dumps({"text": "must not be called"}))
+    reviewer = FakeLLMClient(json.dumps({"section_id": "method", "findings": []}))
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer),
+        reviewer=LLMSectionQualityReviewer(reviewer),
+    ).run(
+        project,
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    assert result.stop_code == "deterministic_blocked"
+    assert "unknown_evidence_card" in (result.stop_reason or "")
+    assert writer.calls == []
+    assert reviewer.calls == []
+
+
+def test_continuous_writing_advances_through_the_next_section() -> None:
+    active_handoff = two_section_handoff()
+    discussion_plan = json.loads(plan_response())
+    discussion_plan["section_id"] = "discussion"
+    plan = GroundedWritingPlanner(
+        SequenceLLMClient([plan_response(), json.dumps(discussion_plan)])
+    ).plan(active_handoff).confirm(confirmed_by="student")
+    writer_client = FakeLLMClient(
+        json.dumps({"text": " ".join(["grounded"] * 100)})
+    )
+    reviewer_client = SequenceLLMClient(
+        [
+            json.dumps({"section_id": "method", "findings": []}),
+            json.dumps({"section_id": "discussion", "findings": []}),
+        ]
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    assert result.completed
+    assert [state.status for state in result.project.sections] == [
+        "confirmed",
+        "confirmed",
+    ]
+    assert len(writer_client.calls) == 6
+    assert len(reviewer_client.calls) == 2
+
+
+def test_scripted_fake_llm_smoke_covers_the_complete_v04_agent_path(
+    tmp_path: Path,
+) -> None:
+    """Exercise V0.4 orchestration and persistence without any network calls."""
+
+    active_handoff = two_section_handoff()
+    discussion_plan = json.loads(plan_response())
+    discussion_plan["section_id"] = "discussion"
+    planner_client = ScriptedLLMClient(
+        [plan_response(), json.dumps(discussion_plan)]
+    )
+    plan = GroundedWritingPlanner(planner_client).plan(active_handoff).confirm(
+        confirmed_by="fake-smoke"
+    )
+    policy = RequirementPolicyCompiler(current_year=2026).compile(
+        active_handoff.requirement
+    )
+    project = WritingProjectService().start(active_handoff)
+
+    store = AgentRuntimeStore(tmp_path / "agent-runtime")
+    runtime = WritingAgentRuntimeService(store)
+    context = runtime.initialize(
+        run_id="run_0123456789abcdef",
+        project_id="fake-v04-smoke",
+        policy=policy,
+        handoff=active_handoff,
+        plan=plan,
+        project=project,
+    )
+    prepared = runtime.prepare_section_action(
+        context,
+        section_ids=[section.section_id for section in plan.sections],
+    )
+
+    writer_client = ScriptedLLMClient(
+        [
+            json.dumps(
+                {
+                    "text": (
+                        f"Paragraph {number} presents verified retrieval evidence "
+                        + " ".join(["grounded"] * 92)
+                    )
+                }
+            )
+            for number in range(1, 7)
+        ]
+    )
+    reviewer_client = ScriptedLLMClient(
+        [
+            json.dumps({"section_id": "method", "findings": []}),
+            json.dumps({"section_id": "discussion", "findings": []}),
+        ]
+    )
+    checkpoint_stages: list[str] = []
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+    ).run(
+        project,
+        plan,
+        confirmed_by="fake-smoke (continuous authorization)",
+        on_checkpoint=lambda _project, event: checkpoint_stages.append(event.stage),
+    )
+    transition = runtime.record_section_result(prepared, result, plan)
+
+    planner_client.assert_exhausted()
+    writer_client.assert_exhausted()
+    reviewer_client.assert_exhausted()
+    assert result.completed
+    assert [section.status for section in result.project.sections] == [
+        "confirmed",
+        "confirmed",
+    ]
+    assert set(checkpoint_stages) >= {"generating", "reviewing", "confirmed"}
+    assert transition.observation.status == "succeeded"
+    assert transition.assessment.critic.outcome == "pass"
+    assert transition.assessment.decision.decision_type == "continue"
+    assert transition.state.current_stage == "editing"
+    assert transition.state.lifecycle == "running"
+    assert store.load_latest_checkpoint() is not None
+
+
+def test_continuous_writing_repairs_only_reviewed_paragraph_then_rechecks() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    initial_texts = [
+        f"Paragraph {number} " + " ".join(["grounded"] * 98)
+        for number in range(1, 4)
+    ]
+    initial = [json.dumps({"text": text}) for text in initial_texts]
+    revised_text = "Revised paragraph " + " ".join(["focused"] * 98)
+    revised = json.dumps({"text": revised_text})
+    writer_client = SequenceLLMClient([*initial, revised])
+    finding = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 2,
+                    "code": "academic_style_problem",
+                    "severity": "blocking",
+                    "detail": "The paragraph is generic.",
+                    "revision_instruction": "State the scoped comparison directly.",
+                }
+            ],
+        }
+    )
+    clean = json.dumps({"section_id": "method", "findings": []})
+    reviewer_client = SequenceLLMClient([finding, clean])
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+        policy=ContinuousWritingPolicy(max_revision_passes=1),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert draft is not None
+    assert draft.paragraphs[0].text == initial_texts[0]
+    assert draft.paragraphs[1].text == revised_text
+    assert draft.paragraphs[2].text == initial_texts[2]
+    assert draft.quality_review_status == "passed"
+    assert draft.quality_review_rounds == 2
+    assert len(writer_client.calls) == 4
+    assert len(reviewer_client.calls) == 2
+
+
+def test_continuous_writing_stops_when_review_findings_remain() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    writer_client = FakeLLMClient(
+        json.dumps({"text": " ".join(["grounded"] * 100)})
+    )
+    finding = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 1,
+                    "code": "topic_drift",
+                    "severity": "blocking",
+                    "detail": "The paragraph leaves the chapter's defined scope.",
+                    "revision_instruction": "Return to the planned atmospheric claim.",
+                }
+            ],
+        }
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(FakeLLMClient(finding)),
+        policy=ContinuousWritingPolicy(max_revision_passes=1),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert not result.completed
+    assert result.stopped_section_id == "method"
+    assert draft is not None
+    assert draft.status == "needs_review"
+    assert draft.quality_review_status == "findings"
+    assert any(issue.code == "topic_drift" for issue in draft.issues)
+    assert result.stop_code == "review_exhausted"
+    assert "停止盲目重写" in (result.stop_reason or "")
+
+
+def test_continuous_writing_defers_persistent_style_findings() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    writer_client = FakeLLMClient(
+        json.dumps({"text": " ".join(["grounded"] * 100)})
+    )
+    style_finding = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 1,
+                    "code": "academic_style_problem",
+                    "severity": "blocking",
+                    "detail": "The paragraph remains formulaic.",
+                    "revision_instruction": "Use a direct scholarly judgment.",
+                }
+            ],
+        }
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(FakeLLMClient(style_finding)),
+        policy=ContinuousWritingPolicy(
+            max_revision_passes=3,
+            max_total_review_rounds=6,
+        ),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert draft is not None
+    assert draft.status == "confirmed"
+    assert draft.quality_review_status == "passed"
+    assert any(
+        issue.code == "academic_style_problem" and issue.severity == "warning"
+        for issue in draft.issues
+    )
+    assert any(issue.code == "quality_review_deferred" for issue in draft.issues)
+    assert len(draft.quality_review_history) == 2
+    assert (
+        draft.quality_review_history[0].blocking_signatures
+        == draft.quality_review_history[1].blocking_signatures
+    )
+    assert len(writer_client.calls) == 4
+
+
+def test_continuous_writing_resumes_legacy_reviewer_failure_without_calls() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    failed_draft = mark_section_quality_review_failed(
+        GroundedSectionDraftService().create(packet, proposal()),
+        "legacy malformed reviewer JSON",
+    ).model_copy(update={"quality_review_rounds": 3})
+    project = WritingProjectService().save_draft(
+        WritingProjectService().start(active_handoff),
+        failed_draft,
+    )
+    writer_client = FakeLLMClient(json.dumps({"text": "unused"}))
+    reviewer_client = FakeLLMClient(
+        json.dumps({"section_id": "method", "findings": []})
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+    ).run(
+        project,
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert draft is not None
+    assert draft.status == "confirmed"
+    assert draft.quality_review_status == "passed"
+    assert any(issue.code == "quality_review_degraded" for issue in draft.issues)
+    assert writer_client.calls == []
+    assert reviewer_client.calls == []
+
+
+def test_continuous_writing_accepts_nonblocking_editorial_advice() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    writer_client = FakeLLMClient(
+        json.dumps({"text": " ".join(["grounded"] * 100)})
+    )
+    reviewer = FakeLLMClient(
+        json.dumps(
+            {
+                "section_id": "method",
+                "findings": [
+                    {
+                        "paragraph_number": 1,
+                        "code": "academic_style_problem",
+                        "severity": "warning",
+                        "detail": "The opening could be shorter.",
+                        "revision_instruction": "Optionally tighten the opening.",
+                    }
+                ],
+            }
+        )
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert draft is not None
+    assert draft.quality_review_status == "passed"
+    assert len(writer_client.calls) == 3
+    assert any(issue.severity == "warning" for issue in draft.issues)
+
+
+def test_continuous_writing_confirms_already_passed_draft_without_rewriting() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(packet, proposal()).model_copy(
+        update={
+            "quality_review_status": "passed",
+            "quality_review_rounds": 1,
+            "quality_reviewed_at": datetime.now(timezone.utc),
+        }
+    )
+    project = WritingProjectService().save_draft(
+        WritingProjectService().start(active_handoff),
+        draft,
+    )
+    writer = FakeLLMClient(json.dumps({"text": "must not be called"}))
+    reviewer = FakeLLMClient(json.dumps({"section_id": "method", "findings": []}))
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer),
+        reviewer=LLMSectionQualityReviewer(reviewer),
+    ).run(
+        project,
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    assert result.completed
+    assert result.project.sections[0].status == "confirmed"
+    assert writer.calls == []
+    assert reviewer.calls == []
+
+
+def test_manual_section_writing_stops_after_review_without_confirming() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(
+            FakeLLMClient(json.dumps({"text": " ".join(["grounded"] * 100)}))
+        ),
+        reviewer=LLMSectionQualityReviewer(
+            FakeLLMClient(json.dumps({"section_id": "method", "findings": []}))
+        ),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student",
+        section_id="method",
+        auto_confirm=False,
+    )
+
+    draft = result.project.sections[0].draft
+    assert not result.completed
+    assert draft is not None
+    assert draft.status == "draft"
+    assert draft.quality_review_status == "passed"
+    assert result.events[-1].stage == "ready"
 
 
 def test_paragraph_writer_recovers_literal_json_control_characters() -> None:
@@ -801,6 +2326,56 @@ def test_paragraph_writer_compacts_repeated_overrun_at_sentence_boundary() -> No
     assert len(client.calls) == 3
     final_repair_message = client.calls[2]["messages"][-1]["content"]
     assert "safety margin below the hard limit of 176" in final_repair_message
+
+
+def test_paragraph_writer_accepts_negligible_planning_floor_shortfall() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    paragraph_packet = paragraph_packet.model_copy(
+        update={
+            "paragraph": paragraph_packet.paragraph.model_copy(
+                update={"target_words": 313}
+            )
+        }
+    )
+    client = FakeLLMClient(
+        json.dumps({"text": " ".join(["grounded"] * 264)})
+    )
+
+    result = LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert count_writing_units(result.text, counting_policy="words") == 264
+    assert len(client.calls) == 1
+
+
+def test_paragraph_writer_still_repairs_material_planning_floor_shortfall() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    paragraph_packet = paragraph_packet.model_copy(
+        update={
+            "paragraph": paragraph_packet.paragraph.model_copy(
+                update={"target_words": 313}
+            )
+        }
+    )
+    client = SequenceLLMClient(
+        [json.dumps({"text": " ".join(["grounded"] * 120)})] * 3
+    )
+
+    with pytest.raises(GroundedWritingError, match="tolerated minimum"):
+        LLMGroundedParagraphWriter(client).write(paragraph_packet)
+
+    assert len(client.calls) == 3
 
 
 def test_paragraph_writer_removes_self_authored_citation_once() -> None:
@@ -910,11 +2485,13 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
     assert first.status == "draft"
     assert len(first.paragraphs) == 3
     assert first.paragraphs[0].evidence_card_ids == [EVIDENCE_ID]
-    assert "[@sun2025_core1, p. 4]" in first.markdown
+    assert "[@sun2025_core1]" in first.markdown
+    assert "p. 4" not in first.markdown
     assert len(first_client.calls) == 3
     assert second_client.calls == []
 
     project_service = WritingProjectService()
+    first = quality_passed(first)
     project = project_service.save_draft(
         project_service.start(active_handoff),
         first,
@@ -956,6 +2533,11 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
     assert reused.paragraphs[0].text == first.paragraphs[0].text
     assert reused.paragraphs[1].text == "Only the explicitly targeted paragraph changes."
     assert reused.paragraphs[2].text == first.paragraphs[2].text
+    repair_payload = json.loads(no_cache_client.calls[0]["messages"][1]["content"])
+    assert repair_payload["locked_evidence_packet"]["paragraph"]["paragraph_number"] == 2
+    assert [
+        item["paragraph_number"] for item in repair_payload["editorial_context"]
+    ] == [1, 3]
 
 
 def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> None:
@@ -1000,7 +2582,8 @@ def test_llm_writes_prose_but_code_adds_citation_and_page() -> None:
     draft = LLMGroundedSectionWriter(client).draft(packet)
 
     assert draft.status == "draft"
-    assert "[@sun2025_core1, p. 4]" in draft.markdown
+    assert "[@sun2025_core1]" in draft.markdown
+    assert "p. 4" not in draft.markdown
     assert draft.citations[0].doi == DOI
     assert draft.citations[0].page_numbers == [4]
     assert client.calls[0]["response_format"] == {"type": "json_object"}
@@ -1069,7 +2652,8 @@ def test_writer_repairs_missing_support_without_rewriting_prose() -> None:
     assert draft.paragraphs[1].source_dois == [SUPPORTING_DOI]
     assert draft.paragraphs[2].evidence_card_ids == [EVIDENCE_ID]
     assert draft.status == "draft"
-    assert "[@sun2025_core1, p. 4]" in draft.markdown
+    assert "[@sun2025_core1]" in draft.markdown
+    assert "p. 4" not in draft.markdown
     repair_prompt = client.calls[1]["messages"][0]["content"]
     assert "do not return or rewrite paragraph text" in repair_prompt
     repair_payload = json.loads(client.calls[1]["messages"][1]["content"])
@@ -1219,6 +2803,17 @@ def test_internal_coverage_instruction_cannot_enter_submit_ready_prose() -> None
     assert any(issue.code == "workflow_instruction_leak" for issue in draft.issues)
 
 
+def test_internal_global_edit_instruction_cannot_enter_submit_ready_prose() -> None:
+    packet = SectionEvidencePacketBuilder().build(handoff(), "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        proposal(text="本段不再重复前述核心判断，而是作为过渡引出后续讨论。"),
+    )
+
+    assert draft.status == "needs_review"
+    assert any(issue.code == "workflow_instruction_leak" for issue in draft.issues)
+
+
 def test_project_requires_human_confirmation_before_body_assembly() -> None:
     active_handoff = handoff()
     packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
@@ -1229,6 +2824,14 @@ def test_project_requires_human_confirmation_before_body_assembly() -> None:
     with pytest.raises(GroundedWritingError, match="confirmed"):
         service.assemble_body(project)
 
+    with pytest.raises(GroundedWritingError, match="quality review passes"):
+        service.confirm_section(
+            project,
+            "method",
+            confirmed_by="student",
+        )
+
+    project = service.save_draft(project, quality_passed(draft))
     project = service.confirm_section(
         project,
         "method",

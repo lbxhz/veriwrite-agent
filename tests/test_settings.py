@@ -15,6 +15,9 @@ def test_settings_load_from_environment(monkeypatch) -> None:
     assert settings.public_summary()["api_key_configured"] is True
     assert settings.public_summary()["temperature"] == 0.2
     assert settings.public_summary()["max_tokens"] == 8192
+    assert settings.public_summary()["reviewer_model"] == "deepseek-chat"
+    assert settings.for_quality_review().model == "deepseek-chat"
+    assert settings.for_quality_review().temperature == 0.1
     assert "test-secret-value" not in repr(settings)
     assert "test-secret-value" not in str(settings.public_summary())
 

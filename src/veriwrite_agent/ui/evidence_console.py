@@ -42,10 +42,19 @@ from veriwrite_agent.services.writing_handoff import (
     WritingOutlineBuilder,
 )
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
+from veriwrite_agent.services.writing_evidence_recovery import (
+    ParagraphEvidenceGap,
+    WritingEvidenceRecoveryRequest,
+)
 from veriwrite_agent.ui.workbench import project_root
 from veriwrite_agent.ui.writing_console import (
+    EVIDENCE_RECOVERY_CHECKPOINT_KEY,
+    EVIDENCE_RECOVERY_REQUEST_KEY,
+    _create_final_repair_checkpoint,
     clear_writing_state,
+    queue_evidence_recovery_resume,
     render_grounded_writing_console,
+    route_evidence_recovery_to_search,
 )
 
 PDF_STATE_KEYS = (
@@ -63,17 +72,36 @@ def render_pdf_acquisition_console(
     selection: BalancedLiteratureSelection,
     *,
     include_writing: bool = True,
+    agent_embedded: bool = False,
 ) -> None:
     """Let users download only core PDFs, then inspect them as a batch."""
 
-    st.divider()
-    st.header("V0.3 获取核心全文并建立证据")
-    st.caption(
-        "Agent 负责确定下载队列、打开权威入口和检查 PDF；用户只处理出版社登录、验证码与下载按钮。"
-    )
+    if not agent_embedded:
+        st.divider()
+        st.header("V0.3 获取核心全文并建立证据")
+        st.caption(
+            "Agent 负责确定下载队列、打开权威入口和检查 PDF；"
+            "用户只处理出版社登录、验证码与下载按钮。"
+        )
     if not selection.selected:
         st.info("V0.2 尚无入选论文，不能建立核心论文下载队列。")
         return
+
+    legacy_inspection_raw = st.session_state.get("v03_pdf_inspection_json")
+    if legacy_inspection_raw:
+        try:
+            legacy_inspection_version = json.loads(legacy_inspection_raw).get(
+                "schema_version"
+            )
+        except (TypeError, json.JSONDecodeError):
+            legacy_inspection_version = None
+        if legacy_inspection_version != "0.3.2":
+            _create_final_repair_checkpoint(
+                ["pdf_identity_rule_upgrade"],
+            )
+            st.session_state.pop("v03_evidence_library_json", None)
+            st.session_state.pop("v03_writing_handoff_json", None)
+            clear_writing_state(preserve_repair_checkpoint=True)
 
     completed_handoff_json = st.session_state.get("v03_writing_handoff_json")
     if completed_handoff_json:
@@ -126,24 +154,64 @@ def render_pdf_acquisition_console(
     default_dois = [
         item.doi for item in selection.selected[: min(default_limit, len(records))]
     ]
-    previous_dois = [
-        doi for doi in st.session_state.get("v03_core_dois", default_dois) if doi in records
-    ]
-    st.write(
-        f"系统已按相关性和主题覆盖选择前 {len(previous_dois)} 篇作为核心论文；"
-        "其余文献保留已验证元数据。"
-    )
-    with st.expander("调整核心论文"):
-        selected_dois = st.multiselect(
-            "需要全文核验的论文",
-            options=list(records),
-            default=previous_dois,
-            format_func=lambda doi: f"{records[doi].title} · {doi}",
-            help=(
-                "快速联通测试默认取 1 篇，真实项目默认取排序靠前的 8 篇；"
-                "只有确实需要改变核心范围时才调整。"
-            ),
+    recovery = _load_evidence_recovery_request(include_blocked=True)
+    if recovery is not None:
+        unavailable_dois = set(recovery.unavailable_full_text_dois)
+        recovery_candidates = [
+            item.doi
+            for item in selection.selected
+            if item.suitable_section_id in recovery.affected_section_ids
+            and item.doi not in unavailable_dois
+        ]
+        default_dois = list(
+            dict.fromkeys(
+                [
+                    *(
+                        doi
+                        for doi in _recovery_existing_core_dois()
+                        if doi not in unavailable_dois
+                    ),
+                    *(
+                        doi
+                        for doi in recovery.requested_core_dois
+                        if doi not in unavailable_dois
+                    ),
+                    *recovery_candidates[:4],
+                ]
+            )
         )
+    saved_dois = list(st.session_state.get("v03_core_dois", []))
+    previous_dois = [
+        doi
+        for doi in (
+            list(dict.fromkeys([*saved_dois, *default_dois]))
+            if recovery is not None
+            else (saved_dois or default_dois)
+        )
+        if doi in records
+    ]
+    if agent_embedded:
+        selected_dois = previous_dois
+        st.caption(
+            f"正在自动核验 {len(selected_dois)} 篇候选全文；"
+            "不可获取来源会先由系统批量寻找替代文献。"
+        )
+    else:
+        st.write(
+            f"系统已按相关性和主题覆盖选择前 {len(previous_dois)} 篇作为核心论文；"
+            "其余文献保留已验证元数据。"
+        )
+        with st.expander("调整核心论文"):
+            selected_dois = st.multiselect(
+                "需要全文核验的论文",
+                options=list(records),
+                default=previous_dois,
+                format_func=lambda doi: f"{records[doi].title} · {doi}",
+                help=(
+                    "快速联通测试默认取 1 篇，真实项目默认取排序靠前的 8 篇；"
+                    "只有确实需要改变核心范围时才调整。"
+                ),
+            )
     if selected_dois != previous_dois:
         st.session_state.pop("v03_pdf_inspection_json", None)
         st.session_state.pop("v03_evidence_library_json", None)
@@ -155,7 +223,19 @@ def render_pdf_acquisition_console(
         st.warning("请至少选择一篇核心论文。")
         return
 
-    with st.expander("核心论文下载队列", expanded=True):
+    # Internal recovery favors the newest downloads and must return control to
+    # the V0.4 status surface quickly.  The standalone V0.3 inspector keeps the
+    # broader diagnostic window for users who explicitly open that stage.
+    pdf_inspector = PdfAcquisitionInspector(max_files=30 if agent_embedded else 100)
+
+    recovery_blocked = bool(
+        (recovery := _load_evidence_recovery_request(include_blocked=True))
+        and recovery.status == "blocked"
+    )
+    with st.expander(
+        "合并后的核心论文下载清单" if recovery_blocked else "核心论文下载队列",
+        expanded=(not agent_embedded or recovery_blocked),
+    ):
         for index, doi in enumerate(selected_dois, 1):
             record = records[doi]
             left, right = st.columns([5, 1])
@@ -175,13 +255,29 @@ def render_pdf_acquisition_console(
         help="点击出版社的下载按钮后，文件通常会保存到这里。",
     )
     st.session_state["v03_download_directory"] = download_directory
-    st.info("下载完成后点击扫描；系统会自动匹配文件并检查身份、完整性和可提取性。")
+    if not agent_embedded or recovery_blocked:
+        st.info(
+            "系统会按下载时间从新到旧检查文件；找到全部目标的完整 PDF 后立即停止，"
+            "并核验 DOI、题名、完整性和文本可提取性。"
+        )
 
-    if st.button(
-        "我已下载，扫描核心 PDF",
-        type="primary",
-        width="stretch",
-    ):
+    manual_scan = False
+    if not agent_embedded or recovery_blocked:
+        manual_scan = st.button(
+            (
+                "我已完成合并清单，重新扫描"
+                if recovery_blocked
+                else "我已下载，扫描核心 PDF"
+            ),
+            type="primary",
+            width="stretch",
+        )
+    auto_scan_recovery = (
+        recovery is not None
+        and recovery.status != "blocked"
+        and "v03_pdf_inspection_json" not in st.session_state
+    )
+    if manual_scan or auto_scan_recovery:
         expectations = [
             CorePaperExpectation(
                 doi=doi,
@@ -191,8 +287,13 @@ def render_pdf_acquisition_console(
             )
             for doi in selected_dois
         ]
-        with st.spinner("正在匹配并检查 PDF……"):
-            batch = PdfAcquisitionInspector().scan_download_directory(
+        spinner_text = (
+            "正在自动检查已有 PDF；只把确实缺失的下载任务留给你……"
+            if auto_scan_recovery
+            else "正在匹配并检查 PDF……"
+        )
+        with st.spinner(spinner_text):
+            batch = pdf_inspector.scan_download_directory(
                 expectations,
                 download_directory,
             )
@@ -206,6 +307,51 @@ def render_pdf_acquisition_console(
     if not serialized:
         return
     batch = PdfInspectionBatch.model_validate_json(serialized)
+    inspected_dois = {report.expectation.doi for report in batch.reports}
+    if inspected_dois != set(selected_dois):
+        expectations = [
+            CorePaperExpectation(
+                doi=doi,
+                title=records[doi].title,
+                source_url=f"https://doi.org/{quote(doi, safe='/')}",
+                theme_id=records[doi].theme_id,
+            )
+            for doi in selected_dois
+        ]
+        with st.spinner("核心队列已更新，正在自动复核新增全文……"):
+            batch = pdf_inspector.scan_download_directory(
+                expectations,
+                download_directory,
+            )
+        st.session_state["v03_pdf_inspection_json"] = batch.model_dump_json(indent=2)
+        st.session_state.pop("v03_evidence_library_json", None)
+        st.session_state.pop("v03_writing_handoff_json", None)
+        clear_writing_state()
+        st.rerun()
+    if batch.schema_version != "0.3.2":
+        expectations = [
+            CorePaperExpectation(
+                doi=doi,
+                title=records[doi].title,
+                source_url=f"https://doi.org/{quote(doi, safe='/')}",
+                theme_id=records[doi].theme_id,
+            )
+            for doi in selected_dois
+        ]
+        with st.spinner("正在用新版首页身份规则复核旧 PDF 缓存……"):
+            batch = pdf_inspector.scan_download_directory(
+                expectations,
+                download_directory,
+            )
+        st.session_state["v03_pdf_inspection_json"] = batch.model_dump_json(indent=2)
+        st.session_state.pop("v03_evidence_library_json", None)
+        st.session_state.pop("v03_writing_handoff_json", None)
+        clear_writing_state()
+        st.session_state["mvp_flash"] = (
+            "旧版 PDF 身份缓存已按首页题名/DOI 规则重新核验；"
+            "正文通用术语不再能把无关论文误判为目标全文。"
+        )
+        st.rerun()
     _render_pdf_results(batch)
     _render_evidence_pipeline(selection, batch, include_writing=include_writing)
 
@@ -213,6 +359,40 @@ def render_pdf_acquisition_console(
 def clear_pdf_acquisition_state() -> None:
     for key in PDF_STATE_KEYS:
         st.session_state.pop(key, None)
+
+
+def _load_evidence_recovery_request(
+    *,
+    include_blocked: bool = False,
+) -> WritingEvidenceRecoveryRequest | None:
+    raw = st.session_state.get(EVIDENCE_RECOVERY_REQUEST_KEY)
+    if not raw:
+        return None
+    try:
+        request = WritingEvidenceRecoveryRequest.model_validate_json(raw)
+    except (TypeError, ValueError):
+        return None
+    if request.status == "resolved":
+        return None
+    if request.status == "blocked" and not include_blocked:
+        return None
+    return request
+
+
+def _recovery_existing_core_dois() -> list[str]:
+    raw = st.session_state.get(EVIDENCE_RECOVERY_CHECKPOINT_KEY)
+    if not raw:
+        return []
+    try:
+        checkpoint = json.loads(raw)
+        handoff = V04WritingHandoff.model_validate_json(checkpoint["handoff_json"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return [
+        record.doi
+        for record in handoff.evidence_library.records
+        if record.evidence_tier == "A_core"
+    ]
 
 
 def _render_pdf_results(batch: PdfInspectionBatch) -> None:
@@ -254,6 +434,15 @@ def _render_pdf_results(batch: PdfInspectionBatch) -> None:
     )
     if counts["missing"]:
         st.warning("缺失项会保留在队列中；下载后重新扫描即可继续，不需要重跑 V0.1/V0.2。")
+        recovery = _load_evidence_recovery_request()
+        if recovery is not None and st.button(
+            "无法获取这些全文，自动补搜替代论文",
+            type="primary",
+            width="stretch",
+            key="v03_recovery_search_replacements",
+        ):
+            route_evidence_recovery_to_search(recovery)
+            st.rerun()
     if batch.unmatched_files:
         with st.expander("未能匹配到核心论文的其他 PDF"):
             st.code("\n".join(batch.unmatched_files))
@@ -280,6 +469,55 @@ def _render_evidence_pipeline(
     st.subheader("全文证据与写作准备")
     verified_count = sum(report.status == "verified" for report in batch.reports)
     if verified_count == 0:
+        recovery_request = _load_evidence_recovery_request()
+        missing_dois = [
+            report.expectation.doi
+            for report in batch.reports
+            if report.status == "missing"
+        ]
+        if recovery_request is not None and missing_dois:
+            unavailable_dois = list(
+                dict.fromkeys(
+                    [
+                        *recovery_request.unavailable_full_text_dois,
+                        *missing_dois,
+                    ]
+                )
+            )
+            next_round = recovery_request.recovery_round + 1
+            if next_round <= recovery_request.max_recovery_rounds:
+                retried_request = recovery_request.model_copy(
+                    update={
+                        "status": "pending_search",
+                        "recovery_round": next_round,
+                        "unavailable_full_text_dois": unavailable_dois,
+                    }
+                )
+                route_evidence_recovery_to_search(retried_request)
+                st.session_state["mvp_flash"] = (
+                    f"本轮 {len(missing_dois)} 篇候选全文均无法从本地取得；"
+                    "Agent 已记录这些 DOI 并自动补搜替代论文，不需要用户逐轮下载。"
+                )
+                st.rerun()
+            blocked_request = recovery_request.model_copy(
+                update={
+                    "status": "blocked",
+                    "unavailable_full_text_dois": unavailable_dois,
+                    "blocked_reason": (
+                        "自动替代全文已达到恢复上限；需要一次性下载合并清单中的"
+                        "受限 PDF。"
+                    ),
+                }
+            )
+            st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = (
+                blocked_request.model_dump_json(indent=2)
+            )
+            st.session_state["mvp_navigation_request"] = "writing"
+            st.session_state["mvp_flash"] = (
+                "Agent 已完成全部自动替代尝试；现在只请求一次人工操作，"
+                "所需 PDF 已合并为一张下载清单。"
+            )
+            st.rerun()
         st.warning("当前没有通过身份与完整性检查的PDF，不能提取全文证据。")
         return
 
@@ -287,11 +525,12 @@ def _render_evidence_pipeline(
         "代码固定 DOI、文件哈希、页码和原文；DeepSeek只对候选页面做语义归类。"
     )
     if "v03_evidence_library_json" not in st.session_state:
+        recovery_extract = _load_evidence_recovery_request() is not None
         if st.button(
             "提取证据并准备写作",
             type="primary",
             width="stretch",
-        ):
+        ) or recovery_extract:
             try:
                 with st.spinner("正在分页提取PDF、生成证据并检查章节覆盖……"):
                     library = _build_evidence_library(selection, batch)
@@ -345,6 +584,146 @@ def _render_evidence_pipeline(
     )
     blockers = [*library.unresolved_issues, *outline.unresolved_gaps]
     if blockers:
+        recovery_request = _load_evidence_recovery_request()
+        missing_recovery_pdfs = [
+            issue
+            for issue in library.unresolved_issues
+            if issue.startswith("core_pdf_missing:")
+        ]
+        if recovery_request is not None and missing_recovery_pdfs:
+            unavailable_dois = list(
+                dict.fromkeys(
+                    [
+                        *recovery_request.unavailable_full_text_dois,
+                        *(
+                            issue.removeprefix("core_pdf_missing:")
+                            for issue in missing_recovery_pdfs
+                        ),
+                    ]
+                )
+            )
+            next_round = recovery_request.recovery_round + 1
+            if next_round <= recovery_request.max_recovery_rounds:
+                retried_request = recovery_request.model_copy(
+                    update={
+                        "recovery_round": next_round,
+                        "status": "pending_search",
+                        "unavailable_full_text_dois": unavailable_dois,
+                    }
+                )
+                route_evidence_recovery_to_search(retried_request)
+                st.session_state["mvp_flash"] = (
+                    f"已有全文已生成 {len(library.evidence_cards)} 张证据卡；"
+                    f"另有 {len(missing_recovery_pdfs)} 篇全文确实无法从本地获得。"
+                    "系统正在自动补搜同一研究问题的替代论文，不需要手动调整关键词。"
+                )
+                st.rerun()
+            missing_dois = set(unavailable_dois)
+            remaining_core_dois = [
+                doi
+                for doi in st.session_state.get("v03_core_dois", [])
+                if doi not in missing_dois
+            ]
+            if remaining_core_dois:
+                reduced_request = recovery_request.model_copy(
+                    update={
+                        "status": "pending_full_text",
+                        "unavailable_full_text_dois": unavailable_dois,
+                    }
+                )
+                st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = (
+                    reduced_request.model_dump_json(indent=2)
+                )
+                st.session_state["v03_core_dois"] = remaining_core_dois
+                for key in (
+                    "v03_pdf_inspection_json",
+                    "v03_evidence_library_json",
+                    "v03_writing_handoff_json",
+                ):
+                    st.session_state.pop(key, None)
+                clear_writing_state()
+                st.session_state["mvp_flash"] = (
+                    f"{len(missing_recovery_pdfs)} 篇候选全文仍不可获得，系统已将其从核心队列剔除；"
+                    f"将使用其余 {len(remaining_core_dois)} 篇可验证全文重建证据库。"
+                )
+                st.rerun()
+            blocked_request = recovery_request.model_copy(
+                update={
+                    "status": "blocked",
+                    "blocked_reason": (
+                        "定向补搜后仍无法取得满足同一论点的完整全文；"
+                        "需要检查题目边界，或由用户下载受限 PDF。"
+                    ),
+                }
+            )
+            st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = (
+                blocked_request.model_dump_json(indent=2)
+            )
+            st.error(
+                "系统已完成两轮自动恢复，但替代全文仍不足。"
+                "已停止循环并保留全部已成功证据；现在只需要下载缺失 PDF，"
+                "或调整该段的论证范围。"
+            )
+        if recovery_request is not None and outline.unresolved_gaps:
+            gap_sections = [
+                section for section in outline.sections if section.evidence_gap
+            ]
+            gap_ids = {section.section_id for section in gap_sections}
+            previous_ids = set(recovery_request.affected_section_ids)
+            new_incident = bool(gap_ids - previous_ids)
+            next_round = 1 if new_incident else recovery_request.recovery_round + 1
+            if next_round <= recovery_request.max_recovery_rounds:
+                themes = {
+                    theme.theme_id: theme for theme in selection.blueprint.themes
+                }
+                gaps = [
+                    ParagraphEvidenceGap(
+                        section_id=section.section_id,
+                        section_title=section.title,
+                        paragraph_number=1,
+                        reason="detailed_claim_requires_full_text",
+                        claim_focus=section.purpose,
+                        central_question=(
+                            section.research_questions[0]
+                            if section.research_questions
+                            else section.purpose
+                        ),
+                        missing_full_text_dois=[],
+                        available_direct_evidence_dois=section.core_dois,
+                        search_queries=(
+                            themes[section.section_id].search_queries
+                            if section.section_id in themes
+                            else [f"{outline.topic} {section.title}"]
+                        ),
+                        detail=(
+                            "PDF 身份复核或证据重建后，本章节仍缺少可追溯全文；"
+                            "需要按同一研究问题补搜新的核心来源。"
+                        ),
+                    )
+                    for section in gap_sections
+                ]
+                expanded_request = recovery_request.model_copy(
+                    update={
+                        "status": "pending_search",
+                        "affected_section_ids": list(
+                            dict.fromkeys(gap.section_id for gap in gaps)
+                        ),
+                        "gaps": gaps,
+                        "requested_core_dois": [],
+                        "search_queries_by_section": {
+                            gap.section_id: gap.search_queries for gap in gaps
+                        },
+                        "recovery_round": next_round,
+                        "planning_repair_round": 0,
+                        "blocked_reason": None,
+                    }
+                )
+                route_evidence_recovery_to_search(expanded_request)
+                st.session_state["mvp_flash"] = (
+                    "PDF 身份复核后出现新的章节证据缺口；系统已把它识别为新的"
+                    "恢复事件，正在按该章节研究问题补搜替代全文。"
+                )
+                st.rerun()
         extraction_failures = [
             issue
             for issue in library.unresolved_issues
@@ -386,11 +765,13 @@ def _render_evidence_pipeline(
 
     handoff_json = st.session_state.get("v03_writing_handoff_json")
     if not handoff_json:
+        recovery_request = _load_evidence_recovery_request(include_blocked=True)
+        recovery_adopt = recovery_request is not None
         if st.button(
             "采用这些证据并进入写作",
             type="primary",
             width="stretch",
-        ):
+        ) or recovery_adopt:
             confirmed_library = EvidenceLibraryConfirmationService().confirm(
                 library,
                 confirmed_by=confirmed_requirement.confirmed_by,
@@ -410,8 +791,19 @@ def _render_evidence_pipeline(
                 confirmed_library.model_dump_json(indent=2)
             )
             st.session_state["v03_writing_handoff_json"] = handoff.model_dump_json(indent=2)
+            if recovery_request is not None:
+                st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = (
+                    recovery_request.model_copy(
+                        update={"status": "ready_to_resume", "blocked_reason": None}
+                    ).model_dump_json(indent=2)
+                )
             clear_writing_state()
-            st.session_state["mvp_flash"] = "证据与写作章节已锁定，可以开始正文。"
+            queue_evidence_recovery_resume()
+            st.session_state["mvp_flash"] = (
+                "证据已补齐，系统将自动更新受影响章节的计划并继续写作。"
+                if recovery_adopt
+                else "证据与写作章节已锁定，可以开始正文。"
+            )
             st.session_state["mvp_navigation_request"] = "writing"
             st.rerun()
         with st.expander("导出证据库草案"):

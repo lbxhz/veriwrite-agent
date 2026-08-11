@@ -7,7 +7,11 @@ from typing import Any, Sequence
 from openai import OpenAI
 
 from veriwrite_agent.config.settings import LLMSettings
-from veriwrite_agent.llm.base import ChatMessage, LLMResponseError
+from veriwrite_agent.llm.base import (
+    ChatMessage,
+    LLMOutputTruncatedError,
+    LLMResponseError,
+)
 
 
 class DeepSeekClient:
@@ -39,7 +43,14 @@ class DeepSeekClient:
             request["response_format"] = response_format
 
         response = self._client.chat.completions.create(**request)
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        content = choice.message.content
+        if getattr(choice, "finish_reason", None) == "length":
+            raise LLMOutputTruncatedError(
+                "The LLM provider truncated its output at the configured "
+                f"max_tokens={self._settings.max_tokens} limit "
+                f"after {len(content or '')} characters"
+            )
         if not content:
             raise LLMResponseError("The LLM provider returned empty content")
         return content

@@ -191,3 +191,92 @@ def test_repairs_best_theme_id_from_the_supplied_scores() -> None:
 
     assert assessments[0].best_theme_id == "aerosol"
     assert len(client.calls) == 1
+
+
+def test_downgrades_self_contradictory_admission_to_manual_review() -> None:
+    response = json.loads(assessment_response(["10.1000/aerosol"]))
+    response["assessments"][0]["centrality"] = "peripheral"
+    client = SequenceLLMClient([json.dumps(response)])
+
+    assessments = LLMLiteratureRelevanceScorer(client).score(
+        blueprint(),
+        [verified("10.1000/aerosol", "Satellite aerosol retrieval")],
+    )
+
+    assert assessments[0].admission_status == "manual_review"
+    assert assessments[0].centrality == "peripheral"
+    assert len(client.calls) == 1
+
+
+def test_splits_a_batch_after_truncated_json_and_preserves_all_papers() -> None:
+    papers = [
+        verified("10.1000/aerosol-1", "Satellite aerosol retrieval one"),
+        verified("10.1000/aerosol-2", "Satellite aerosol retrieval two"),
+        verified("10.1000/methane-1", "Satellite methane retrieval one"),
+        verified("10.1000/methane-2", "Satellite methane retrieval two"),
+    ]
+    client = SequenceLLMClient(
+        [
+            '{"assessments":[{"doi":"10.1000/aerosol-1',
+            assessment_response([paper.candidate.doi for paper in papers[:2]]),
+            assessment_response([paper.candidate.doi for paper in papers[2:]]),
+        ]
+    )
+
+    assessments = LLMLiteratureRelevanceScorer(client, batch_size=4).score(
+        blueprint(),
+        papers,
+    )
+
+    assert [item.doi for item in assessments] == [
+        paper.candidate.doi for paper in papers
+    ]
+    assert len(client.calls) == 3
+
+
+def test_retries_one_paper_once_after_malformed_json() -> None:
+    paper = verified("10.1000/aerosol", "Satellite aerosol retrieval")
+    client = SequenceLLMClient(
+        [
+            '{"assessments":[{"doi":"10.1000/aerosol',
+            assessment_response([paper.candidate.doi]),
+        ]
+    )
+
+    assessments = LLMLiteratureRelevanceScorer(client, batch_size=1).score(
+        blueprint(),
+        [paper],
+    )
+
+    assert [item.doi for item in assessments] == [paper.candidate.doi]
+    assert len(client.calls) == 2
+
+
+def test_splits_a_batch_when_scope_repair_still_omits_a_doi() -> None:
+    papers = [
+        verified("10.1000/aerosol-1", "Satellite aerosol retrieval one"),
+        verified("10.1000/aerosol-2", "Satellite aerosol retrieval two"),
+        verified("10.1000/methane-1", "Satellite methane retrieval one"),
+        verified("10.1000/methane-2", "Satellite methane retrieval two"),
+    ]
+    missing_one = assessment_response(
+        [paper.candidate.doi for paper in papers[:3]]
+    )
+    client = SequenceLLMClient(
+        [
+            missing_one,
+            missing_one,
+            assessment_response([paper.candidate.doi for paper in papers[:2]]),
+            assessment_response([paper.candidate.doi for paper in papers[2:]]),
+        ]
+    )
+
+    assessments = LLMLiteratureRelevanceScorer(client, batch_size=4).score(
+        blueprint(),
+        papers,
+    )
+
+    assert [item.doi for item in assessments] == [
+        paper.candidate.doi for paper in papers
+    ]
+    assert len(client.calls) == 4

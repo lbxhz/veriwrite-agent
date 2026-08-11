@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 import time
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field as dataclass_field
+from http.client import HTTPException
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -29,6 +29,7 @@ HttpOpener = Callable[..., Any]
 class _QueryState:
     query: str
     raw_limit: int
+    offset: int | None = None
     cursor: str = "*"
     raw_seen: int = 0
     finished: bool = False
@@ -78,10 +79,17 @@ class CrossrefSearchProvider:
 
     def search(self, plan: LiteratureSearchPlan) -> Iterable[LiteratureCandidate]:
         queries = plan.search_queries
-        per_query_limit = math.ceil(plan.max_candidates / len(queries))
+        default_limits = _allocate_query_budget(plan.max_candidates, queries)
         states = [
-            _QueryState(query=query, raw_limit=per_query_limit)
+            _QueryState(
+                query=query,
+                raw_limit=(
+                    plan.query_limits.get(query, default_limits[query])
+                ),
+                offset=(plan.query_offsets.get(query) if plan.query_offsets else None),
+            )
             for query in queries
+            if plan.query_limits.get(query, default_limits[query]) > 0
         ]
         total_yielded = 0
 
@@ -120,6 +128,7 @@ class CrossrefSearchProvider:
             state.query,
             state.cursor,
             rows,
+            offset=state.offset,
         )
         message = payload.get("message")
         if not isinstance(message, dict):
@@ -141,6 +150,9 @@ class CrossrefSearchProvider:
         if len(items) < rows or state.raw_seen >= state.raw_limit:
             state.finished = True
             return
+        if state.offset is not None:
+            state.offset += len(items)
+            return
         next_cursor = message.get("next-cursor")
         if (
             not isinstance(next_cursor, str)
@@ -158,18 +170,23 @@ class CrossrefSearchProvider:
         query: str,
         cursor: str,
         rows: int,
+        *,
+        offset: int | None = None,
     ) -> dict[str, Any]:
         filters = [f"type:{plan.work_type}"]
         if plan.year_from is not None:
             filters.append(f"from-pub-date:{plan.year_from}-01-01")
         if plan.year_to is not None:
             filters.append(f"until-pub-date:{plan.year_to}-12-31")
-        params = {
+        params: dict[str, str | int] = {
             "query.bibliographic": query,
             "filter": ",".join(filters),
             "rows": rows,
-            "cursor": cursor,
         }
+        if offset is None:
+            params["cursor"] = cursor
+        else:
+            params["offset"] = offset
         if self._mailto:
             params["mailto"] = self._mailto
         url = f"https://api.crossref.org/works?{urlencode(params)}"
@@ -203,7 +220,13 @@ class CrossrefSearchProvider:
                 last_error = exc
                 if exc.code != 429 and exc.code < 500:
                     break
-            except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+            except (
+                URLError,
+                TimeoutError,
+                OSError,
+                HTTPException,
+                json.JSONDecodeError,
+            ) as exc:
                 last_error = exc
             if attempt < self._max_retries:
                 self._sleeper(0.5 * (2**attempt))
@@ -321,3 +344,16 @@ class CrossrefSearchProvider:
             ):
                 return date_parts[0][0]
         return None
+
+
+def _allocate_query_budget(
+    total: int,
+    queries: list[str],
+) -> dict[str, int]:
+    """Distribute an exact result window across queries without over-fetching."""
+
+    base, remainder = divmod(total, len(queries))
+    return {
+        query: base + (1 if index < remainder else 0)
+        for index, query in enumerate(queries)
+    }

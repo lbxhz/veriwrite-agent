@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -69,6 +70,11 @@ class PdfAcquisitionInspector:
                     for expectation in expectations
                 ],
             )
+        if not expectations:
+            return PdfInspectionBatch(
+                download_directory=str(download_directory),
+                inspected_file_count=0,
+            )
 
         paths = sorted(
             (
@@ -80,21 +86,47 @@ class PdfAcquisitionInspector:
             key=lambda item: item.stat().st_mtime,
             reverse=True,
         )[: self.max_files]
-        snapshots = [self._read_snapshot(path) for path in paths]
         assignments: dict[str, tuple[_PdfSnapshot, float]] = {}
         used_paths: set[Path] = set()
-
-        scored_pairs: list[
-            tuple[float, CorePaperExpectation, _PdfSnapshot]
+        inspected_snapshots: list[_PdfSnapshot] = []
+        fallback_pairs: list[
+            tuple[float, int, CorePaperExpectation, _PdfSnapshot]
         ] = []
-        for expectation in expectations:
-            for snapshot in snapshots:
-                score, _ = self._identity_score(expectation, snapshot)
-                if score >= 0.8:
-                    scored_pairs.append((score, expectation, snapshot))
-        scored_pairs.sort(key=lambda item: item[0], reverse=True)
 
-        for score, expectation, snapshot in scored_pairs:
+        # Downloads are already sorted newest first. Inspect incrementally and
+        # stop as soon as every expected paper has a complete verified PDF.
+        # Non-PDF/OCR/review candidates are retained as fallbacks, but do not
+        # prevent the scanner from looking for a better copy further down.
+        for recency_rank, path in enumerate(paths):
+            snapshot = self._read_snapshot(path)
+            inspected_snapshots.append(snapshot)
+            scored = sorted(
+                (
+                    (self._identity_score(expectation, snapshot)[0], expectation)
+                    for expectation in expectations
+                    if expectation.doi not in assignments
+                ),
+                key=lambda item: item[0],
+                reverse=True,
+            )
+            if not scored or scored[0][0] < 0.8:
+                continue
+            score, expectation = scored[0]
+            report = self._report(expectation, snapshot)
+            if report.status == "verified":
+                assignments[expectation.doi] = (snapshot, score)
+                used_paths.add(snapshot.path)
+                if len(assignments) == len(expectations):
+                    break
+                continue
+            fallback_pairs.append(
+                (score, -recency_rank, expectation, snapshot)
+            )
+
+        # Preserve actionable invalid/OCR reports only when no verified copy
+        # was found. Higher identity confidence wins, then the newer file.
+        fallback_pairs.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        for score, _recency, expectation, snapshot in fallback_pairs:
             if expectation.doi in assignments or snapshot.path in used_paths:
                 continue
             assignments[expectation.doi] = (snapshot, score)
@@ -110,11 +142,11 @@ class PdfAcquisitionInspector:
 
         return PdfInspectionBatch(
             download_directory=str(download_directory),
-            inspected_file_count=len(snapshots),
+            inspected_file_count=len(inspected_snapshots),
             reports=reports,
             unmatched_files=[
                 str(snapshot.path)
-                for snapshot in snapshots
+                for snapshot in inspected_snapshots
                 if snapshot.path not in used_paths
             ],
         )
@@ -239,14 +271,20 @@ class PdfAcquisitionInspector:
             metadata_text = " ".join(
                 str(value) for value in metadata.values() if value
             )
-            for page in reader.pages[: self.text_page_limit]:
+            for page_index, page in enumerate(
+                reader.pages[: self.text_page_limit]
+            ):
                 try:
                     page_text = page.extract_text() or ""
                 except Exception:
                     page_text = ""
                 if page_text.strip():
                     extractable_page_count += 1
-                    text_parts.append(page_text)
+                    # DOI/title identity belongs on the article's first page. Searching
+                    # several body/reference pages lets common title words or a cited DOI
+                    # create a high-scoring false match to an unrelated PDF.
+                    if page_index == 0:
+                        text_parts.append(page_text)
         except Exception as exc:
             issues.append(
                 PdfInspectionIssue(
@@ -282,6 +320,26 @@ class PdfAcquisitionInspector:
     ) -> PdfInspectionReport:
         score, basis = self._identity_score(expectation, snapshot)
         issues = list(snapshot.issues)
+        detected_dois = sorted(
+            _extract_dois(snapshot.text) | _extract_dois(snapshot.metadata)
+        )
+        conflicting_dois = _conflicting_dois(
+            expectation.doi,
+            snapshot.text,
+            snapshot.metadata,
+        )
+        if conflicting_dois:
+            issues.append(
+                PdfInspectionIssue(
+                    code="doi_conflict",
+                    severity="blocking",
+                    detail=(
+                        "PDF 首页或元数据中的 DOI 与目标文献不一致："
+                        f"目标={expectation.doi}；检测到={', '.join(conflicting_dois)}。"
+                        "不能用标题词相似度覆盖 DOI 身份冲突。"
+                    ),
+                )
+            )
         blocking = any(issue.severity == "blocking" for issue in issues)
         if score < 0.8:
             issues.append(
@@ -314,6 +372,7 @@ class PdfAcquisitionInspector:
             extractable_page_count=snapshot.extractable_page_count,
             identity_score=score,
             identity_basis=basis,
+            detected_dois=detected_dois,
             issues=issues,
         )
 
@@ -328,16 +387,24 @@ class PdfAcquisitionInspector:
         filename = snapshot.path.stem.casefold()
         basis: list[PdfIdentityBasis] = []
 
-        if expected_doi in text or expected_doi in _extract_dois(text):
+        if _conflicting_dois(expectation.doi, snapshot.text, snapshot.metadata):
+            return 0.0, basis
+
+        text_dois = _extract_dois(text)
+        metadata_dois = _extract_dois(metadata)
+        if expected_doi in _normalized_doi_text(text) or expected_doi in text_dois:
             basis.append("doi_text")
-        if expected_doi in metadata or expected_doi in _extract_dois(metadata):
+        if (
+            expected_doi in _normalized_doi_text(metadata)
+            or expected_doi in metadata_dois
+        ):
             basis.append("doi_metadata")
         filename_doi = re.sub(r"[^a-z0-9]", "", expected_doi)
         if filename_doi and filename_doi in re.sub(r"[^a-z0-9]", "", filename):
             basis.append("filename")
 
-        title_text_score = _title_coverage(expectation.title, snapshot.text)
-        title_metadata_score = _title_coverage(
+        title_text_score = _title_similarity(expectation.title, snapshot.text)
+        title_metadata_score = _title_similarity(
             expectation.title,
             snapshot.metadata,
         )
@@ -371,16 +438,76 @@ class PdfAcquisitionInspector:
         )
 
 
-def _extract_dois(value: str) -> str:
-    return " ".join(match.group(0).rstrip(".,;)") for match in DOI_PATTERN.finditer(value))
+def _normalized_doi_text(value: str) -> str:
+    """Normalize whitespace around DOI separators before identity checks."""
+
+    normalized = value.casefold()
+    normalized = re.sub(r"(10\.\d{4,9})\s*/\s*", r"\1/", normalized)
+    # PDF glyph positioning can insert spaces inside a DOI, for example
+    # ``10.1016/j.atmosenv.2008.07 .018``. Remove whitespace only when it
+    # directly precedes DOI punctuation followed by an identifier character.
+    return re.sub(r"(?<=[a-z0-9])\s+(?=[._;()/:][a-z0-9])", "", normalized)
 
 
-def _title_coverage(expected_title: str, candidate: str) -> float:
+def _extract_dois(value: str) -> set[str]:
+    normalized = _normalized_doi_text(value)
+    return {
+        match.group(0).rstrip(".,;:)").casefold()
+        for match in DOI_PATTERN.finditer(normalized)
+    }
+
+
+def _conflicting_dois(expected_doi: str, *values: str) -> list[str]:
+    expected = expected_doi.casefold()
+    detected = set().union(*(_extract_dois(value) for value in values))
+    normalized_values = " ".join(_normalized_doi_text(value) for value in values)
+    if expected in normalized_values:
+        detected.add(expected)
+    if detected and expected not in detected:
+        return sorted(detected)
+    return []
+
+
+def evidence_document_identity_conflicts(library) -> dict[str, list[str]]:
+    """Find full-text records whose first page declares a different DOI."""
+
+    full_text_dois = {
+        record.doi
+        for record in getattr(library, "records", [])
+        if getattr(record, "evidence_status", None) == "full_text_verified"
+    }
+    first_page_text: dict[str, list[str]] = {}
+    for page in getattr(library, "pages", []):
+        if page.page_number == 1 and page.doi in full_text_dois:
+            first_page_text.setdefault(page.doi, []).append(page.text)
+    conflicts: dict[str, list[str]] = {}
+    for expected_doi, parts in first_page_text.items():
+        detected = _conflicting_dois(expected_doi, "\n".join(parts))
+        if detected:
+            conflicts[expected_doi] = detected
+    return conflicts
+
+
+def _title_similarity(expected_title: str, candidate: str) -> float:
+    """Measure an ordered, local title match instead of page-wide token overlap."""
+
     expected_tokens = _meaningful_tokens(expected_title)
     if not expected_tokens:
-        return 0
-    candidate_tokens = set(_meaningful_tokens(candidate))
-    return len(set(expected_tokens) & candidate_tokens) / len(set(expected_tokens))
+        return 0.0
+    candidate_tokens = _meaningful_tokens(candidate)
+    if not candidate_tokens:
+        return 0.0
+    expected_count = len(expected_tokens)
+    minimum = max(1, expected_count - 2)
+    maximum = min(len(candidate_tokens), expected_count + 3)
+    best = 0.0
+    for size in range(minimum, maximum + 1):
+        for start in range(0, len(candidate_tokens) - size + 1):
+            window = candidate_tokens[start : start + size]
+            score = SequenceMatcher(None, expected_tokens, window).ratio()
+            if score > best:
+                best = score
+    return best
 
 
 def _meaningful_tokens(value: str) -> list[str]:

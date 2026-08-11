@@ -114,6 +114,9 @@ class LiteratureBlueprintPlanner:
             raise BlueprintPlanningError(
                 "literature blueprint has no actionable topic boundary"
             )
+        effective_policy = policy.model_copy(
+            update={"topic_boundary": topic_boundary}
+        )
 
         try:
             return LiteratureSearchBlueprint.model_validate(
@@ -125,8 +128,12 @@ class LiteratureBlueprintPlanner:
                     "accepted_tiers": ["T1", "T2", "T3", "T4", "T5", "T6"],
                     "year_from": policy.references.year_from,
                     "year_to": policy.references.year_to,
-                    "max_candidates": 300,
-                    "requirement_policy": policy,
+                    "max_candidates": min(1000, max(300, target_total * 15)),
+                    # The boundary may be proposed here when V0.1 contained only a
+                    # broad topic. Blueprint confirmation is the user gate that makes
+                    # it executable, so downstream V0.3/V0.4 must receive the same
+                    # boundary rather than silently falling back to the empty V0.1 one.
+                    "requirement_policy": effective_policy,
                 }
             )
         except ValidationError as exc:

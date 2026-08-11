@@ -1,4 +1,5 @@
 from email.message import Message
+from http.client import RemoteDisconnected
 from urllib.error import HTTPError, URLError
 
 from veriwrite_agent.literature.doi import (
@@ -100,6 +101,45 @@ def test_doi_resolver_distinguishes_missing_doi_from_network_failure() -> None:
     assert unavailable_result.attempts == 3
     assert attempts == 3
     assert sleeps == [0.5, 1.0]
+
+
+def test_doi_adapters_retry_remote_disconnects_without_aborting_the_batch() -> None:
+    resolver_attempts = 0
+    metadata_attempts = 0
+
+    def resolver_opener(_request: object, *, timeout: float) -> FakeResponse:
+        nonlocal resolver_attempts
+        resolver_attempts += 1
+        if resolver_attempts == 1:
+            raise RemoteDisconnected("remote closed the connection")
+        return FakeResponse(url="https://publisher.example/article/geoai")
+
+    def metadata_opener(_request: object, *, timeout: float) -> FakeResponse:
+        nonlocal metadata_attempts
+        metadata_attempts += 1
+        if metadata_attempts == 1:
+            raise RemoteDisconnected("remote closed the connection")
+        return FakeResponse(
+            url="https://api.crossref.org/works/10.1000/geoai.1/transform",
+            body=VALID_RIS.encode(),
+            content_type="application/x-research-info-systems; charset=utf-8",
+        )
+
+    resolution = DoiOrgResolver(
+        opener=resolver_opener,
+        sleeper=lambda _seconds: None,
+        minimum_request_interval_seconds=0,
+    ).resolve("10.1000/geoai.1")
+    metadata = DoiRisMetadataProvider(
+        opener=metadata_opener,
+        sleeper=lambda _seconds: None,
+        minimum_request_interval_seconds=0,
+    ).fetch("10.1000/geoai.1")
+
+    assert resolution.status == "resolved"
+    assert resolution.attempts == 2
+    assert metadata.status == "available"
+    assert metadata.attempts == 2
 
 
 def test_ris_provider_uses_content_negotiation_and_parses_identity() -> None:

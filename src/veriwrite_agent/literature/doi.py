@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from http.client import HTTPException
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -123,7 +124,7 @@ class DoiOrgResolver:
                     )
                 if exc.code != 429 and exc.code < 500:
                     break
-            except (URLError, TimeoutError) as exc:
+            except (URLError, TimeoutError, OSError, HTTPException) as exc:
                 last_error = exc
             if attempt < self._max_attempts:
                 self._sleeper(0.5 * (2 ** (attempt - 1)))
@@ -238,7 +239,7 @@ class DoiRisMetadataProvider:
                     )
                 if exc.code != 429 and exc.code < 500:
                     break
-            except (URLError, TimeoutError) as exc:
+            except (URLError, TimeoutError, OSError, HTTPException) as exc:
                 last_error = exc
             if attempt < self._max_attempts:
                 self._sleeper(0.5 * (2 ** (attempt - 1)))

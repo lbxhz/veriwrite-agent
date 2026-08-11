@@ -15,7 +15,7 @@ from veriwrite_agent.models.literature_selection import (
     LiteratureThemePlan,
 )
 from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
-from veriwrite_agent.models.requirements import RequirementSpec
+from veriwrite_agent.models.requirements import RequirementSpec, TopicBoundary
 from veriwrite_agent.services.evidence_library import (
     EvidenceLibraryBuilder,
     EvidenceLibraryConfirmationService,
@@ -26,7 +26,9 @@ from veriwrite_agent.services.writing_handoff import (
 )
 
 DOI = "10.1000/library.1"
+METHOD_DOI = "10.1000/library.2"
 SHA = "d" * 64
+METHOD_SHA = "e" * 64
 
 
 def document() -> DocumentAcquisition:
@@ -55,6 +57,11 @@ def record() -> LiteratureLibraryRecord:
         evidence_tier="A_core",
         evidence_status="full_text_verified",
         permitted_use="detailed_claims",
+        admission_status="admitted",
+        centrality="central",
+        supported_claim="Supports the atmospheric remote-sensing background.",
+        suitable_section_id="background",
+        use_boundary="Use only for atmospheric remote-sensing background evidence.",
     )
 
 
@@ -113,11 +120,35 @@ def blueprint() -> LiteratureSearchBlueprint:
 
 
 def test_builds_confirms_and_hands_off_a_grounded_library() -> None:
-    cards = [card("background", "background"), card("method", "method")]
+    method_record = record().model_copy(
+        update={
+            "doi": METHOD_DOI,
+            "title": "Verified retrieval method paper",
+            "source_url": f"https://doi.org/{METHOD_DOI}",
+            "supported_claim": "Supports atmospheric retrieval method comparison.",
+            "suitable_section_id": "method",
+            "use_boundary": "Use only for atmospheric retrieval method evidence.",
+        }
+    )
+    method_document = document().model_copy(
+        update={
+            "doi": METHOD_DOI,
+            "source_url": f"https://doi.org/{METHOD_DOI}",
+            "local_path": "runtime/papers/method.pdf",
+            "sha256": METHOD_SHA,
+        }
+    )
+    method_page = page().model_copy(
+        update={"doi": METHOD_DOI, "document_sha256": METHOD_SHA}
+    )
+    method_card = card("method", "method").model_copy(
+        update={"doi": METHOD_DOI, "source_document_sha256": METHOD_SHA}
+    )
+    cards = [card("background", "background"), method_card]
     draft_library = EvidenceLibraryBuilder().build(
-        records=[record()],
-        documents=[document()],
-        pages=[page()],
+        records=[record(), method_record],
+        documents=[document(), method_document],
+        pages=[page(), method_page],
         evidence_cards=cards,
     )
     confirmed_library = EvidenceLibraryConfirmationService().confirm(
@@ -137,9 +168,16 @@ def test_builds_confirms_and_hands_off_a_grounded_library() -> None:
         confirmed_by="student",
         confirmed_at=datetime.now(timezone.utc),
         requirement=RequirementSpec(
-            document_type="literature_review",
-            topic="Atmospheric remote sensing",
-        ),
+                document_type="literature_review",
+                topic="Atmospheric remote sensing",
+                topic_boundary=TopicBoundary(
+                    central_question="How do atmospheric retrieval methods differ?",
+                    included_objects=["atmospheric retrieval methods"],
+                    excluded_objects=["soil moisture"],
+                    contextual_only_topics=["edge computing"],
+                    origin="explicit",
+                ),
+            ),
     )
 
     handoff = WritingHandoffService().create(
@@ -149,7 +187,7 @@ def test_builds_confirms_and_hands_off_a_grounded_library() -> None:
     )
 
     assert handoff.status == "ready_for_writing"
-    assert confirmed_library.literature_matrix[0].methods[0].value
+    assert any(row.methods for row in confirmed_library.literature_matrix)
     assert sum(
         section.target_words for section in outline.sections
     ) == outline.target_words

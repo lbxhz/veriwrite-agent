@@ -38,7 +38,10 @@ class ParagraphPlanProposal(StrictModel):
     comparison_axis: str | None = None
     relative_weight: int = Field(ge=1, le=10)
     evidence_refs: list[str] = Field(default_factory=list, max_length=5)
-    source_refs: list[str] = Field(default_factory=list, max_length=3)
+    # The proposal contract must accommodate the executable policy rather than
+    # imposing a second, smaller hard-coded citation-cluster limit. Compilation
+    # still enforces SectionEvidencePacket.max_sources_per_paragraph.
+    source_refs: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("evidence_refs", mode="after")
     @classmethod
@@ -63,7 +66,10 @@ class SectionPlanProposal(StrictModel):
     """One LLM-proposed paragraph sequence before deterministic compilation."""
 
     section_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
-    paragraphs: list[ParagraphPlanProposal] = Field(min_length=3, max_length=12)
+    # Initial planning still requests at least three paragraphs.  A global structural
+    # editor may legitimately collapse a short section to two and then semantically
+    # replan those two surviving roles.
+    paragraphs: list[ParagraphPlanProposal] = Field(min_length=2, max_length=12)
 
 
 class WritingParagraphPlan(StrictModel):
@@ -114,7 +120,10 @@ class WritingSectionPlan(StrictModel):
     counting_policy: Literal[
         "chinese_chars_and_english_words", "words"
     ] = "chinese_chars_and_english_words"
-    paragraphs: list[WritingParagraphPlan] = Field(min_length=3, max_length=12)
+    # Initial planning still proposes at least three paragraphs, but a confirmed
+    # full-manuscript edit may merge a redundant paragraph and leave two substantive
+    # paragraphs in a short section.
+    paragraphs: list[WritingParagraphPlan] = Field(min_length=2, max_length=12)
 
     @model_validator(mode="after")
     def paragraphs_must_match_section_and_budget(self) -> WritingSectionPlan:

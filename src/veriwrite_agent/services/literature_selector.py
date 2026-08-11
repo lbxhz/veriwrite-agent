@@ -127,6 +127,123 @@ class BalancedLiteratureSelector:
             target_reached=(len(selected) == blueprint.target_total and not policy_issues),
         )
 
+    def select_with_internal_quota_reallocation(
+        self,
+        blueprint: LiteratureSearchBlueprint,
+        candidates: list[LiteratureSelectionCandidate],
+    ) -> BalancedLiteratureSelection:
+        """Fill an exhausted internal theme quota from direct evidence elsewhere.
+
+        Theme quotas are an Agent planning aid, not a V0.1 hard requirement. This
+        fallback runs only after retrieval recovery is exhausted, preserves every
+        already selected source, and uses only admitted central evidence from the
+        other confirmed themes. It never lowers the total reference target or the
+        topic boundary.
+        """
+
+        initial = self.select(blueprint, candidates)
+        if initial.target_reached or not initial.shortages:
+            return initial
+
+        selected = list(initial.selected)
+        used_dois = {record.doi for record in selected}
+        theme_counts = {
+            theme.theme_id: sum(
+                record.theme_id == theme.theme_id for record in selected
+            )
+            for theme in blueprint.themes
+        }
+        themes = sorted(
+            blueprint.themes,
+            key=lambda theme: (theme.priority, theme.theme_id),
+        )
+        while len(selected) < blueprint.target_total:
+            progress = False
+            for theme in themes:
+                if len(selected) >= blueprint.target_total:
+                    break
+                if theme_counts[theme.theme_id] >= 30:
+                    continue
+                eligible = [
+                    candidate
+                    for candidate in candidates
+                    if candidate.verification.candidate.doi not in used_dois
+                    and candidate.relevance.admission_status == "admit"
+                    and candidate.relevance.centrality == "central"
+                    and candidate.relevance.suitable_section_id == theme.theme_id
+                    and self._score(candidate, theme.theme_id)
+                    >= blueprint.relevance_threshold
+                ]
+                if not eligible:
+                    continue
+                minimum_foreign_count = (
+                    blueprint.requirement_policy.references.minimum_foreign_count
+                    if blueprint.requirement_policy is not None
+                    else None
+                )
+                foreign_selected = sum(item.is_foreign for item in selected)
+                prefer_foreign = (
+                    minimum_foreign_count is not None
+                    and foreign_selected < minimum_foreign_count
+                )
+                eligible.sort(
+                    key=lambda candidate: self._sort_key(
+                        candidate,
+                        theme.theme_id,
+                        prefer_foreign=prefer_foreign,
+                        blueprint=blueprint,
+                    )
+                )
+                chosen = eligible[0]
+                record = self._selected_record(chosen, theme.theme_id)
+                record = record.model_copy(
+                    update={
+                        "selection_reasons": [
+                            *record.selection_reasons,
+                            "Agent内部主题配额在缺口补搜耗尽后自动重分配；"
+                            "V0.1总量、题目边界和真实性门禁未降低",
+                        ]
+                    }
+                )
+                selected.append(record)
+                used_dois.add(record.doi)
+                theme_counts[theme.theme_id] += 1
+                progress = True
+            if not progress:
+                return initial
+
+        adjusted_themes = [
+            theme.model_copy(update={"target_count": theme_counts[theme.theme_id]})
+            for theme in blueprint.themes
+        ]
+        adjusted_blueprint = LiteratureSearchBlueprint.model_validate(
+            blueprint.model_copy(update={"themes": adjusted_themes}).model_dump(
+                mode="python"
+            )
+        )
+        policy_issues: list[str] = []
+        if adjusted_blueprint.requirement_policy is not None:
+            minimum_foreign_count = (
+                adjusted_blueprint.requirement_policy.references.minimum_foreign_count
+            )
+            foreign_count = sum(item.is_foreign for item in selected)
+            if (
+                minimum_foreign_count is not None
+                and foreign_count < minimum_foreign_count
+            ):
+                policy_issues.append(
+                    "minimum_foreign_count_not_reached:"
+                    f"required={minimum_foreign_count}:actual={foreign_count}"
+                )
+        return BalancedLiteratureSelection(
+            blueprint=adjusted_blueprint,
+            selected=selected,
+            shortages={},
+            policy_issues=policy_issues,
+            admission_exclusions=initial.admission_exclusions,
+            target_reached=(not policy_issues),
+        )
+
     @staticmethod
     def _score(
         candidate: LiteratureSelectionCandidate,
