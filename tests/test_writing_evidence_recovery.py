@@ -539,6 +539,109 @@ def test_recovery_retry_history_is_scoped_to_the_affected_chapter() -> None:
     assert writing_console._same_evidence_recovery_incident(previous, same_chapter)
 
 
+def test_reviewer_replan_budget_does_not_leak_from_resolved_or_other_chapter() -> None:
+    previous = WritingEvidenceRecoveryRequest(
+        status="resolved",
+        source_plan_fingerprint="a" * 64,
+        affected_section_ids=["challenges"],
+        repair_feedback_by_section={"challenges": ["reassign support"]},
+        planning_repair_round=3,
+        max_planning_repair_rounds=3,
+    )
+
+    assert not writing_console._same_reviewer_plan_repair_incident(
+        previous,
+        "assimilation",
+    )
+    assert not writing_console._same_reviewer_plan_repair_incident(
+        previous,
+        "challenges",
+    )
+
+
+def test_reviewer_replan_budget_is_retained_for_same_unresolved_chapter() -> None:
+    previous = WritingEvidenceRecoveryRequest(
+        status="ready_to_resume",
+        source_plan_fingerprint="a" * 64,
+        affected_section_ids=["assimilation"],
+        repair_feedback_by_section={"assimilation": ["reassign support"]},
+        planning_repair_round=2,
+        max_planning_repair_rounds=3,
+    )
+
+    assert writing_console._same_reviewer_plan_repair_incident(
+        previous,
+        "assimilation",
+    )
+    assert not writing_console._same_reviewer_plan_repair_incident(
+        previous,
+        "forecast",
+    )
+
+
+def test_reviewer_plan_repair_starts_fresh_after_resolved_other_chapter(
+    monkeypatch,
+) -> None:
+    previous = WritingEvidenceRecoveryRequest(
+        status="resolved",
+        source_plan_fingerprint="a" * 64,
+        affected_section_ids=["challenges"],
+        repair_feedback_by_section={"challenges": ["reassign support"]},
+        planning_repair_round=3,
+        max_planning_repair_rounds=3,
+    )
+    session_state = {
+        writing_console.EVIDENCE_RECOVERY_REQUEST_KEY: previous.model_dump_json()
+    }
+    monkeypatch.setattr(
+        writing_console,
+        "st",
+        SimpleNamespace(session_state=session_state),
+    )
+    captured: list[WritingEvidenceRecoveryRequest] = []
+    monkeypatch.setattr(
+        writing_console,
+        "_begin_structural_plan_repair",
+        lambda project, plan, request: captured.append(request),
+    )
+    section_state = SimpleNamespace(
+        section_id="assimilation",
+        draft=SimpleNamespace(
+            issues=[
+                SimpleNamespace(
+                    severity="blocking",
+                    code="source_permission_exceeded",
+                    paragraph_number=2,
+                    detail="background-only source cannot provide section support",
+                )
+            ]
+        ),
+    )
+    plan = SimpleNamespace(
+        plan_fingerprint="b" * 64,
+        sections=[
+            SimpleNamespace(
+                section_id="assimilation",
+                paragraphs=[
+                    SimpleNamespace(
+                        paragraph_number=2,
+                        claim_focus="Compare assimilation methods",
+                    )
+                ],
+            )
+        ]
+    )
+
+    assert writing_console._begin_reviewer_plan_repair(
+        SimpleNamespace(),
+        plan,
+        section_state,
+    )
+    assert captured[0].affected_section_ids == ["assimilation"]
+    assert captured[0].planning_repair_round == 1
+    assert captured[0].unavailable_full_text_dois == []
+
+
 def test_editorial_evidence_gap_is_not_routed_to_pdf_acquisition() -> None:
     gap = WritingEvidenceRecoveryService().audit_section(
         _section_plan(use_background_comparison=True),

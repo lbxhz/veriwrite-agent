@@ -1500,13 +1500,16 @@ def render_grounded_writing_console(
         f"已完成 {confirmed_count}/{len(project.sections)} 章"
         + (" · 正文可汇总" if project.status == "body_complete" else "")
     )
-    repair_paragraphs = [
+    # One paragraph may carry several editor findings.  The user-facing repair
+    # scope is the number of paragraphs that will be rewritten, not the number
+    # of findings attached to those paragraphs.
+    repair_paragraphs = {
         (section.section_id, issue.paragraph_number)
         for section in project.sections
         if section.draft is not None
         for issue in section.draft.issues
         if issue.code == "final_audit_repair" and issue.paragraph_number is not None
-    ]
+    }
     if repair_paragraphs:
         total_paragraphs = sum(len(section.paragraphs) for section in writing_plan.sections)
         repair_sections = {section_id for section_id, _ in repair_paragraphs}
@@ -2844,6 +2847,10 @@ def _execute_continuous_writing(
                 st.rerun()
         progress.update(label="已在问题章节停止", state="error")
         st.session_state[SECTION_SELECTION_REQUEST_KEY] = result.stopped_section_id
+        # Reaching this fallback means no bounded automatic action was scheduled.
+        # Clear every auto-run trigger so a browser refresh or Streamlit source
+        # reload cannot silently repeat the same model call.
+        pause_writing_agent(st.session_state)
         prefix = (
             "自动修订已达到上限。"
             if result.stop_code == "review_exhausted"
@@ -3346,9 +3353,21 @@ def _begin_reviewer_plan_repair(
             previous = WritingEvidenceRecoveryRequest.model_validate_json(previous_raw)
         except (TypeError, ValueError):
             previous = None
-    planning_round = (previous.planning_repair_round if previous else 0) + 1
+    same_incident = _same_reviewer_plan_repair_incident(
+        previous,
+        state.section_id,
+    )
+    planning_round = (
+        previous.planning_repair_round + 1
+        if previous is not None and same_incident
+        else 1
+    )
     max_planning_rounds = max(
-        previous.max_planning_repair_rounds if previous else 0,
+        (
+            previous.max_planning_repair_rounds
+            if previous is not None and same_incident
+            else 0
+        ),
         3,
     )
     if planning_round > max_planning_rounds:
@@ -3379,10 +3398,23 @@ def _begin_reviewer_plan_repair(
         affected_section_ids=[state.section_id],
         repair_feedback_by_section={state.section_id: feedback},
         unavailable_full_text_dois=(
-            previous.unavailable_full_text_dois if previous else []
+            previous.unavailable_full_text_dois
+            if previous is not None and same_incident
+            else []
         ),
-        recovery_round=previous.recovery_round if previous else 1,
-        max_recovery_rounds=max(previous.max_recovery_rounds if previous else 0, 4),
+        recovery_round=(
+            previous.recovery_round
+            if previous is not None and same_incident
+            else 1
+        ),
+        max_recovery_rounds=max(
+            (
+                previous.max_recovery_rounds
+                if previous is not None and same_incident
+                else 0
+            ),
+            4,
+        ),
         planning_repair_round=planning_round,
         max_planning_repair_rounds=max_planning_rounds,
     )
@@ -3392,6 +3424,19 @@ def _begin_reviewer_plan_repair(
         "正在把审稿意见写入规划约束，只重构受影响章节后自动续写。"
     )
     return True
+
+
+def _same_reviewer_plan_repair_incident(
+    previous: WritingEvidenceRecoveryRequest | None,
+    section_id: str,
+) -> bool:
+    """Keep a replan budget local to one unresolved chapter incident."""
+
+    return bool(
+        previous is not None
+        and previous.status not in {"resolved", "blocked"}
+        and section_id in previous.affected_section_ids
+    )
 
 
 def _writing_plan_repair_feedback() -> dict[str, list[str]]:

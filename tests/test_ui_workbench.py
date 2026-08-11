@@ -147,7 +147,7 @@ def test_streamlit_workbench_starts_and_analyzes_default_sample(
     assert not app.exception
     assert app.title[0].value == "VeriWrite Agent MVP 工作台"
     assert [metric.label for metric in app.metric] == [
-        "总体进度",
+        "阶段完成度",
         "完成阶段",
         "当前阻塞",
     ]

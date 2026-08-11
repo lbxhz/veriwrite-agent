@@ -261,7 +261,7 @@ def render_project_sidebar(status: MvpProjectStatus) -> str:
     with st.sidebar:
         st.markdown("## VeriWrite MVP")
         st.text_input("项目名称", key="mvp_project_name")
-        st.progress(status.progress, text=f"全链路完成 {status.progress:.0%}")
+        st.progress(status.progress, text=f"全链路阶段完成度 {status.progress:.0%}")
         selected = st.radio(
             "工作阶段",
             options=list(STAGE_LABELS),
@@ -315,7 +315,7 @@ def render_mvp_overview(status: MvpProjectStatus) -> None:
     st.header("项目进度")
     st.caption("需求 → 文献 → 全文证据 → 正文 → 最终论文")
     metrics = st.columns(3)
-    metrics[0].metric("总体进度", f"{status.progress:.0%}")
+    metrics[0].metric("阶段完成度", f"{status.progress:.0%}")
     metrics[1].metric("完成阶段", f"{status.completed_count}/{len(status.stages)}")
     metrics[2].metric("当前阻塞", len(status.blockers))
     final_complete = status.stages[-1].state == "complete"
