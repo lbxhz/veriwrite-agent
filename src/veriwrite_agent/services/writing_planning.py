@@ -102,6 +102,7 @@ class GroundedWritingPlanner:
             packet = SectionEvidencePacketBuilder().build(
                 handoff,
                 outline_section.section_id,
+                include_policy_required_routes=False,
             )
             packet_source_dois = {source.doi for source in packet.sources}
             packet = packet.model_copy(
@@ -1793,20 +1794,43 @@ def _apply_required_source_coverage(
     *,
     required_source_dois: list[str],
 ) -> list[WritingSectionPlan]:
+    repaired_sections: list[WritingSectionPlan] = []
+    packet_builder = SectionEvidencePacketBuilder()
+    for section in sections:
+        packet = packet_builder.build(handoff, section.section_id)
+        packet_source_dois = {source.doi for source in packet.sources}
+        packet = packet.model_copy(
+            update={
+                "required_source_dois": [
+                    doi
+                    for doi in required_source_dois
+                    if doi in packet_source_dois
+                ]
+            }
+        )
+        repaired_sections.append(
+            section.model_copy(
+                update={
+                    "paragraphs": _repair_compiled_required_source_coverage(
+                        packet,
+                        section.paragraphs,
+                    )
+                }
+            )
+        )
     covered = {
         doi
-        for section in sections
+        for section in repaired_sections
         for paragraph in section.paragraphs
         for doi in paragraph.source_dois
     }
     missing_required = [doi for doi in required_source_dois if doi not in covered]
     if missing_required:
         raise WritingPlanError(
-            "writing plan omitted admitted literature required by the reference policy; "
-            "regenerate the problem-driven plan instead of adding a coverage paragraph: "
+            "required literature has no permission-compatible paragraph route: "
             + ", ".join(missing_required)
         )
-    return sections
+    return repaired_sections
 
 
 def _paragraph_requires_rewrite(

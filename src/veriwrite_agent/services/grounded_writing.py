@@ -51,6 +51,8 @@ class SectionEvidencePacketBuilder:
         self,
         handoff: V04WritingHandoff,
         section_id: str,
+        *,
+        include_policy_required_routes: bool = True,
     ) -> SectionEvidencePacket:
         section = next(
             (
@@ -66,6 +68,9 @@ class SectionEvidencePacketBuilder:
             )
 
         library = handoff.evidence_library
+        policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
+            handoff.requirement
+        )
         records = {record.doi: record for record in library.records}
         cards = {card.evidence_id: card for card in library.evidence_cards}
         evidence_items: list[SectionEvidenceItem] = []
@@ -90,6 +95,16 @@ class SectionEvidencePacketBuilder:
                     *section.core_dois,
                     *section.supporting_dois,
                     *evidence_dois,
+                    *(
+                        record.doi
+                        for record in library.records
+                        if (
+                            include_policy_required_routes
+                            and policy.references.all_bibliography_items_must_be_cited_and_discussed
+                            and record.admission_status == "admitted"
+                            and record.suitable_section_id == section.section_id
+                        )
+                    ),
                 ]
             )
         )
@@ -104,9 +119,6 @@ class SectionEvidencePacketBuilder:
             raise GroundedWritingError(
                 "section has no confirmed full-text evidence cards"
             )
-        policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
-            handoff.requirement
-        )
         admission = audit_topic_admission(
             library,
             policy,

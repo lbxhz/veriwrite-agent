@@ -3115,7 +3115,7 @@ def _best_evidence_recovery_checkpoint(
     plan: GroundedWritingPlan,
     request: WritingEvidenceRecoveryRequest,
 ) -> dict[str, Any]:
-    """Never overwrite a stronger checkpoint during the same recovery incident."""
+    """Union compatible accepted chapters instead of replacing one incident snapshot."""
 
     candidate: dict[str, Any] = {
         "schema_version": "v04-evidence-recovery-checkpoint.0",
@@ -3138,11 +3138,140 @@ def _best_evidence_recovery_checkpoint(
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return candidate
+    try:
+        merged = _merge_recovery_checkpoint_progress(
+            existing,
+            candidate,
+            excluded_section_ids=set(request.affected_section_ids),
+        )
+    except (KeyError, TypeError, ValueError):
+        merged = candidate
+    if _recovery_project_score(
+        V04WritingProject.model_validate_json(merged["writing_project_json"])
+    ) > _recovery_project_score(project):
+        return merged
     if not _same_evidence_recovery_incident(existing_request, request):
         return candidate
     if _recovery_project_score(existing_project) > _recovery_project_score(project):
         return existing
     return candidate
+
+
+def _merge_recovery_checkpoint_progress(
+    existing: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    excluded_section_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Carry compatible confirmed sections across separate recovery incidents."""
+
+    try:
+        old_plan = GroundedWritingPlan.model_validate_json(
+            existing["writing_plan_json"]
+        )
+        old_project = V04WritingProject.model_validate_json(
+            existing["writing_project_json"]
+        )
+        current_plan = GroundedWritingPlan.model_validate_json(
+            candidate["writing_plan_json"]
+        )
+        current_project = V04WritingProject.model_validate_json(
+            candidate["writing_project_json"]
+        )
+    except (KeyError, TypeError, ValueError):
+        return candidate
+    if (
+        old_project.handoff.requirement != current_project.handoff.requirement
+        or old_project.handoff.requirement_policy
+        != current_project.handoff.requirement_policy
+    ):
+        return candidate
+    old_plans = {section.section_id: section for section in old_plan.sections}
+    old_states = {state.section_id: state for state in old_project.sections}
+    current_plans = {
+        section.section_id: section for section in current_plan.sections
+    }
+    current_states = {
+        state.section_id: state for state in current_project.sections
+    }
+    if set(old_plans) != set(current_plans) or set(old_states) != set(current_states):
+        return candidate
+
+    preserved: set[str] = set()
+    excluded = excluded_section_ids or set()
+    merged_sections: list[WritingSectionPlan] = []
+    for section in current_plan.sections:
+        old_section = old_plans[section.section_id]
+        old_state = old_states[section.section_id]
+        current_state = current_states[section.section_id]
+        if (
+            section.section_id not in excluded
+            and current_state.status != "confirmed"
+            and old_state.status == "confirmed"
+            and _recovered_state_is_compatible(
+                old_state,
+                old_section,
+                current_project.handoff,
+            )
+        ):
+            merged_sections.append(old_section)
+            preserved.add(section.section_id)
+        else:
+            merged_sections.append(section)
+    merged_sections, preserved = _reopen_minimum_sections_for_source_coverage(
+        reference_sections=current_plan.sections,
+        merged_sections=merged_sections,
+        preserved_section_ids=preserved,
+        required_source_dois=current_plan.required_source_dois,
+    )
+    if not preserved:
+        return candidate
+    merged_seed = GroundedWritingPlan.model_validate(
+        current_plan.model_copy(update={"sections": merged_sections}).model_dump(
+            mode="json"
+        )
+    )
+    merged_plan = repair_writing_plan_source_coverage(
+        current_project.handoff,
+        merged_seed,
+        required_source_dois=current_plan.required_source_dois,
+    ).plan
+    merged_plan_sections = {
+        section.section_id: section for section in merged_plan.sections
+    }
+    merged_states = [
+        (
+            old_states[state.section_id]
+            if (
+                state.section_id in preserved
+                and _draft_matches_plan(
+                    old_states[state.section_id],
+                    merged_plan_sections[state.section_id],
+                )
+            )
+            else state
+        )
+        for state in current_project.sections
+    ]
+    merged_project = V04WritingProject.model_validate(
+        current_project.model_copy(
+            update={
+                "status": (
+                    "body_complete"
+                    if all(state.status == "confirmed" for state in merged_states)
+                    else "drafting"
+                ),
+                "sections": merged_states,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        ).model_dump(mode="json")
+    )
+    return {
+        **candidate,
+        "writing_plan_json": merged_plan.model_dump_json(indent=2),
+        "writing_project_json": merged_project.model_dump_json(indent=2),
+        "handoff_json": current_project.handoff.model_dump_json(indent=2),
+    }
 
 
 def _recovery_project_score(project: V04WritingProject) -> tuple[int, int, int]:

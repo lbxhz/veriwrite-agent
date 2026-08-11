@@ -24,6 +24,7 @@ from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraftIssue,
     SectionDraftProposal,
+    V04WritingProject,
 )
 from veriwrite_agent.models.writing_plan import (
     GroundedWritingPlan,
@@ -83,6 +84,7 @@ from veriwrite_agent.services.writing_autopilot import (
 from veriwrite_agent.services.writing_agent_runtime import WritingAgentRuntimeService
 from veriwrite_agent.services.writing_evidence_recovery import merge_recovery_handoffs
 from veriwrite_agent.ui.writing_console import (
+    _merge_recovery_checkpoint_progress,
     reopen_entire_body_for_regeneration,
 )
 
@@ -330,6 +332,59 @@ def test_recovery_handoff_keeps_unaffected_outline_and_verified_evidence() -> No
     }
     assert sections["method"] == previous.outline.outline.sections[0]
     assert sections["discussion"].core_dois == []
+
+
+def test_recovery_checkpoint_unions_compatible_confirmed_progress() -> None:
+    active = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active).confirm(
+        confirmed_by="student"
+    )
+    packet = SectionEvidencePacketBuilder().build(active, "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(
+            section_id="method",
+            paragraphs=[
+                DraftParagraphProposal(
+                    role=paragraph.role,
+                    text=f"Evidence-bound paragraph {paragraph.paragraph_number}.",
+                    evidence_card_ids=paragraph.evidence_card_ids,
+                    source_dois=paragraph.source_dois,
+                )
+                for paragraph in plan.sections[0].paragraphs
+            ],
+        ),
+    )
+    projects = WritingProjectService()
+    accepted = projects.save_draft(projects.start(active), quality_passed(draft))
+    accepted = projects.confirm_section(accepted, "method", confirmed_by="student")
+    pending = projects.start(active)
+    existing = {
+        "writing_plan_json": plan.model_dump_json(),
+        "writing_project_json": accepted.model_dump_json(),
+        "handoff_json": active.model_dump_json(),
+    }
+    candidate = {
+        "writing_plan_json": plan.model_dump_json(),
+        "writing_project_json": pending.model_dump_json(),
+        "handoff_json": active.model_dump_json(),
+    }
+
+    merged = _merge_recovery_checkpoint_progress(existing, candidate)
+    restored = V04WritingProject.model_validate_json(merged["writing_project_json"])
+
+    assert restored.sections[0].status == "confirmed"
+    assert restored.sections[0].draft == accepted.sections[0].draft
+
+    excluded = _merge_recovery_checkpoint_progress(
+        existing,
+        candidate,
+        excluded_section_ids={"method"},
+    )
+    excluded_project = V04WritingProject.model_validate_json(
+        excluded["writing_project_json"]
+    )
+    assert excluded_project.sections[0].status == "pending"
 
 
 def blocked_handoff() -> V04WritingHandoff:
@@ -1386,7 +1441,7 @@ def test_planner_covers_every_source_required_by_reference_policy() -> None:
     )
 
 
-def test_source_coverage_repair_refuses_to_manufacture_coverage_paragraphs() -> None:
+def test_source_coverage_repair_uses_existing_problem_paragraphs() -> None:
     active_handoff = handoff_with_background_source()
     legacy = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
         active_handoff
@@ -1413,8 +1468,78 @@ def test_source_coverage_repair_refuses_to_manufacture_coverage_paragraphs() -> 
             ),
         }
     )
-    with pytest.raises(WritingPlanError, match="regenerate the problem-driven plan"):
-        repair_writing_plan_source_coverage(active_handoff, legacy)
+    repair = repair_writing_plan_source_coverage(active_handoff, legacy)
+
+    assert len(repair.plan.sections[0].paragraphs) == len(
+        legacy.sections[0].paragraphs
+    )
+    assert BACKGROUND_DOI in {
+        doi
+        for paragraph in repair.plan.sections[0].paragraphs
+        for doi in paragraph.source_dois
+    }
+    assert all(
+        paragraph.coverage_only is False
+        for paragraph in repair.plan.sections[0].paragraphs
+    )
+
+
+def test_planner_routes_unlisted_policy_required_source_without_replanning() -> None:
+    active_handoff = handoff_with_background_source()
+    section = active_handoff.outline.outline.sections[0].model_copy(
+        update={"supporting_dois": [SUPPORTING_DOI]}
+    )
+    active_handoff = active_handoff.model_copy(
+        update={
+            "outline": active_handoff.outline.model_copy(
+                update={
+                    "outline": active_handoff.outline.outline.model_copy(
+                        update={"sections": [section]}
+                    )
+                }
+            )
+        }
+    )
+    requirement_spec = active_handoff.requirement.requirement.model_copy(
+        update={
+            "references": ReferenceRequirement(
+                minimum_total=3,
+                target_total=3,
+                bibliography_style="APA 7th",
+                max_references_per_citation_cluster=4,
+                all_bibliography_items_must_be_cited_and_discussed=True,
+            )
+        }
+    )
+    confirmed_requirement = active_handoff.requirement.model_copy(
+        update={"requirement": requirement_spec}
+    )
+    active_handoff = active_handoff.model_copy(
+        update={
+            "requirement": confirmed_requirement,
+            "requirement_policy": RequirementPolicyCompiler(current_year=2026).compile(
+                confirmed_requirement
+            ),
+        }
+    )
+    planning_packet = SectionEvidencePacketBuilder().build(
+        active_handoff,
+        "method",
+        include_policy_required_routes=False,
+    )
+    writing_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    client = FakeLLMClient(plan_response())
+
+    plan = GroundedWritingPlanner(client).plan(active_handoff)
+
+    assert BACKGROUND_DOI not in {source.doi for source in planning_packet.sources}
+    assert BACKGROUND_DOI in {source.doi for source in writing_packet.sources}
+    assert BACKGROUND_DOI in {
+        doi
+        for paragraph in plan.sections[0].paragraphs
+        for doi in paragraph.source_dois
+    }
+    assert len(client.calls) == 1
 
 
 def test_source_coverage_repair_accepts_an_explicit_recovery_bibliography() -> None:
