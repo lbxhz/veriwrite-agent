@@ -1796,6 +1796,113 @@ def test_continuous_writing_routes_evidence_gap_before_calling_llms() -> None:
     assert reviewer_client.calls == []
 
 
+def test_continuous_writing_batches_evidence_gaps_from_all_pending_sections() -> None:
+    active_handoff = handoff_with_background_source()
+    first_outline = active_handoff.outline.outline.sections[0]
+    first_background = next(
+        record
+        for record in active_handoff.evidence_library.records
+        if record.doi == BACKGROUND_DOI
+    )
+    second_background_doi = "10.1000/background.2"
+    second_background = first_background.model_copy(
+        update={
+            "doi": second_background_doi,
+            "title": "Second metadata-only background record",
+            "source_url": f"https://doi.org/{second_background_doi}",
+        }
+    )
+    second_outline = first_outline.model_copy(
+        update={
+            "section_id": "discussion",
+            "title": "Evidence synthesis",
+            "purpose": "Synthesize the verified retrieval evidence.",
+            "research_questions": ["What conclusion follows from the evidence?"],
+            "supporting_dois": [SUPPORTING_DOI, second_background_doi],
+        }
+    )
+    outline = active_handoff.outline.outline.model_copy(
+        update={
+            "target_words": 600,
+            "sections": [first_outline, second_outline],
+        }
+    )
+    active_handoff = active_handoff.model_copy(
+        update={
+            "outline": active_handoff.outline.model_copy(update={"outline": outline}),
+            "evidence_library": active_handoff.evidence_library.model_copy(
+                update={
+                    "records": [
+                        *active_handoff.evidence_library.records,
+                        second_background,
+                    ]
+                }
+            ),
+        }
+    )
+
+    discussion_response = json.loads(plan_response())
+    discussion_response["section_id"] = "discussion"
+    draft_plan = GroundedWritingPlanner(
+        ScriptedLLMClient([plan_response(), json.dumps(discussion_response)])
+    ).plan(active_handoff)
+    gap_sections = []
+    for section, background_doi in zip(
+        draft_plan.sections,
+        (BACKGROUND_DOI, second_background_doi),
+        strict=True,
+    ):
+        comparison = section.paragraphs[1].model_copy(
+            update={
+                "role": "background",
+                "purpose": "Compare model architectures and accuracy.",
+                "claim_focus": "Compare the performance of two retrieval models.",
+                "central_question": "Which model is more accurate and why?",
+                "argument_move": "compare_studies",
+                "comparison_axis": "accuracy and architecture",
+                "evidence_card_ids": [],
+                "source_dois": [background_doi],
+            }
+        )
+        gap_sections.append(
+            section.model_copy(
+                update={
+                    "paragraphs": [
+                        section.paragraphs[0],
+                        comparison,
+                        section.paragraphs[2],
+                    ]
+                }
+            )
+        )
+    plan = GroundedWritingPlan.model_validate(
+        draft_plan.model_copy(update={"sections": gap_sections}).model_dump(mode="json")
+    ).confirm(confirmed_by="student")
+    writer = FakeLLMClient(json.dumps({"text": "must not be called"}))
+    reviewer = FakeLLMClient(
+        json.dumps({"section_id": "method", "findings": []})
+    )
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer),
+        reviewer=LLMSectionQualityReviewer(reviewer),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student",
+    )
+
+    assert result.stop_code == "evidence_gap"
+    assert result.recovery_request is not None
+    assert result.recovery_request.affected_section_ids == ["method", "discussion"]
+    assert result.recovery_request.requested_core_dois == [
+        BACKGROUND_DOI,
+        second_background_doi,
+    ]
+    assert writer.calls == []
+    assert reviewer.calls == []
+
+
 def test_non_prose_deterministic_blocker_does_not_call_writer_or_reviewer() -> None:
     active_handoff = handoff()
     plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(

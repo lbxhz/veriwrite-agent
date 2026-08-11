@@ -10,6 +10,7 @@ from veriwrite_agent.models.writing import (
     SectionDraft,
     SectionDraftIssue,
     V04WritingProject,
+    WritingSectionState,
 )
 from veriwrite_agent.models.writing_plan import GroundedWritingPlan, WritingSectionPlan
 from veriwrite_agent.services.grounded_writing import (
@@ -148,6 +149,15 @@ class ContinuousSectionWritingService:
             for state in current.sections
             if section_id is None or state.section_id == section_id
         ]
+        preflight_result = self._preflight_pending_sections(
+            current,
+            section_states,
+            plan_by_id,
+            plan_fingerprint=plan.plan_fingerprint,
+            on_checkpoint=on_checkpoint,
+        )
+        if preflight_result is not None:
+            return preflight_result
         for section_state in section_states:
             if section_state.status == "confirmed":
                 continue
@@ -175,6 +185,71 @@ class ContinuousSectionWritingService:
             if not auto_confirm:
                 return ContinuousWritingResult(project=current, events=tuple(events))
         return ContinuousWritingResult(project=current, events=tuple(events))
+
+    def _preflight_pending_sections(
+        self,
+        project: V04WritingProject,
+        section_states: list[WritingSectionState],
+        plan_by_id: dict[str, WritingSectionPlan],
+        *,
+        plan_fingerprint: str,
+        on_checkpoint: CheckpointCallback | None,
+    ) -> ContinuousWritingResult | None:
+        """Audit every pending chapter before the first prose-model call.
+
+        The writing plan already contains the evidence assignment for all chapters.
+        Discovering shortages lazily, one chapter at a time, can repeatedly interrupt
+        the user for restricted PDFs.  This deterministic preflight combines all
+        currently visible shortages into one durable recovery request.
+        """
+
+        pending = [state for state in section_states if state.status != "confirmed"]
+        for state in pending:
+            section_plan = plan_by_id[state.section_id]
+            packet = self._packets.build(project.handoff, state.section_id)
+            if packet.ai_writing_mode == "generation_blocked":
+                reason = "; ".join(packet.ai_policy_reasons) or "AI writing is disabled"
+                return self._stopped(
+                    project,
+                    section_plan,
+                    reason,
+                    on_checkpoint,
+                    stop_code="policy_blocked",
+                )
+
+        all_gaps = []
+        for state in pending:
+            section_plan = plan_by_id[state.section_id]
+            packet = self._packets.build(project.handoff, state.section_id)
+            repair_numbers, _ = _repair_targets(state.draft, section_plan)
+            all_gaps.extend(
+                self._evidence_recovery.audit_section(
+                    section_plan,
+                    packet,
+                    paragraph_numbers=(repair_numbers or None),
+                )
+            )
+        if not all_gaps:
+            return None
+
+        gaps = tuple(all_gaps)
+        request = self._evidence_recovery.request(
+            plan_fingerprint=plan_fingerprint,
+            gaps=gaps,
+        )
+        first_plan = plan_by_id[gaps[0].section_id]
+        return self._stopped(
+            project,
+            first_plan,
+            (
+                f"Evidence preflight found {len(gaps)} gap(s) across "
+                f"{len(request.affected_section_ids)} pending chapter(s). "
+                "The Agent combined their full-text needs into one recovery batch."
+            ),
+            on_checkpoint,
+            stop_code="evidence_gap",
+            recovery_request=request,
+        )
 
     def _run_section(
         self,

@@ -153,6 +153,49 @@ def test_evidence_gap_rolls_back_to_full_text_without_rewriting() -> None:
     assert assessment.decision.next_action.payload.dois == ["10.1000/background"]
 
 
+def test_cross_section_evidence_batch_becomes_one_full_text_action() -> None:
+    request = evidence_recovery(require_download=True)
+    second_gap = request.gaps[0].model_copy(
+        update={
+            "section_id": "discussion",
+            "section_title": "Discussion",
+            "missing_full_text_dois": ["10.1000/background-2"],
+        }
+    )
+    request = request.model_copy(
+        update={
+            "affected_section_ids": ["methods", "discussion"],
+            "gaps": [*request.gaps, second_gap],
+            "requested_core_dois": [
+                "10.1000/background",
+                "10.1000/background-2",
+            ],
+        }
+    )
+    result = SimpleNamespace(
+        stopped_section_id="methods",
+        stop_code="evidence_gap",
+        stop_reason="batched missing full text",
+        recovery_request=request,
+    )
+
+    assessment = WritingAgentController().assess_section_run(
+        result,
+        writing_plan(),
+        plan_reference=reference("writing_plan", "writing_plan_0123456789abcdef"),
+        project_reference=reference(
+            "writing_project", "writing_project_0123456789abcdef"
+        ),
+    )
+
+    assert assessment.decision.decision_type == "rollback"
+    assert assessment.decision.next_action.payload.kind == "acquire_full_text"
+    assert assessment.decision.next_action.payload.dois == [
+        "10.1000/background",
+        "10.1000/background-2",
+    ]
+
+
 def test_evidence_gap_without_candidate_rolls_back_to_targeted_search() -> None:
     result = SimpleNamespace(
         stopped_section_id="methods",

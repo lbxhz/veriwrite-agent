@@ -259,6 +259,10 @@ def _render_agent_activity(project: V04WritingProject | None = None) -> None:
         "failed": "执行失败",
         "stopped": "已停止自动循环",
     }[state.lifecycle]
+    if state.lifecycle == "running" and not _agent_auto_run_requested(
+        st.session_state
+    ):
+        lifecycle_label = "已暂停"
     headline = f"{lifecycle_label} · {stage_label}"
     if total:
         headline += f" · 章节 {completed}/{total}"
@@ -285,6 +289,56 @@ def _render_agent_activity(project: V04WritingProject | None = None) -> None:
                 "检查点序号": state.event_sequence,
             }
         )
+
+
+def _agent_auto_run_requested(state: MutableMapping[str, Any]) -> bool:
+    return any(
+        bool(state.get(key))
+        for key in (
+            V04_AUTOPILOT_REQUESTED_KEY,
+            EVIDENCE_RECOVERY_AUTO_PLAN_KEY,
+            EVIDENCE_RECOVERY_AUTO_RESUME_KEY,
+            FINAL_DELIVERY_AUTO_RESUME_KEY,
+            "literature_auto_run_requested",
+            "literature_auto_advance_requested",
+        )
+    )
+
+
+def pause_writing_agent(state: MutableMapping[str, Any]) -> bool:
+    """Soft-stop automatic transitions while retaining every durable checkpoint."""
+
+    was_running = _agent_auto_run_requested(state)
+    for key in (
+        V04_AUTOPILOT_REQUESTED_KEY,
+        EVIDENCE_RECOVERY_AUTO_PLAN_KEY,
+        EVIDENCE_RECOVERY_AUTO_RESUME_KEY,
+        FINAL_DELIVERY_AUTO_RESUME_KEY,
+        "literature_auto_run_requested",
+        "literature_auto_advance_requested",
+    ):
+        state.pop(key, None)
+    state["mvp_flash"] = (
+        "Agent 已暂停。已完成章节、当前草稿、证据恢复请求和检查点均已保留；"
+        "下次点击继续时只会恢复尚未完成的节点。"
+    )
+    return was_running
+
+
+def _render_agent_pause_control() -> None:
+    """Keep the pause action visible on the main V0.4 status surface."""
+
+    if not _agent_auto_run_requested(st.session_state):
+        return
+    st.caption("需要离开或检查中间结果时，可以随时暂停；已完成内容不会丢失。")
+    if st.button(
+        "暂停 Agent 自动运行",
+        width="stretch",
+        key="v04_pause_agent_main",
+    ):
+        pause_writing_agent(st.session_state)
+        _autosave_current_project()
+        st.rerun()
 
 
 def active_writing_recovery_status(
@@ -325,6 +379,7 @@ def render_writing_agent_recovery_shell() -> None:
     st.caption(
         "用户始终停留在本页；V0.2 检索与 V0.3 证据处理只是 Agent 的内部工具节点。"
     )
+    _render_agent_pause_control()
     labels = {
         "pending_search": ("回退", "正在按缺失论点自动补搜并排除重复 DOI"),
         "pending_full_text": ("执行", "正在检查本地全文并构建可追溯证据"),
@@ -364,6 +419,24 @@ def render_writing_agent_recovery_shell() -> None:
         )
         if missing:
             st.code("\n".join(missing))
+        st.caption(
+            "如果这些受限全文无法取得，可以放弃无法证明的细节比较；"
+            "系统会保留来源，只把相关段落收缩为证据允许的一般背景。"
+        )
+        if st.button(
+            "无法获取这些 PDF，收缩论断并继续",
+            width="stretch",
+            key="v04_continue_without_restricted_pdf",
+        ):
+            if continue_without_restricted_full_text():
+                _autosave_current_project()
+                st.rerun()
+            st.error(
+                st.session_state.get(
+                    "mvp_flash",
+                    "无法在不破坏证据约束的前提下收缩这些论断。",
+                )
+            )
     with st.expander("查看 Agent 恢复依据（高级）"):
         st.json(
             {
@@ -1349,13 +1422,19 @@ def render_grounded_writing_console(
         if candidate is not None and candidate.handoff == handoff:
             existing_project = candidate
     _render_agent_activity(existing_project)
+    _render_agent_pause_control()
 
     if not st.session_state.get(V04_AUTOPILOT_REQUESTED_KEY):
         button_label = (
             "继续生成成品论文"
             if existing_project is not None
             and existing_project.status == "body_complete"
-            else "开始生成论文"
+            else (
+                "继续 Agent 写作"
+                if existing_project is not None
+                or st.session_state.get(V04_AGENT_RUN_ID_KEY)
+                else "开始生成论文"
+            )
         )
         st.caption(
             "开始后无需逐章点击。只有付费 PDF 无法自动获取、需求发生关键冲突，"
@@ -3125,6 +3204,59 @@ def _begin_bounded_claim_downgrade(
         "系统已保留全部合格章节，并将这些段落收缩为可由元数据支持的一般背景；"
         "现在会自动续写和复审，不需要用户处理内部异常。"
     )
+    return True
+
+
+def continue_without_restricted_full_text() -> bool:
+    """Resolve one blocked PDF batch by safely shrinking unsupported details."""
+
+    request_raw = st.session_state.get(EVIDENCE_RECOVERY_REQUEST_KEY)
+    checkpoint_raw = st.session_state.get(EVIDENCE_RECOVERY_CHECKPOINT_KEY)
+    if not request_raw or not checkpoint_raw:
+        st.session_state["mvp_flash"] = (
+            "缺少可恢复的写作检查点，不能安全跳过受限全文。"
+        )
+        return False
+    try:
+        request = WritingEvidenceRecoveryRequest.model_validate_json(request_raw)
+        checkpoint = json.loads(checkpoint_raw)
+        plan = GroundedWritingPlan.model_validate_json(checkpoint["writing_plan_json"])
+        project = V04WritingProject.model_validate_json(
+            checkpoint["writing_project_json"]
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        st.session_state["mvp_flash"] = (
+            "证据恢复检查点无法读取，系统没有修改原计划或正文。"
+        )
+        return False
+    if request.status != "blocked" or not request.gaps:
+        st.session_state["mvp_flash"] = (
+            "当前恢复任务尚未达到需要放弃受限全文的阶段。"
+        )
+        return False
+    unavailable = list(
+        dict.fromkeys(
+            [
+                *request.unavailable_full_text_dois,
+                *request.requested_core_dois,
+                *(
+                    doi
+                    for gap in request.gaps
+                    for doi in gap.missing_full_text_dois
+                ),
+            ]
+        )
+    )
+    declined = request.model_copy(
+        update={"unavailable_full_text_dois": unavailable}
+    )
+    if not _begin_bounded_claim_downgrade(project, plan, declined):
+        return False
+    st.session_state["v03_writing_handoff_json"] = project.handoff.model_dump_json(
+        indent=2
+    )
+    st.session_state[V04_AUTOPILOT_REQUESTED_KEY] = True
+    st.session_state[EVIDENCE_RECOVERY_AUTO_RESUME_KEY] = True
     return True
 
 

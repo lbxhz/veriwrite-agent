@@ -284,6 +284,88 @@ def test_cross_stage_cleanup_preserves_active_agent_identity(monkeypatch) -> Non
     assert state[writing_console.V04_AGENT_RUN_ID_KEY] == "run_0123456789abcdef"
 
 
+def test_main_pause_clears_every_automatic_transition_but_keeps_run_identity() -> None:
+    state = {
+        writing_console.V04_AGENT_RUN_ID_KEY: "run_0123456789abcdef",
+        writing_console.V04_AUTOPILOT_REQUESTED_KEY: True,
+        writing_console.EVIDENCE_RECOVERY_AUTO_PLAN_KEY: True,
+        writing_console.EVIDENCE_RECOVERY_AUTO_RESUME_KEY: True,
+        writing_console.FINAL_DELIVERY_AUTO_RESUME_KEY: True,
+        "literature_auto_run_requested": True,
+        "literature_auto_advance_requested": True,
+        writing_console.V04_PROJECT_KEY: "saved-project",
+    }
+
+    assert writing_console.pause_writing_agent(state)
+
+    assert state[writing_console.V04_AGENT_RUN_ID_KEY] == "run_0123456789abcdef"
+    assert state[writing_console.V04_PROJECT_KEY] == "saved-project"
+    assert not writing_console._agent_auto_run_requested(state)
+    assert "已暂停" in state["mvp_flash"]
+
+
+def test_user_can_decline_one_blocked_pdf_batch_and_resume_with_bounded_claims(
+    monkeypatch,
+) -> None:
+    gap = WritingEvidenceRecoveryService().audit_section(
+        _section_plan(use_background_comparison=True),
+        _packet(),
+    )[0]
+    request = WritingEvidenceRecoveryService().request(
+        plan_fingerprint="a" * 64,
+        gaps=(gap,),
+    ).model_copy(update={"status": "blocked"})
+    state = {
+        writing_console.EVIDENCE_RECOVERY_REQUEST_KEY: request.model_dump_json(),
+        writing_console.EVIDENCE_RECOVERY_CHECKPOINT_KEY: json.dumps(
+            {
+                "writing_plan_json": "saved-plan",
+                "writing_project_json": "saved-project",
+            }
+        ),
+    }
+    monkeypatch.setattr(
+        writing_console,
+        "st",
+        SimpleNamespace(session_state=state),
+    )
+    fake_plan = SimpleNamespace()
+    fake_handoff = SimpleNamespace(model_dump_json=lambda **_: "saved-handoff")
+    fake_project = SimpleNamespace(handoff=fake_handoff)
+    monkeypatch.setattr(
+        writing_console.GroundedWritingPlan,
+        "model_validate_json",
+        classmethod(lambda _cls, _value: fake_plan),
+    )
+    monkeypatch.setattr(
+        writing_console.V04WritingProject,
+        "model_validate_json",
+        classmethod(lambda _cls, _value: fake_project),
+    )
+    captured = {}
+
+    def bounded_downgrade(project, plan, declined_request):
+        captured["project"] = project
+        captured["plan"] = plan
+        captured["request"] = declined_request
+        return True
+
+    monkeypatch.setattr(
+        writing_console,
+        "_begin_bounded_claim_downgrade",
+        bounded_downgrade,
+    )
+
+    assert writing_console.continue_without_restricted_full_text()
+
+    assert captured["project"] is fake_project
+    assert captured["plan"] is fake_plan
+    assert captured["request"].unavailable_full_text_dois == [BACKGROUND_DOI]
+    assert state["v03_writing_handoff_json"] == "saved-handoff"
+    assert state[writing_console.V04_AUTOPILOT_REQUESTED_KEY] is True
+    assert state[writing_console.EVIDENCE_RECOVERY_AUTO_RESUME_KEY] is True
+
+
 def test_unresolved_comparison_is_downgraded_to_metadata_bounded_background() -> None:
     plan = _section_plan(use_background_comparison=True)
     gap = WritingEvidenceRecoveryService().audit_section(plan, _packet())[0]
