@@ -9,6 +9,7 @@ from veriwrite_agent.models.agent_runtime import (
     AgentActionRequest,
     AgentCheckpoint,
     AgentState,
+    ArtifactReference,
     ControllerDecision,
     CriticReport,
     ToolObservation,
@@ -135,6 +136,46 @@ def test_register_artifact_is_idempotent_and_supersedes_only_same_kind() -> None
     assert active_artifact(updated, "requirement_spec") == second
 
 
+def test_register_artifact_compacts_old_superseded_history_at_state_limit() -> None:
+    history = [
+        ArtifactReference(
+            artifact_id=f"writing_project_history_{index:03d}",
+            kind="writing_project",
+            schema_version="0.4.0",
+            fingerprint=f"{index:064x}",
+            storage_key=f"history/{index}.json",
+            status="superseded",
+            created_at=NOW,
+        )
+        for index in range(199)
+    ]
+    active = ArtifactReference(
+        artifact_id="writing_project_active_000",
+        kind="writing_project",
+        schema_version="0.4.0",
+        fingerprint="f" * 64,
+        storage_key="active.json",
+        status="draft",
+        created_at=NOW,
+    )
+    state = runtime_state(artifacts=[*history, active])
+    replacement = ArtifactReference(
+        artifact_id="writing_project_active_001",
+        kind="writing_project",
+        schema_version="0.4.0",
+        fingerprint="e" * 64,
+        storage_key="active-v2.json",
+        status="draft",
+        created_at=NOW,
+    )
+
+    updated = register_artifact(state, replacement)
+
+    assert len(updated.artifacts) == 200
+    assert active_artifact(updated, "writing_project") == replacement
+    assert updated.artifacts[0].artifact_id == "writing_project_history_001"
+
+
 def test_successful_observation_is_reusable_by_idempotency_key(tmp_path) -> None:
     store = AgentRuntimeStore(tmp_path)
     request = action()
@@ -237,6 +278,56 @@ def test_checkpoint_pointer_selects_a_valid_branch_after_concurrent_fork(
 
     assert store.load_latest_checkpoint() == selected
     assert store.load_state() == selected.state
+
+
+def test_checkpoint_store_uses_unique_longest_valid_branch_when_pointer_is_stale(
+    tmp_path,
+) -> None:
+    store = AgentRuntimeStore(tmp_path)
+    state = runtime_state()
+    root = checkpoint(
+        state,
+        checkpoint_id="ckpt_0123456789abcdef",
+        sequence=0,
+    )
+    short_branch = checkpoint(
+        state.model_copy(update={"event_sequence": 1}),
+        checkpoint_id="ckpt_1111111111111111",
+        sequence=1,
+        parent_checkpoint_id=root.checkpoint_id,
+    )
+    long_branch = checkpoint(
+        state.model_copy(update={"event_sequence": 2}),
+        checkpoint_id="ckpt_2222222222222222",
+        sequence=1,
+        parent_checkpoint_id=root.checkpoint_id,
+    )
+    tip = checkpoint(
+        state.model_copy(update={"event_sequence": 3}),
+        checkpoint_id="ckpt_3333333333333333",
+        sequence=2,
+        parent_checkpoint_id=long_branch.checkpoint_id,
+    )
+    store.save_checkpoint(root)
+    for item in (short_branch, long_branch, tip):
+        path = (
+            tmp_path
+            / "checkpoints"
+            / f"{item.sequence:08d}_{item.checkpoint_id}.json"
+        )
+        path.write_text(item.model_dump_json(indent=2), encoding="utf-8")
+    (tmp_path / "latest_checkpoint.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "ckpt_ffffffffffffffff",
+                "sequence": 3,
+                "file": "00000003_ckpt_ffffffffffffffff.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert store.load_latest_checkpoint() == tip
 
 
 def test_checkpoint_store_rejects_skipped_or_wrong_parent(tmp_path) -> None:

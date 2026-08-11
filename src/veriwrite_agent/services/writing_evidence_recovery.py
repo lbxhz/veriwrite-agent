@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from veriwrite_agent.models.evidence import EvidenceLibrary
 from veriwrite_agent.models.literature_selection import (
     ConfirmedLiteratureSearchBlueprint,
     LiteratureSearchBlueprint,
@@ -21,6 +22,149 @@ from veriwrite_agent.models.writing_plan import (
     WritingParagraphPlan,
     WritingSectionPlan,
 )
+from veriwrite_agent.models.writing_handoff import V04WritingHandoff
+
+
+def merge_recovery_handoffs(
+    previous: V04WritingHandoff,
+    current: V04WritingHandoff,
+    *,
+    affected_section_ids: set[str],
+) -> V04WritingHandoff:
+    """Add recovered evidence without invalidating accepted, unaffected chapters."""
+
+    if previous.requirement != current.requirement:
+        raise ValueError("evidence recovery cannot change the confirmed requirement")
+    if previous.requirement_policy != current.requirement_policy:
+        raise ValueError("evidence recovery cannot change the executable requirement policy")
+    previous_sections = {
+        section.section_id: section for section in previous.outline.outline.sections
+    }
+    merged_outline_sections = [
+        (
+            previous_sections.get(section.section_id, section)
+            if section.section_id not in affected_section_ids
+            else section
+        )
+        for section in current.outline.outline.sections
+    ]
+    merged_library = _merge_evidence_libraries(
+        previous.evidence_library,
+        current.evidence_library,
+    )
+    outline = current.outline.model_copy(
+        update={
+            "outline": current.outline.outline.model_copy(
+                update={"sections": merged_outline_sections}
+            )
+        }
+    )
+    return V04WritingHandoff.model_validate(
+        current.model_copy(
+            update={
+                "outline": outline,
+                "evidence_library": merged_library,
+            }
+        ).model_dump(mode="json")
+    )
+
+
+def _merge_evidence_libraries(
+    previous: EvidenceLibrary,
+    current: EvidenceLibrary,
+) -> EvidenceLibrary:
+    if (
+        previous.requirement_policy_fingerprint
+        != current.requirement_policy_fingerprint
+    ):
+        raise ValueError("evidence recovery libraries use different requirement policies")
+
+    old_records = {record.doi: record for record in previous.records}
+    new_records = {record.doi: record for record in current.records}
+    old_documents = {document.doi: document for document in previous.documents}
+    new_documents = {document.doi: document for document in current.documents}
+    ordered_dois = list(dict.fromkeys([*new_records, *old_records]))
+    origins: dict[str, str] = {}
+    records = []
+    documents = []
+    for doi in ordered_dois:
+        old_record = old_records.get(doi)
+        new_record = new_records.get(doi)
+        if old_record is None:
+            origin = "current"
+        elif new_record is None:
+            origin = "previous"
+        elif (
+            old_record.evidence_status == "full_text_verified"
+            and new_record.evidence_status != "full_text_verified"
+        ):
+            origin = "previous"
+        else:
+            origin = "current"
+        old_document = old_documents.get(doi)
+        new_document = new_documents.get(doi)
+        if (
+            old_document is not None
+            and new_document is not None
+            and old_document.status == "available"
+            and new_document.status == "available"
+            and old_document.sha256 == new_document.sha256
+        ):
+            origin = "both"
+        origins[doi] = origin
+        records.append(
+            (new_record if origin in {"current", "both"} else old_record)
+        )
+        chosen_document = (
+            new_document if origin in {"current", "both"} else old_document
+        )
+        if chosen_document is not None:
+            documents.append(chosen_document)
+
+    def chosen_items(field: str) -> list[object]:
+        old_items = getattr(previous, field)
+        new_items = getattr(current, field)
+        selected: list[object] = []
+        for doi in ordered_dois:
+            origin = origins[doi]
+            source = new_items if origin in {"current", "both"} else old_items
+            matching = [item for item in source if getattr(item, "doi", None) == doi]
+            if not matching and origin == "both":
+                matching = [
+                    item for item in old_items if getattr(item, "doi", None) == doi
+                ]
+            selected.extend(matching)
+        return selected
+
+    cards = chosen_items("evidence_cards")
+    # When the recovered PDF is byte-identical, retain old confirmed cards that
+    # accepted prose still cites and add genuinely new cards by stable evidence ID.
+    card_ids = {card.evidence_id for card in cards}
+    for card in previous.evidence_cards:
+        if origins.get(card.doi) == "both" and card.evidence_id not in card_ids:
+            cards.append(card)
+            card_ids.add(card.evidence_id)
+
+    payload = current.model_copy(
+        update={
+            "records": records,
+            "documents": documents,
+            "extractions": chosen_items("extractions"),
+            "page_selections": chosen_items("page_selections"),
+            "pages": chosen_items("pages"),
+            "evidence_cards": cards,
+            "literature_matrix": chosen_items("literature_matrix"),
+            "unresolved_issues": list(
+                dict.fromkeys(
+                    [
+                        *previous.unresolved_issues,
+                        *current.unresolved_issues,
+                    ]
+                )
+            ),
+        }
+    )
+    return EvidenceLibrary.model_validate(payload.model_dump(mode="json"))
 
 
 class ParagraphEvidenceGap(StrictModel):

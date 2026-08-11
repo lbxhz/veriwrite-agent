@@ -87,6 +87,7 @@ from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryRequest,
     WritingEvidenceRecoveryService,
     downgrade_unresolved_evidence_claims,
+    merge_recovery_handoffs,
 )
 from veriwrite_agent.services.final_delivery import (
     FinalPaperAssembler,
@@ -1550,6 +1551,11 @@ def _resume_after_evidence_recovery(
     old_project = V04WritingProject.model_validate_json(
         checkpoint["writing_project_json"]
     )
+    handoff = merge_recovery_handoffs(
+        old_project.handoff,
+        handoff,
+        affected_section_ids=set(request.affected_section_ids),
+    )
     old_plans = {section.section_id: section for section in old_plan.sections}
     old_states = {state.section_id: state for state in old_project.sections}
     available_dois = {
@@ -1631,6 +1637,7 @@ def _resume_after_evidence_recovery(
     )
     st.session_state[WRITING_PLAN_KEY] = confirmed_plan.model_dump_json(indent=2)
     st.session_state[V04_PROJECT_KEY] = resumed_project.model_dump_json(indent=2)
+    st.session_state["v03_writing_handoff_json"] = handoff.model_dump_json(indent=2)
     st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = request.model_copy(
         update={"status": "ready_to_resume"}
     ).model_dump_json(indent=2)
@@ -1668,6 +1675,12 @@ def _restore_unaffected_recovery_progress(handoff: V04WritingHandoff) -> bool:
         return False
     if request.status != "ready_to_resume":
         return False
+
+    handoff = merge_recovery_handoffs(
+        old_project.handoff,
+        handoff,
+        affected_section_ids=set(request.affected_section_ids),
+    )
 
     old_sections = {section.section_id: section for section in old_plan.sections}
     old_states = {state.section_id: state for state in old_project.sections}
@@ -1756,6 +1769,7 @@ def _restore_unaffected_recovery_progress(handoff: V04WritingHandoff) -> bool:
     )
     st.session_state[WRITING_PLAN_KEY] = coverage_repair.plan.model_dump_json(indent=2)
     st.session_state[V04_PROJECT_KEY] = resumed_project.model_dump_json(indent=2)
+    st.session_state["v03_writing_handoff_json"] = handoff.model_dump_json(indent=2)
     st.session_state[SECTION_SELECTION_REQUEST_KEY] = _next_actionable_section(
         resumed_project
     )
@@ -2688,6 +2702,11 @@ def _execute_continuous_writing(
                 section_ids=pending_section_ids,
             )
         except Exception as exc:
+            # A durable runtime is a prerequisite for paid model work. Clear every
+            # automatic transition so refresh cannot immediately retry a failed
+            # initialization; paper and recovery artifacts remain untouched.
+            pause_writing_agent(st.session_state)
+            _autosave_current_project()
             progress.update(label="Agent 运行时初始化失败", state="error")
             st.error(
                 "正文尚未开始生成，因为本地 Agent 检查点无法可靠建立。"
@@ -2959,13 +2978,7 @@ def _begin_evidence_recovery(
         )
         return False
 
-    checkpoint = {
-        "schema_version": "v04-evidence-recovery-checkpoint.0",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "writing_plan_json": plan.model_dump_json(indent=2),
-        "writing_project_json": project.model_dump_json(indent=2),
-        "handoff_json": project.handoff.model_dump_json(indent=2),
-    }
+    checkpoint = _best_evidence_recovery_checkpoint(project, plan, request)
     st.session_state[EVIDENCE_RECOVERY_CHECKPOINT_KEY] = json.dumps(
         checkpoint,
         ensure_ascii=False,
@@ -3048,6 +3061,53 @@ def _same_evidence_recovery_incident(
     )
 
 
+def _best_evidence_recovery_checkpoint(
+    project: V04WritingProject,
+    plan: GroundedWritingPlan,
+    request: WritingEvidenceRecoveryRequest,
+) -> dict[str, Any]:
+    """Never overwrite a stronger checkpoint during the same recovery incident."""
+
+    candidate: dict[str, Any] = {
+        "schema_version": "v04-evidence-recovery-checkpoint.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "writing_plan_json": plan.model_dump_json(indent=2),
+        "writing_project_json": project.model_dump_json(indent=2),
+        "handoff_json": project.handoff.model_dump_json(indent=2),
+    }
+    existing_raw = st.session_state.get(EVIDENCE_RECOVERY_CHECKPOINT_KEY)
+    existing_request_raw = st.session_state.get(EVIDENCE_RECOVERY_REQUEST_KEY)
+    if not existing_raw or not existing_request_raw:
+        return candidate
+    try:
+        existing = json.loads(existing_raw)
+        existing_request = WritingEvidenceRecoveryRequest.model_validate_json(
+            existing_request_raw
+        )
+        existing_project = V04WritingProject.model_validate_json(
+            existing["writing_project_json"]
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return candidate
+    if not _same_evidence_recovery_incident(existing_request, request):
+        return candidate
+    if _recovery_project_score(existing_project) > _recovery_project_score(project):
+        return existing
+    return candidate
+
+
+def _recovery_project_score(project: V04WritingProject) -> tuple[int, int, int]:
+    return (
+        sum(state.status == "confirmed" for state in project.sections),
+        sum(state.status != "pending" for state in project.sections),
+        sum(
+            len(state.draft.paragraphs)
+            for state in project.sections
+            if state.draft is not None
+        ),
+    )
+
+
 def _begin_structural_plan_repair(
     project: V04WritingProject,
     plan: GroundedWritingPlan,
@@ -3055,13 +3115,7 @@ def _begin_structural_plan_repair(
 ) -> None:
     """Replan an affected section when more evidence did not fix its argument."""
 
-    checkpoint = {
-        "schema_version": "v04-evidence-recovery-checkpoint.0",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "writing_plan_json": plan.model_dump_json(indent=2),
-        "writing_project_json": project.model_dump_json(indent=2),
-        "handoff_json": project.handoff.model_dump_json(indent=2),
-    }
+    checkpoint = _best_evidence_recovery_checkpoint(project, plan, request)
     st.session_state[EVIDENCE_RECOVERY_CHECKPOINT_KEY] = json.dumps(
         checkpoint,
         ensure_ascii=False,

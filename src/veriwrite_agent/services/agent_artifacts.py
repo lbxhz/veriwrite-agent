@@ -30,6 +30,8 @@ from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.models.writing_plan import GroundedWritingPlan
 from veriwrite_agent.models.writing_quality import ManuscriptQualityReview
 
+MAX_AGENT_STATE_ARTIFACTS = 200
+
 ArtifactStatus = Literal[
     "draft",
     "confirmed",
@@ -170,6 +172,7 @@ def register_artifact(state: AgentState, reference: ArtifactReference) -> AgentS
         else:
             updated_artifacts.append(artifact)
     updated_artifacts.append(reference)
+    updated_artifacts = _compact_state_artifacts(updated_artifacts)
     return state.model_copy(
         update={
             "artifacts": updated_artifacts,
@@ -177,6 +180,25 @@ def register_artifact(state: AgentState, reference: ArtifactReference) -> AgentS
             "updated_at": datetime.now(timezone.utc),
         }
     )
+
+
+def _compact_state_artifacts(
+    artifacts: list[ArtifactReference],
+) -> list[ArtifactReference]:
+    """Bound the current snapshot while full artifact history stays in checkpoints."""
+
+    excess = len(artifacts) - MAX_AGENT_STATE_ARTIFACTS
+    if excess <= 0:
+        return artifacts
+    removable = {
+        index
+        for index, artifact in enumerate(artifacts)
+        if artifact.status in {"superseded", "invalid"}
+    }
+    if len(removable) < excess:
+        raise ValueError("AgentState has too many simultaneously active artifacts")
+    drop = set(sorted(removable)[:excess])
+    return [artifact for index, artifact in enumerate(artifacts) if index not in drop]
 
 
 def active_artifact(

@@ -177,6 +177,10 @@ class AgentRuntimeStore:
         if pointed is not None:
             return pointed
 
+        longest = self._load_unique_longest_chain(valid)
+        if longest is not None:
+            return longest
+
         roots = [
             checkpoint
             for checkpoint in valid
@@ -198,6 +202,53 @@ class AgentRuntimeStore:
             if len(children) != 1:
                 raise ValueError("checkpoint history contains an ambiguous fork")
             current = children[0]
+
+    def _load_unique_longest_chain(
+        self,
+        valid: list[AgentCheckpoint],
+    ) -> AgentCheckpoint | None:
+        """Recover the sole furthest valid tip when the atomic pointer is stale."""
+
+        by_id = {checkpoint.checkpoint_id: checkpoint for checkpoint in valid}
+        parent_ids = {
+            checkpoint.parent_checkpoint_id
+            for checkpoint in valid
+            if checkpoint.parent_checkpoint_id is not None
+        }
+        tips = [
+            checkpoint
+            for checkpoint in valid
+            if checkpoint.checkpoint_id not in parent_ids
+            and self._has_valid_checkpoint_ancestry(checkpoint, by_id)
+        ]
+        if not tips:
+            return None
+        furthest_sequence = max(checkpoint.sequence for checkpoint in tips)
+        furthest = [
+            checkpoint for checkpoint in tips if checkpoint.sequence == furthest_sequence
+        ]
+        return furthest[0] if len(furthest) == 1 else None
+
+    @staticmethod
+    def _has_valid_checkpoint_ancestry(
+        checkpoint: AgentCheckpoint,
+        by_id: dict[str, AgentCheckpoint],
+    ) -> bool:
+        current = checkpoint
+        seen: set[str] = set()
+        while current.parent_checkpoint_id is not None:
+            if current.checkpoint_id in seen:
+                return False
+            seen.add(current.checkpoint_id)
+            parent = by_id.get(current.parent_checkpoint_id)
+            if (
+                parent is None
+                or parent.sequence != current.sequence - 1
+                or parent.state.run_id != current.state.run_id
+            ):
+                return False
+            current = parent
+        return current.sequence == 0
 
     def _load_pointed_checkpoint(
         self,

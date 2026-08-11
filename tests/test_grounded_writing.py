@@ -81,6 +81,7 @@ from veriwrite_agent.services.writing_autopilot import (
     ContinuousWritingPolicy,
 )
 from veriwrite_agent.services.writing_agent_runtime import WritingAgentRuntimeService
+from veriwrite_agent.services.writing_evidence_recovery import merge_recovery_handoffs
 from veriwrite_agent.ui.writing_console import (
     reopen_entire_body_for_regeneration,
 )
@@ -270,6 +271,65 @@ def two_section_handoff() -> V04WritingHandoff:
             "outline": active.outline.model_copy(update={"outline": outline_draft})
         }
     )
+
+
+def test_recovery_handoff_keeps_unaffected_outline_and_verified_evidence() -> None:
+    previous = two_section_handoff()
+    supporting = previous.evidence_library.records[1]
+    current_library = EvidenceLibrary.model_validate(
+        previous.evidence_library.model_copy(
+            update={
+                "records": [supporting],
+                "documents": [],
+                "extractions": [],
+                "page_selections": [],
+                "pages": [],
+                "evidence_cards": [],
+                "literature_matrix": [],
+            }
+        ).model_dump(mode="json")
+    )
+    current_sections = [
+        section.model_copy(
+            update={
+                "core_dois": [],
+                "supporting_dois": [SUPPORTING_DOI],
+                "evidence_card_ids": [],
+            }
+        )
+        for section in previous.outline.outline.sections
+    ]
+    current = V04WritingHandoff.model_validate(
+        previous.model_copy(
+            update={
+                "evidence_library": current_library,
+                "outline": previous.outline.model_copy(
+                    update={
+                        "outline": previous.outline.outline.model_copy(
+                            update={"sections": current_sections}
+                        )
+                    }
+                ),
+            }
+        ).model_dump(mode="json")
+    )
+
+    merged = merge_recovery_handoffs(
+        previous,
+        current,
+        affected_section_ids={"discussion"},
+    )
+
+    records = {record.doi: record for record in merged.evidence_library.records}
+    sections = {
+        section.section_id: section for section in merged.outline.outline.sections
+    }
+    assert records[DOI].evidence_status == "full_text_verified"
+    assert EVIDENCE_ID in {
+        card.evidence_id for card in merged.evidence_library.evidence_cards
+    }
+    assert sections["method"] == previous.outline.outline.sections[0]
+    assert sections["discussion"].core_dois == []
 
 
 def blocked_handoff() -> V04WritingHandoff:
