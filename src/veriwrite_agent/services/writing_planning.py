@@ -492,6 +492,116 @@ def repair_writing_plan_source_coverage(
     )
 
 
+def rebase_writing_plan_authority(
+    handoff: V04WritingHandoff,
+    plan: GroundedWritingPlan,
+) -> WritingPlanCoverageRepair:
+    """Rebind a cached plan to the exact authority in a newer V0.3 handoff.
+
+    Evidence recovery can replace the admitted literature set while a compatible
+    writing plan and accepted chapters remain cached.  A plan must never reach the
+    paragraph writer with DOI values or evidence cards that the current handoff no
+    longer grants.  Metadata-only sources that have left the library may be removed
+    when the paragraph still has other support; missing evidence cards or a paragraph
+    left with no authority are dependency failures and require replanning instead.
+    """
+
+    packet_builder = SectionEvidencePacketBuilder()
+    previous_sections = {section.section_id: section for section in plan.sections}
+    rebased_sections: list[WritingSectionPlan] = []
+    for section in plan.sections:
+        packet = packet_builder.build(handoff, section.section_id)
+        available_evidence = {
+            item.evidence_id: item for item in packet.evidence_items
+        }
+        available_sources = {source.doi for source in packet.sources}
+        paragraphs: list[WritingParagraphPlan] = []
+        for paragraph in section.paragraphs:
+            missing_evidence = [
+                evidence_id
+                for evidence_id in paragraph.evidence_card_ids
+                if evidence_id not in available_evidence
+            ]
+            if missing_evidence:
+                raise WritingPlanDependencyError(
+                    f"{section.section_id} paragraph {paragraph.paragraph_number} "
+                    "references evidence cards no longer available in the current "
+                    f"handoff: {', '.join(missing_evidence)}"
+                )
+            source_dois = [
+                doi for doi in paragraph.source_dois if doi in available_sources
+            ]
+            evidence_dois = [
+                available_evidence[evidence_id].doi
+                for evidence_id in paragraph.evidence_card_ids
+            ]
+            source_dois = list(dict.fromkeys([*evidence_dois, *source_dois]))
+            if not source_dois:
+                raise WritingPlanDependencyError(
+                    f"{section.section_id} paragraph {paragraph.paragraph_number} "
+                    "has no surviving authority after the V0.3 handoff changed"
+                )
+            update: dict[str, object] = {"source_dois": source_dois}
+            if (
+                paragraph.argument_move
+                in {"compare_studies", "synthesize_consensus", "analyze_difference"}
+                and len(source_dois) < 2
+            ):
+                update.update(
+                    {
+                        "argument_move": (
+                            "evaluate_limitation"
+                            if paragraph.role
+                            in {"detailed_evidence", "section_support"}
+                            else "frame_problem"
+                        ),
+                        "comparison_axis": None,
+                    }
+                )
+            paragraphs.append(paragraph.model_copy(update=update))
+        rebased_sections.append(section.model_copy(update={"paragraphs": paragraphs}))
+
+    required_source_dois = _required_source_dois(handoff)
+    rebased_sections = _apply_required_source_coverage(
+        handoff,
+        rebased_sections,
+        required_source_dois=required_source_dois,
+    )
+    changed: dict[str, tuple[int, ...]] = {}
+    for section in rebased_sections:
+        previous = previous_sections[section.section_id]
+        changed_numbers = tuple(
+            current.paragraph_number
+            for old, current in zip(
+                previous.paragraphs,
+                section.paragraphs,
+                strict=True,
+            )
+            if _paragraph_requires_rewrite(old, current)
+        )
+        if changed_numbers:
+            changed[section.section_id] = changed_numbers
+    fingerprint = _writing_plan_fingerprint(
+        plan.topic,
+        rebased_sections,
+        required_source_dois=required_source_dois,
+        output_language=plan.output_language,
+    )
+    rebased_plan = GroundedWritingPlan.model_validate(
+        plan.model_copy(
+            update={
+                "plan_fingerprint": fingerprint,
+                "required_source_dois": required_source_dois,
+                "sections": rebased_sections,
+            }
+        ).model_dump(mode="json")
+    )
+    return WritingPlanCoverageRepair(
+        plan=rebased_plan,
+        changed_paragraph_numbers=changed,
+    )
+
+
 def align_writing_plan_language(
     handoff: V04WritingHandoff,
     plan: GroundedWritingPlan,

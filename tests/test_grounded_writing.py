@@ -67,6 +67,7 @@ from veriwrite_agent.services.writing_planning import (
     _assign_required_sources_to_problem_paragraphs,
     _repair_compiled_required_source_coverage,
     align_writing_plan_language,
+    rebase_writing_plan_authority,
     repair_writing_plan_source_coverage,
 )
 from veriwrite_agent.services.writing_quality import (
@@ -87,6 +88,7 @@ from veriwrite_agent.services.writing_evidence_recovery import merge_recovery_ha
 from veriwrite_agent.ui.writing_console import (
     _merge_recovery_checkpoint_progress,
     _reopen_confirmed_state_for_plan_changes,
+    _synchronize_project_handoff,
     reopen_entire_body_for_regeneration,
 )
 
@@ -1637,6 +1639,155 @@ def test_source_coverage_repair_accepts_an_explicit_recovery_bibliography() -> N
 
     assert repair.plan.required_source_dois == [DOI, SUPPORTING_DOI]
     assert BACKGROUND_DOI not in repair.plan.required_source_dois
+
+
+def test_authority_rebase_removes_sources_that_left_the_current_handoff() -> None:
+    previous_handoff = handoff_with_background_source()
+    requirement_spec = previous_handoff.requirement.requirement.model_copy(
+        update={
+            "references": ReferenceRequirement(
+                minimum_total=3,
+                target_total=3,
+                bibliography_style="APA 7th",
+                max_references_per_citation_cluster=4,
+                all_bibliography_items_must_be_cited_and_discussed=True,
+            )
+        }
+    )
+    confirmed_requirement = previous_handoff.requirement.model_copy(
+        update={"requirement": requirement_spec}
+    )
+    previous_handoff = previous_handoff.model_copy(
+        update={
+            "requirement": confirmed_requirement,
+            "requirement_policy": RequirementPolicyCompiler(current_year=2026).compile(
+                confirmed_requirement
+            ),
+        }
+    )
+    payload = json.loads(plan_response())
+    payload["paragraphs"][2]["source_refs"].append("S003")
+    previous_plan = GroundedWritingPlanner(
+        FakeLLMClient(json.dumps(payload))
+    ).plan(previous_handoff)
+    current_section = previous_handoff.outline.outline.sections[0].model_copy(
+        update={"supporting_dois": [SUPPORTING_DOI]}
+    )
+    current_handoff = previous_handoff.model_copy(
+        update={
+            "outline": previous_handoff.outline.model_copy(
+                update={
+                    "outline": previous_handoff.outline.outline.model_copy(
+                        update={"sections": [current_section]}
+                    )
+                }
+            ),
+            "evidence_library": previous_handoff.evidence_library.model_copy(
+                update={
+                    "records": [
+                        record
+                        for record in previous_handoff.evidence_library.records
+                        if record.doi != BACKGROUND_DOI
+                    ]
+                }
+            ),
+        }
+    )
+
+    repair = rebase_writing_plan_authority(current_handoff, previous_plan)
+
+    assert repair.plan.required_source_dois == [DOI, SUPPORTING_DOI]
+    assert BACKGROUND_DOI not in {
+        doi
+        for section in repair.plan.sections
+        for paragraph in section.paragraphs
+        for doi in paragraph.source_dois
+    }
+    assert repair.changed_paragraph_numbers == {"method": (3,)}
+
+
+def test_handoff_sync_preserves_draft_and_reopens_only_rebased_paragraph() -> None:
+    previous_handoff = handoff_with_background_source()
+    previous_plan = GroundedWritingPlanner(
+        FakeLLMClient(plan_response())
+    ).plan(previous_handoff).confirm(confirmed_by="student")
+    # Put the removable metadata source on one synthesis paragraph without making it
+    # the paragraph's only authority.
+    section = previous_plan.sections[0]
+    paragraphs = list(section.paragraphs)
+    paragraphs[2] = paragraphs[2].model_copy(
+        update={
+            "source_dois": [*paragraphs[2].source_dois, BACKGROUND_DOI]
+        }
+    )
+    previous_plan = GroundedWritingPlan.model_validate(
+        previous_plan.model_copy(
+            update={"sections": [section.model_copy(update={"paragraphs": paragraphs})]}
+        ).model_dump(mode="json")
+    )
+    packet = SectionEvidencePacketBuilder().build(previous_handoff, "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(
+            section_id="method",
+            paragraphs=[
+                DraftParagraphProposal(
+                    role=item.role,
+                    text=f"Evidence-bound paragraph {item.paragraph_number}.",
+                    evidence_card_ids=item.evidence_card_ids,
+                    source_dois=item.source_dois,
+                )
+                for item in previous_plan.sections[0].paragraphs
+            ],
+        ),
+    )
+    projects = WritingProjectService()
+    project = projects.save_draft(projects.start(previous_handoff), quality_passed(draft))
+    project = projects.confirm_section(project, "method", confirmed_by="student")
+    current_section = previous_handoff.outline.outline.sections[0].model_copy(
+        update={"supporting_dois": [SUPPORTING_DOI]}
+    )
+    current_handoff = previous_handoff.model_copy(
+        update={
+            "outline": previous_handoff.outline.model_copy(
+                update={
+                    "outline": previous_handoff.outline.outline.model_copy(
+                        update={"sections": [current_section]}
+                    )
+                }
+            ),
+            "evidence_library": previous_handoff.evidence_library.model_copy(
+                update={
+                    "records": [
+                        record
+                        for record in previous_handoff.evidence_library.records
+                        if record.doi != BACKGROUND_DOI
+                    ]
+                }
+            ),
+        }
+    )
+    current_plan = rebase_writing_plan_authority(
+        current_handoff,
+        previous_plan,
+    ).plan
+
+    synchronized = _synchronize_project_handoff(
+        project,
+        previous_plan=previous_plan,
+        current_plan=current_plan,
+        handoff=current_handoff,
+    )
+
+    state = synchronized.sections[0]
+    assert state.status == "needs_review"
+    assert state.draft is not None
+    assert state.draft.paragraphs == project.sections[0].draft.paragraphs
+    assert [
+        issue.paragraph_number
+        for issue in state.draft.issues
+        if issue.code == "final_audit_repair"
+    ] == [3]
 
 
 def test_paragraph_writer_cannot_return_self_selected_evidence_ids() -> None:

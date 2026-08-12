@@ -61,6 +61,7 @@ from veriwrite_agent.services.writing_planning import (
     WritingPlanRuntimeCache,
     _paragraph_requires_rewrite,
     align_writing_plan_language,
+    rebase_writing_plan_authority,
     repair_writing_plan_source_coverage,
 )
 from veriwrite_agent.services.writing_quality import (
@@ -1735,10 +1736,8 @@ def _reopen_confirmed_state_for_plan_changes(
 ) -> WritingSectionState | None:
     """Retain accepted prose and reopen only paragraphs whose authority changed."""
 
-    if (
-        state.draft is None
-        or len(previous_plan.paragraphs) != len(current_plan.paragraphs)
-        or not _recovered_state_is_compatible(state, previous_plan, handoff)
+    if state.draft is None or len(previous_plan.paragraphs) != len(
+        current_plan.paragraphs
     ):
         return None
     changed = [
@@ -1750,6 +1749,28 @@ def _reopen_confirmed_state_for_plan_changes(
         )
         if _paragraph_requires_rewrite(previous, current)
     ]
+    try:
+        packet = SectionEvidencePacketBuilder().build(handoff, state.section_id)
+    except Exception:
+        return None
+    packet_evidence = {item.evidence_id for item in packet.evidence_items}
+    packet_sources = {source.doi for source in packet.sources}
+    changed_set = set(changed)
+    for draft_paragraph, current in zip(
+        state.draft.paragraphs,
+        current_plan.paragraphs,
+        strict=True,
+    ):
+        if current.paragraph_number in changed_set:
+            continue
+        if (
+            draft_paragraph.role != current.role
+            or draft_paragraph.evidence_card_ids != current.evidence_card_ids
+            or draft_paragraph.source_dois != current.source_dois
+            or not set(draft_paragraph.evidence_card_ids).issubset(packet_evidence)
+            or not set(draft_paragraph.source_dois).issubset(packet_sources)
+        ):
+            return None
     if not changed:
         return state
     retained = [
@@ -2180,6 +2201,51 @@ def _render_writing_plan(
         st.session_state.pop(FINAL_MATTER_KEY, None)
         st.session_state.pop(FINAL_PACKAGE_KEY, None)
         st.rerun()
+    try:
+        authority_repair = rebase_writing_plan_authority(handoff, plan)
+    except WritingPlanDependencyError as exc:
+        pause_writing_agent(st.session_state)
+        _autosave_current_project()
+        st.error(
+            "V0.3 证据交接已变化，但现有写作计划中有段落失去了唯一支撑。"
+            "系统已停止正文调用并保留检查点；下一步应只重规划受影响段落。"
+        )
+        with st.expander("技术详情"):
+            st.code(str(exc))
+        return None
+    cached_project_raw = st.session_state.get(V04_PROJECT_KEY)
+    cached_project = None
+    if cached_project_raw:
+        try:
+            cached_project = V04WritingProject.model_validate_json(
+                cached_project_raw
+            )
+        except (TypeError, ValueError):
+            cached_project = None
+    authority_changed = authority_repair.plan != plan
+    handoff_changed = bool(
+        cached_project is not None and cached_project.handoff != handoff
+    )
+    if authority_changed or handoff_changed:
+        previous_plan = plan
+        plan = authority_repair.plan
+        st.session_state[WRITING_PLAN_KEY] = plan.model_dump_json(indent=2)
+        if cached_project is not None:
+            synchronized = _synchronize_project_handoff(
+                cached_project,
+                previous_plan=previous_plan,
+                current_plan=plan,
+                handoff=handoff,
+            )
+            st.session_state[V04_PROJECT_KEY] = synchronized.model_dump_json(indent=2)
+        st.session_state.pop(FINAL_MATTER_KEY, None)
+        st.session_state.pop(FINAL_PACKAGE_KEY, None)
+        _autosave_current_project()
+        st.session_state["mvp_flash"] = (
+            "V0.3 证据交接已与写作计划重新对齐；兼容章节和段落均已保留，"
+            "仅来源权限实际变化的段落会重新生成。"
+        )
+        st.rerun()
     legacy_coverage_count = _legacy_coverage_count(plan)
     policy = handoff.requirement_policy or RequirementPolicyCompiler().compile(
         handoff.requirement
@@ -2322,9 +2388,77 @@ def _load_or_start_project(
         project = V04WritingProject.model_validate_json(serialized)
         if project.handoff == handoff:
             return project
+        serialized_plan = st.session_state.get(WRITING_PLAN_KEY)
+        if serialized_plan:
+            previous_plan = GroundedWritingPlan.model_validate_json(serialized_plan)
+            current_plan = rebase_writing_plan_authority(
+                handoff,
+                previous_plan,
+            ).plan
+            synchronized = _synchronize_project_handoff(
+                project,
+                previous_plan=previous_plan,
+                current_plan=current_plan,
+                handoff=handoff,
+            )
+            st.session_state[WRITING_PLAN_KEY] = current_plan.model_dump_json(indent=2)
+            _store_project(synchronized)
+            return synchronized
     project = WritingProjectService().start(handoff)
     _store_project(project)
     return project
+
+
+def _synchronize_project_handoff(
+    project: V04WritingProject,
+    *,
+    previous_plan: GroundedWritingPlan,
+    current_plan: GroundedWritingPlan,
+    handoff: V04WritingHandoff,
+) -> V04WritingProject:
+    """Adopt a new evidence handoff without discarding compatible writing progress."""
+
+    pending = {
+        state.section_id: state
+        for state in WritingProjectService().start(handoff).sections
+    }
+    old_states = {state.section_id: state for state in project.sections}
+    old_plans = {section.section_id: section for section in previous_plan.sections}
+    states: list[WritingSectionState] = []
+    for section in current_plan.sections:
+        state = old_states.get(section.section_id)
+        previous = old_plans.get(section.section_id)
+        if state is None or previous is None or state.draft is None:
+            states.append(pending[section.section_id])
+            continue
+        if (
+            _draft_matches_plan(state, section)
+            and _recovered_state_is_compatible(state, section, handoff)
+        ):
+            states.append(state)
+            continue
+        reopened = _reopen_confirmed_state_for_plan_changes(
+            state,
+            previous_plan=previous,
+            current_plan=section,
+            handoff=handoff,
+        )
+        states.append(reopened or pending[section.section_id])
+    synchronized = project.model_copy(
+        update={
+            "handoff": handoff,
+            "status": (
+                "body_complete"
+                if all(state.status == "confirmed" for state in states)
+                else "drafting"
+            ),
+            "sections": states,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+    return V04WritingProject.model_validate(
+        synchronized.model_dump(mode="json")
+    )
 
 
 def _revalidate_project_language(
@@ -3462,6 +3596,7 @@ def _begin_bounded_claim_downgrade(
     """Keep citations but remove claims that remain impossible after recovery."""
 
     try:
+        plan = rebase_writing_plan_authority(project.handoff, plan).plan
         downgraded_plan = downgrade_unresolved_evidence_claims(plan, request.gaps)
         packets = [
             SectionEvidencePacketBuilder().build(project.handoff, section_id)
