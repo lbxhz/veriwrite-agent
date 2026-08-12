@@ -2133,6 +2133,55 @@ def test_continuous_writing_confirms_a_clean_independently_reviewed_section() ->
     assert ("body_complete", "confirmed") in checkpoints
 
 
+def test_continuous_writing_stops_with_durable_paragraph_resume_point(
+    tmp_path: Path,
+) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    valid = json.dumps({"text": " ".join(["grounded"] * 100)})
+    interrupted = SequenceLLMClient([valid, "bad", "bad", "bad"])
+    cache = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    progress: list[tuple[str, str, int, int, str]] = []
+
+    stopped = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(interrupted),
+        reviewer=LLMSectionQualityReviewer(
+            FakeLLMClient(json.dumps({"section_id": "method", "findings": []}))
+        ),
+        cache=cache,
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student",
+        on_paragraph_progress=lambda *event: progress.append(event),
+    )
+
+    assert stopped.stop_code == "generation_failed"
+    assert "available 1/3" in (stopped.stop_reason or "")
+    assert progress == [("method", "Retrieval methods", 1, 3, "generated")]
+
+    resumed_writer = FakeLLMClient(valid)
+    resumed = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(resumed_writer),
+        reviewer=LLMSectionQualityReviewer(
+            FakeLLMClient(json.dumps({"section_id": "method", "findings": []}))
+        ),
+        cache=cache,
+    ).run(
+        stopped.project,
+        plan,
+        confirmed_by="student",
+    )
+
+    assert resumed.completed
+    assert len(resumed_writer.calls) == 2
+
+
 def test_continuous_writing_degrades_reviewer_contract_failure_without_stopping() -> None:
     active_handoff = handoff()
     plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
@@ -2988,12 +3037,16 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
         json.dumps({"text": "The verified result supports this planned paragraph."})
     )
     service = PlannedSectionDraftService()
+    progress_events: list[tuple[int, int, str]] = []
 
     first = service.draft(
         section_packet,
         section_plan,
         LLMGroundedParagraphWriter(first_client),
         cache=cache,
+        on_paragraph_progress=lambda completed, total, source: progress_events.append(
+            (completed, total, source)
+        ),
     )
     second_client = FakeLLMClient("not-json")
     second = service.draft(
@@ -3012,6 +3065,11 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
     assert "[@sun2025_core1]" in first.markdown
     assert "p. 4" not in first.markdown
     assert len(first_client.calls) == 3
+    assert progress_events == [
+        (1, 3, "generated"),
+        (2, 3, "generated"),
+        (3, 3, "generated"),
+    ]
     assert second_client.calls == []
 
     project_service = WritingProjectService()
@@ -3084,6 +3142,8 @@ def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> No
             cache=cache,
         )
 
+    assert cache.completed_count(section_packet, plan.sections[0]) == 1
+
     resumed_client = FakeLLMClient(valid)
     draft = service.draft(
         section_packet,
@@ -3095,6 +3155,30 @@ def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> No
     assert draft.status == "draft"
     assert len(interrupted_client.calls) == 3
     assert len(resumed_client.calls) == 2
+
+
+def test_paragraph_cache_survives_compatible_plan_fingerprint_change(
+    tmp_path: Path,
+) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    paragraph_packet = ParagraphEvidencePacketBuilder().build(
+        section_packet,
+        plan.sections[0].paragraphs[0],
+    )
+    original = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    proposal = ParagraphTextProposal(text=" ".join(["grounded"] * 70))
+    original.save(paragraph_packet, proposal)
+    compatible_revision = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint="f" * 64,
+    )
+
+    assert compatible_revision.load(paragraph_packet) == proposal
 
 
 def test_llm_writes_prose_but_code_adds_citation_and_page() -> None:

@@ -93,6 +93,7 @@ class ContinuousWritingResult:
 
 
 CheckpointCallback = Callable[[V04WritingProject, ContinuousWritingEvent], None]
+ParagraphProgressCallback = Callable[[str, str, int, int, str], None]
 
 
 class ContinuousSectionWritingService:
@@ -130,6 +131,7 @@ class ContinuousSectionWritingService:
         section_id: str | None = None,
         auto_confirm: bool = True,
         on_checkpoint: CheckpointCallback | None = None,
+        on_paragraph_progress: ParagraphProgressCallback | None = None,
     ) -> ContinuousWritingResult:
         if plan.status != "confirmed":
             raise ValueError("continuous writing requires a confirmed writing plan")
@@ -170,6 +172,7 @@ class ContinuousSectionWritingService:
                 confirmed_by=confirmed_by,
                 auto_confirm=auto_confirm,
                 on_checkpoint=on_checkpoint,
+                on_paragraph_progress=on_paragraph_progress,
             )
             current = result.project
             events.extend(result.events)
@@ -261,6 +264,7 @@ class ContinuousSectionWritingService:
         confirmed_by: str,
         auto_confirm: bool,
         on_checkpoint: CheckpointCallback | None,
+        on_paragraph_progress: ParagraphProgressCallback | None,
     ) -> ContinuousWritingResult:
         section_id = section_plan.section_id
         title = section_plan.title
@@ -420,13 +424,33 @@ class ContinuousSectionWritingService:
                 existing_draft=draft,
                 force_paragraph_numbers=repair_numbers,
                 revision_instructions=revision_instructions,
+                on_paragraph_progress=(
+                    lambda completed, total, source: on_paragraph_progress(
+                        section_id,
+                        title,
+                        completed,
+                        total,
+                        source,
+                    )
+                    if on_paragraph_progress is not None
+                    else None
+                ),
             )
             draft = _carry_review_history(draft, previous_draft)
         except Exception as exc:
+            saved = (
+                self._cache.completed_count(packet, section_plan)
+                if self._cache is not None
+                else 0
+            )
             return self._stopped(
                 project,
                 section_plan,
-                f"chapter generation failed: {exc}",
+                (
+                    f"chapter generation failed: {exc}; local paragraph checkpoints "
+                    f"available {saved}/{len(section_plan.paragraphs)}; resume will "
+                    "start from the first missing paragraph"
+                ),
                 on_checkpoint,
                 stop_code="generation_failed",
             )
@@ -515,13 +539,32 @@ class ContinuousSectionWritingService:
                     existing_draft=draft,
                     force_paragraph_numbers=repair_numbers,
                     revision_instructions=revision_instructions,
+                    on_paragraph_progress=(
+                        lambda completed, total, source: on_paragraph_progress(
+                            section_id,
+                            title,
+                            completed,
+                            total,
+                            source,
+                        )
+                        if on_paragraph_progress is not None
+                        else None
+                    ),
                 )
                 draft = _carry_review_history(draft, previous_draft)
             except Exception as exc:
+                saved = (
+                    self._cache.completed_count(packet, section_plan)
+                    if self._cache is not None
+                    else 0
+                )
                 return self._stopped(
                     project,
                     section_plan,
-                    f"targeted paragraph revision failed: {exc}",
+                    (
+                        f"targeted paragraph revision failed: {exc}; local paragraph "
+                        f"checkpoints available {saved}/{len(section_plan.paragraphs)}"
+                    ),
                     on_checkpoint,
                     stop_code="generation_failed",
                 )

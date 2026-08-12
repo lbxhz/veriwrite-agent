@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -899,6 +900,7 @@ class PlannedSectionDraftService:
         force: bool = False,
         force_paragraph_numbers: set[int] | None = None,
         revision_instructions: dict[int, str] | None = None,
+        on_paragraph_progress: Callable[[int, int, str], None] | None = None,
     ) -> SectionDraft:
         if section_plan.section_id != section_packet.section_id:
             raise WritingPlanError("section plan does not match the evidence packet")
@@ -909,13 +911,18 @@ class PlannedSectionDraftService:
             paragraph_packet = packet_builder.build(section_packet, paragraph_plan)
             should_force = force or paragraph_plan.paragraph_number in forced_numbers
             text_proposal = None
+            source = "generated"
             if not should_force and existing_draft is not None:
                 text_proposal = _reuse_existing_paragraph(
                     existing_draft,
                     paragraph_packet,
                 )
+                if text_proposal is not None:
+                    source = "draft"
             if text_proposal is None and not should_force and cache is not None:
                 text_proposal = cache.load(paragraph_packet)
+                if text_proposal is not None:
+                    source = "cache"
             if text_proposal is None:
                 editorial_context = None
                 if should_force and existing_draft is not None:
@@ -948,6 +955,12 @@ class PlannedSectionDraftService:
                     source_dois=paragraph_plan.source_dois,
                 )
             )
+            if on_paragraph_progress is not None:
+                on_paragraph_progress(
+                    paragraph_plan.paragraph_number,
+                    len(section_plan.paragraphs),
+                    source,
+                )
         return GroundedSectionDraftService().create(
             section_packet,
             SectionDraftProposal(
@@ -1030,13 +1043,26 @@ class WritingPlanRuntimeCache:
 
 
 class ParagraphWritingRuntimeCache:
-    """Persist each generated paragraph under its confirmed plan fingerprint."""
+    """Persist valid paragraphs across interruptions and compatible plan revisions."""
 
     def __init__(self, root: Path, *, plan_fingerprint: str) -> None:
         self._root = root / plan_fingerprint[:16]
+        self._shared_root = root / "shared"
 
     def load(self, packet: ParagraphEvidencePacket) -> ParagraphTextProposal | None:
-        path = self._path(packet)
+        current = self._path(packet)
+        if current.is_file():
+            proposal = self._load_path(packet, current)
+            if proposal is not None:
+                self._save_path(self._shared_path(packet), packet, proposal)
+            return proposal
+        return self._load_path(packet, self._shared_path(packet))
+
+    def _load_path(
+        self,
+        packet: ParagraphEvidencePacket,
+        path: Path,
+    ) -> ParagraphTextProposal | None:
         if not path.is_file():
             return None
         try:
@@ -1063,7 +1089,28 @@ class ParagraphWritingRuntimeCache:
         _ensure_paragraph_has_no_authored_citation(proposal)
         _ensure_review_genre_attribution(proposal)
         _ensure_paragraph_language(packet, proposal)
-        path = self._path(packet)
+        for path in (self._path(packet), self._shared_path(packet)):
+            self._save_path(path, packet, proposal)
+
+    def completed_count(
+        self,
+        section_packet: SectionEvidencePacket,
+        section_plan: WritingSectionPlan,
+    ) -> int:
+        """Count durable, contract-valid paragraph checkpoints for one section."""
+
+        builder = ParagraphEvidencePacketBuilder()
+        return sum(
+            self.load(builder.build(section_packet, paragraph)) is not None
+            for paragraph in section_plan.paragraphs
+        )
+
+    def _save_path(
+        self,
+        path: Path,
+        packet: ParagraphEvidencePacket,
+        proposal: ParagraphTextProposal,
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(
             path,
@@ -1083,6 +1130,14 @@ class ParagraphWritingRuntimeCache:
             self._root
             / packet.section_id
             / f"{packet.paragraph.paragraph_id}.json"
+        )
+
+    def _shared_path(self, packet: ParagraphEvidencePacket) -> Path:
+        signature = _paragraph_signature(packet)
+        return (
+            self._shared_root
+            / packet.section_id
+            / f"{packet.paragraph.paragraph_id}_{signature[:20]}.json"
         )
 
 

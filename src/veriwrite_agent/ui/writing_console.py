@@ -347,6 +347,42 @@ def _render_agent_pause_control() -> None:
         st.rerun()
 
 
+def _render_saved_paragraph_progress(
+    handoff: V04WritingHandoff,
+    project: V04WritingProject | None,
+) -> None:
+    """Expose durable paragraph checkpoints while the Agent is paused."""
+
+    raw = st.session_state.get(WRITING_PLAN_KEY)
+    if project is None or not raw:
+        return
+    try:
+        plan = GroundedWritingPlan.model_validate_json(raw)
+    except (TypeError, ValueError):
+        return
+    cache = ParagraphWritingRuntimeCache(
+        project_root() / "runtime" / "writing_console",
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    plan_by_id = {section.section_id: section for section in plan.sections}
+    for state in project.sections:
+        if state.status == "confirmed":
+            continue
+        section = plan_by_id.get(state.section_id)
+        if section is None:
+            continue
+        try:
+            packet = SectionEvidencePacketBuilder().build(handoff, state.section_id)
+            completed = cache.completed_count(packet, section)
+        except Exception:
+            continue
+        if completed:
+            st.info(
+                f"{section.title}：已保存 {completed}/{len(section.paragraphs)} 个段落；"
+                "继续时会从第一个缺失段落恢复。"
+            )
+
+
 def active_writing_recovery_status(
     state: MutableMapping[str, Any],
 ) -> Literal[
@@ -1447,6 +1483,7 @@ def render_grounded_writing_console(
     _render_agent_pause_control()
 
     if not st.session_state.get(V04_AUTOPILOT_REQUESTED_KEY):
+        _render_saved_paragraph_progress(handoff, existing_project)
         button_label = (
             "继续生成成品论文"
             if existing_project is not None
@@ -3029,18 +3066,43 @@ def _execute_continuous_writing(
             }[event.stage]
             progress.write(f"{event.section_title} · {stage_label}：{event.detail}")
 
+    def paragraph_progress(
+        _section_id: str,
+        section_title: str,
+        completed: int,
+        total: int,
+        source: str,
+    ) -> None:
+        detail = "已恢复本地检查点" if source in {"cache", "draft"} else "已生成并保存"
+        progress.update(
+            label=f"{section_title} · 段落 {completed}/{total} · {detail}",
+            state="running",
+        )
+
     try:
         if prepared_agent_action is not None and prepared_agent_action.cached_observation:
             progress.write("检测到相同输入和行动的成功记录，直接复用本地结果。")
             result = ContinuousWritingResult(project=project, events=())
         else:
             settings = LLMSettings()
+            writer_settings = settings.for_structured_output().model_copy(
+                update={
+                    "timeout_seconds": min(settings.timeout_seconds, 45.0),
+                    "max_retries": 0,
+                }
+            )
+            reviewer_settings = settings.for_quality_review().model_copy(
+                update={
+                    "timeout_seconds": min(settings.timeout_seconds, 60.0),
+                    "max_retries": 0,
+                }
+            )
             result = ContinuousSectionWritingService(
                 writer=LLMGroundedParagraphWriter(
-                    DeepSeekClient(settings.for_structured_output())
+                    DeepSeekClient(writer_settings)
                 ),
                 reviewer=LLMSectionQualityReviewer(
-                    DeepSeekClient(settings.for_quality_review())
+                    DeepSeekClient(reviewer_settings)
                 ),
                 cache=ParagraphWritingRuntimeCache(
                     project_root() / "runtime" / "writing_console",
@@ -3060,6 +3122,7 @@ def _execute_continuous_writing(
                 section_id=section_id,
                 auto_confirm=auto_confirm,
                 on_checkpoint=checkpoint,
+                on_paragraph_progress=paragraph_progress,
             )
     except Exception as exc:
         progress.update(label="连续写作启动失败", state="error")
@@ -3144,6 +3207,7 @@ def _execute_continuous_writing(
                 st.rerun()
         if (
             auto_confirm
+            and result.stop_code != "generation_failed"
             and next_action_kind == "write_or_revise_sections"
             and agent_transition is not None
         ):
