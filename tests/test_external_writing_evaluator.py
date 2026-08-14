@@ -1,5 +1,5 @@
 import copy
-import json
+import hashlib
 import sys
 from pathlib import Path
 
@@ -18,10 +18,97 @@ from veriwrite_agent.services.external_writing_evaluator import (
 
 ROOT = Path(__file__).parents[1]
 EVALUATOR_ROOT = ROOT / "veriwrite-evaluator"
-SAMPLE_TEXT = (EVALUATOR_ROOT / "tmp_sample.md").read_text(encoding="utf-8")
-SAMPLE_RESULT = json.loads(
-    (EVALUATOR_ROOT / "result2.json").read_text(encoding="utf-8")
+SAMPLE_TEXT = """# 可验证写作评估
+
+本文使用固定评分标准和逐字证据检查学术写作质量。该流程把评分依据保存在回执中，
+使不同版本的评估结果只有在 rubric hash 一致时才能比较。
+"""
+RUBRIC_HASH = "1" * 64
+DIMENSIONS = (
+    "central_focus",
+    "argument_chain",
+    "sentence_flow",
+    "inter_paragraph_flow",
+    "global_progression",
+    "no_redundancy",
+    "academic_register",
+    "llm_fool",
 )
+
+
+def _sample_result() -> dict:
+    evidence = []
+    scores = []
+    summaries = []
+    for dimension in DIMENSIONS:
+        evidence.append(
+            {
+                "dim_id": dimension,
+                "dim_name": dimension,
+                "evidence_found": True,
+                "confidence": "high",
+                "hedge": False,
+                "citations": [
+                    {
+                        "quote": "固定评分标准",
+                        "evidence_id": f"evidence-{dimension}",
+                        "location": "paragraph 1",
+                        "source_class": "doc",
+                    }
+                ],
+                "evidence_summary": "Synthetic contract fixture.",
+                "source_class_mix": {"doc": 1},
+            }
+        )
+        scores.append(
+            {
+                "dim_id": dimension,
+                "dim_name": dimension,
+                "score": 8.0,
+                "score_rationale": "Synthetic contract fixture.",
+                "evidence_drove_score": "fixed rubric",
+                "hedge_applied": False,
+                "citation_source_weight": 0.7,
+            }
+        )
+        summaries.append(
+            {
+                "dim_id": dimension,
+                "name": dimension,
+                "score": 8.0,
+                "score_100": 80.0,
+                "weight": 1.0,
+                "hedge": False,
+            }
+        )
+    return {
+        "rubric_id": "academic_writing_zh_v1",
+        "rubric": {"dimensions": list(DIMENSIONS)},
+        "evidence_citations": evidence,
+        "per_dim_scores": scores,
+        "aggregate": 8.0,
+        "aggregate_100": 80.0,
+        "max_possible": 10.0,
+        "hedge_dims": [],
+        "hedge_note": "",
+        "dim_summaries": summaries,
+        "evaluation_method": (
+            "hermes-rubric-v1|rubric=academic_writing_zh_v1|"
+            f"rubric_hash={RUBRIC_HASH}|backend=deepseek-openai"
+        ),
+        "receipt": {
+            "backend": "deepseek-openai",
+            "inputs": {
+                "target_hash_sha256": hashlib.sha256(
+                    SAMPLE_TEXT.encode("utf-8")
+                ).hexdigest()[:16]
+            },
+            "pipeline": {"stage_1_rubric_hash_sha256": RUBRIC_HASH},
+        },
+    }
+
+
+SAMPLE_RESULT = _sample_result()
 
 
 def _full_document_result() -> dict:
