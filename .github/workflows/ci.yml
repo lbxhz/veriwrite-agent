@@ -29,6 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,ui,ocr,evaluation]"
+          python -m pip install -e ".\veriwrite-evaluator[mcp]"
 
       - name: Check public release boundary
         run: python scripts/check_public_release.py

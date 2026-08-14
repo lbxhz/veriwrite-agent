@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from veriwrite_agent.models.paper_quality import PaperQualityScorecard
 from veriwrite_agent.models.writing import SectionDraftIssue
 from veriwrite_agent.services.paper_quality_evaluation import (
@@ -102,7 +104,7 @@ def test_clean_paper_receives_reproducible_six_dimension_scorecard() -> None:
     assert scorecard.overall_score == 100
     assert scorecard.grade == "excellent"
     assert len(scorecard.metrics) == 6
-    assert sum(metric.weight for metric in scorecard.metrics) == 1
+    assert sum(metric.weight for metric in scorecard.metrics) == pytest.approx(1.0)
 
 
 def test_blockers_remain_a_hard_gate_and_version_delta_is_visible() -> None:
