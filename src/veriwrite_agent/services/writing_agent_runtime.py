@@ -177,6 +177,19 @@ class WritingAgentRuntimeService:
                 raise ValueError("cached observation lost its original action")
             action = original_action
         if cached is None:
+            if state.budget.used_model_calls >= state.budget.max_model_calls:
+                raise ValueError(
+                    "Agent model-call budget is exhausted; refuse to start another "
+                    "paid section action"
+                )
+            if (
+                state.budget.used_recovery_rounds
+                >= state.budget.max_recovery_rounds
+            ):
+                raise ValueError(
+                    "Agent recovery-round budget is exhausted; refuse to start "
+                    "another recovery action"
+                )
             self._store.save_action(action)
             state = self._validated_state(
                 state,
@@ -243,8 +256,16 @@ class WritingAgentRuntimeService:
             lifecycle = "stopped"
         target_stage = assessment.decision.target_stage or "writing"
         revision_rounds = dict(state.revision_rounds_by_stage)
+        budget = state.budget
+        if prepared.cached_observation is None:
+            budget = budget.model_copy(
+                update={"used_model_calls": budget.used_model_calls + 1}
+            )
         if assessment.decision.decision_type in {"retry", "revise", "rollback"}:
             revision_rounds[target_stage] = revision_rounds.get(target_stage, 0) + 1
+            budget = budget.model_copy(
+                update={"used_recovery_rounds": budget.used_recovery_rounds + 1}
+            )
         state = self._validated_state(
             state,
             lifecycle=lifecycle,
@@ -262,6 +283,7 @@ class WritingAgentRuntimeService:
             latest_decision_id=assessment.decision.decision_id,
             blocker_codes=blocking_codes,
             revision_rounds_by_stage=revision_rounds,
+            budget=budget,
             event_sequence=state.event_sequence + 1,
             updated_at=datetime.now(timezone.utc),
         )

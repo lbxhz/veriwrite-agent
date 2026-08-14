@@ -11,7 +11,7 @@ from math import ceil
 
 from pydantic import ValidationError
 
-from veriwrite_agent.llm.base import LLMClient
+from veriwrite_agent.llm.base import LLMClient, LLMResponseError
 from veriwrite_agent.models.final_delivery import (
     FinalMatterProposal,
     FinalPaperAudit,
@@ -50,6 +50,40 @@ class LLMFinalMatterWriter:
 
     def __init__(self, client: LLMClient) -> None:
         self._client = client
+
+    def _complete_with_retry(self, messages: list[dict[str, object]]) -> str:
+        """Call the provider, retrying transient empty/truncated output once.
+
+        A single truncated response must not abort final-matter generation. The
+        retry asks the model to compress rather than truncate; if the provider
+        still fails, the resulting ``FinalDeliveryError`` joins the same contract
+        error channel the callers already handle.
+        """
+        last_error: LLMResponseError | None = None
+        for attempt in range(2):
+            try:
+                return self._client.complete(
+                    messages,
+                    response_format={"type": "json_object"},
+                )
+            except LLMResponseError as exc:
+                last_error = exc
+                if attempt == 0:
+                    messages = [
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": (
+                                "The provider returned empty or truncated output. Return "
+                                "the complete JSON object, compressing rather than "
+                                "truncating so it fits within the configured output limit."
+                            ),
+                        },
+                    ]
+        raise FinalDeliveryError(
+            "LLM final-matter generation failed after a transient provider retry: "
+            f"{last_error}"
+        ) from last_error
 
     def draft(
         self,
@@ -106,7 +140,7 @@ class LLMFinalMatterWriter:
             },
             {"role": "user", "content": body.markdown},
         ]
-        raw = self._client.complete(messages, response_format={"type": "json_object"})
+        raw = self._complete_with_retry(messages)
         proposal: FinalMatterProposal | None = None
         first_error: ValidationError | FinalDeliveryError | None = None
         try:
@@ -116,7 +150,7 @@ class LLMFinalMatterWriter:
         except (ValidationError, FinalDeliveryError) as exc:
             first_error = exc
         if proposal is None:
-            repaired_raw = self._client.complete(
+            repaired_raw = self._complete_with_retry(
                 [
                     *messages,
                     {"role": "assistant", "content": raw},
@@ -130,7 +164,6 @@ class LLMFinalMatterWriter:
                         ),
                     },
                 ],
-                response_format={"type": "json_object"},
             )
             try:
                 proposal = _parse_final_matter(repaired_raw)
@@ -192,10 +225,7 @@ class LLMFinalMatterWriter:
         last_error: ValidationError | FinalDeliveryError | None = None
         last_edited: FinalMatterProposal | None = None
         for attempt in range(3):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            raw = self._complete_with_retry(messages)
             try:
                 edited = _parse_final_matter(raw)
                 last_edited = edited
@@ -289,10 +319,7 @@ class LLMFinalMatterWriter:
         last_error: Exception | None = None
         last_candidate: FinalMatterProposal | None = None
         for attempt in range(3):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            raw = self._complete_with_retry(messages)
             try:
                 parsed = json.loads(raw)
                 abstract = " ".join(str(parsed.get("abstract", "")).split())
@@ -390,10 +417,7 @@ class LLMFinalMatterWriter:
         ]
         last_error: Exception | None = None
         for attempt in range(3):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            raw = self._complete_with_retry(messages)
             abstract = ""
             try:
                 parsed = json.loads(raw)
@@ -470,10 +494,7 @@ class LLMFinalMatterWriter:
         ]
         last_error: Exception | None = None
         for attempt in range(3):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            raw = self._complete_with_retry(messages)
             try:
                 parsed = json.loads(raw)
                 paragraphs = parsed.get("paragraphs")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from openai import OpenAI
+from openai import DefaultHttpxClient, OpenAI
 
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.base import (
@@ -24,6 +24,12 @@ class DeepSeekClient:
             base_url=str(settings.base_url),
             timeout=settings.timeout_seconds,
             max_retries=settings.max_retries,
+            http_client=DefaultHttpxClient(
+                # DeepSeek is more stable over the user's direct domestic route.
+                # Keep this scoped to the LLM client so literature/browser traffic
+                # may continue to use the Windows global proxy.
+                trust_env=settings.use_system_proxy,
+            ),
         )
 
     def complete(

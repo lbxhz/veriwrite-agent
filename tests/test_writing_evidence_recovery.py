@@ -1,7 +1,18 @@
+import hashlib
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from veriwrite_agent.models.evidence import EvidenceQuote
+import pytest
+
+from veriwrite_agent.models.evidence import (
+    DocumentAcquisition,
+    DocumentPage,
+    EvidenceCard,
+    EvidenceLibrary,
+    EvidenceQuote,
+    LiteratureLibraryRecord,
+)
 from veriwrite_agent.models.literature_selection import (
     ConfirmedLiteratureSearchBlueprint,
     LiteratureSearchBlueprint,
@@ -20,7 +31,11 @@ from veriwrite_agent.models.writing_plan import (
 from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryRequest,
     WritingEvidenceRecoveryService,
+    deferred_enhancement_targets,
+    deferred_recovery_dois,
     downgrade_unresolved_evidence_claims,
+    preserve_unresolved_deferred_sections,
+    upgrade_deferred_evidence_claims,
 )
 from veriwrite_agent.services.writing_quality import mark_manuscript_editor_targets
 from veriwrite_agent.ui import writing_console
@@ -360,6 +375,81 @@ def test_main_pause_clears_every_automatic_transition_but_keeps_run_identity() -
     assert "已暂停" in state["mvp_flash"]
 
 
+def test_failure_ledger_survives_reruns_and_is_category_scoped() -> None:
+    state: dict[str, object] = {}
+
+    assert writing_console._record_failure_attempt(
+        state,
+        category="transient_generation",
+        section_id="methods",
+    ) == 1
+    assert writing_console._record_failure_attempt(
+        state,
+        category="transient_generation",
+        section_id="methods",
+    ) == 2
+    assert writing_console._record_failure_attempt(
+        state,
+        category="section_plan_repair",
+        section_id="methods",
+    ) == 1
+
+    writing_console._clear_failure_attempts(
+        state,
+        category="transient_generation",
+    )
+
+    assert writing_console._failure_ledger(state) == {
+        "section_plan_repair:methods": 1
+    }
+
+
+def test_connection_failure_is_the_only_kind_eligible_for_transient_resume() -> None:
+    connection = SimpleNamespace(
+        stop_code="generation_failed",
+        stop_reason="chapter generation failed: Connection error.; 4/12 cached",
+    )
+    contract = SimpleNamespace(
+        stop_code="generation_failed",
+        stop_reason="paragraph plan references authority outside its section packet",
+    )
+
+    assert writing_console._is_transient_generation_failure(connection)
+    assert not writing_console._is_transient_generation_failure(contract)
+
+
+def test_recovery_shell_pause_control_accepts_checkpoint_only_state(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        writing_console,
+        "st",
+        SimpleNamespace(session_state={}),
+    )
+
+    # The recovery shell has no top-level V0.4 project and intentionally relies on
+    # the control to resolve one from its checkpoint only when autorun is active.
+    writing_console._render_agent_pause_control()
+
+
+def test_persistent_control_can_restore_project_from_recovery_checkpoint(
+    monkeypatch,
+) -> None:
+    state = {
+        writing_console.EVIDENCE_RECOVERY_CHECKPOINT_KEY: json.dumps(
+            {"writing_project_json": "saved-recovery-project"}
+        )
+    }
+    recovered = SimpleNamespace(project_id="paper-from-checkpoint")
+    monkeypatch.setattr(
+        writing_console.V04WritingProject,
+        "model_validate_json",
+        classmethod(lambda _cls, payload: recovered if payload else None),
+    )
+
+    assert writing_console._control_project_from_state(state) is recovered
+
+
 def test_ready_recovery_checkpoint_does_not_bypass_pause() -> None:
     state = {
         writing_console.EVIDENCE_RECOVERY_REQUEST_KEY: json.dumps(
@@ -460,6 +550,19 @@ def test_unresolved_comparison_is_downgraded_to_metadata_bounded_background() ->
     assert paragraph.argument_move == "frame_problem"
     assert paragraph.evidence_card_ids == []
     assert paragraph.source_dois == [BACKGROUND_DOI]
+    # 降级时必须保留原始意图，供后续 PDF 增强 pass 恢复为详细对比。
+    assert paragraph.deferred_argument == "compare_studies"
+    assert paragraph.deferred_comparison_axis == "accuracy and architecture"
+    assert paragraph.deferred_purpose == writing_plan.sections[0].paragraphs[1].purpose
+    assert (
+        paragraph.deferred_claim_focus
+        == writing_plan.sections[0].paragraphs[1].claim_focus
+    )
+    assert (
+        paragraph.deferred_central_question
+        == writing_plan.sections[0].paragraphs[1].central_question
+    )
+    assert paragraph.deferred_recovery_dois == [BACKGROUND_DOI]
     assert downgraded.plan_fingerprint != writing_plan.plan_fingerprint
     assert WritingEvidenceRecoveryService().audit_section(
         downgraded.sections[0], _packet()
@@ -748,6 +851,55 @@ def test_editorial_evidence_gap_is_not_routed_to_pdf_acquisition() -> None:
     assert writing_console._evidence_gaps_are_editorial_targets(project, request)
 
 
+def test_section_plan_repair_budget_survives_resolved_request_and_stops(
+    monkeypatch,
+) -> None:
+    state = {
+        writing_console.V04_FAILURE_LEDGER_KEY: json.dumps(
+            {"section_plan_repair:method": 3}
+        )
+    }
+    monkeypatch.setattr(
+        writing_console,
+        "st",
+        SimpleNamespace(session_state=state),
+    )
+    paused: list[object] = []
+    monkeypatch.setattr(
+        writing_console,
+        "pause_writing_agent",
+        lambda _state, project=None: paused.append(project) or True,
+    )
+    monkeypatch.setattr(writing_console, "_autosave_current_project", lambda: True)
+    monkeypatch.setattr(
+        writing_console,
+        "_begin_structural_plan_repair",
+        lambda *_: pytest.fail("exhausted repair budget must not start replanning"),
+    )
+    project = SimpleNamespace()
+    section_state = SimpleNamespace(
+        section_id="method",
+        draft=SimpleNamespace(
+            issues=[
+                SimpleNamespace(
+                    severity="blocking",
+                    code="unsupported_claim",
+                    paragraph_number=1,
+                    detail="claim exceeds evidence",
+                )
+            ]
+        ),
+    )
+
+    assert not writing_console._begin_reviewer_plan_repair(
+        project,
+        SimpleNamespace(),
+        section_state,
+    )
+    assert paused == [project]
+    assert "跨页面熔断" in state["mvp_flash"]
+
+
 def test_exhausted_replanned_gap_downgrades_without_more_search() -> None:
     gap = WritingEvidenceRecoveryService().audit_section(
         _section_plan(use_background_comparison=True),
@@ -816,3 +968,533 @@ def test_structural_plan_repair_actually_queues_automatic_replanning(
     assert state[writing_console.EVIDENCE_RECOVERY_AUTO_PLAN_KEY] is True
     assert state["v04_force_writing_plan_regeneration"] is True
     assert state["mvp_navigation_request"] == "writing"
+
+
+def test_evidence_recovery_at_limit_downgrades_instead_of_replanning(
+    monkeypatch,
+) -> None:
+    """recovery 达到上限时必须走降级，而不是继续重新规划。
+
+    回归保护：_begin_evidence_recovery 的边界判断曾用 ``>``，导致
+    recovery_round == max_recovery_rounds（4 == 4）时不触发降级，
+    而是继续设置 v04_force_writing_plan_regeneration 重规划，形成死循环。
+    """
+    gap = WritingEvidenceRecoveryService().audit_section(
+        _section_plan(use_background_comparison=True),
+        _packet(),
+    )[0]
+    request = WritingEvidenceRecoveryService().request(
+        plan_fingerprint="a" * 64,
+        gaps=(gap,),
+    ).model_copy(
+        update={
+            "recovery_round": 4,
+            "max_recovery_rounds": 4,
+            "planning_repair_round": 2,
+            "max_planning_repair_rounds": 2,
+        }
+    )
+    monkeypatch.setattr(writing_console, "st", SimpleNamespace(session_state={}))
+    monkeypatch.setattr(
+        writing_console,
+        "_evidence_gaps_are_editorial_targets",
+        lambda project, req: False,
+    )
+    downgrade_calls: list[WritingEvidenceRecoveryRequest] = []
+    monkeypatch.setattr(
+        writing_console,
+        "_begin_bounded_claim_downgrade",
+        lambda project, plan, req: downgrade_calls.append(req) or True,
+    )
+    # 让修复前的"重新规划"路径也能走到断言点，而不因缺少 mock 崩溃。
+    monkeypatch.setattr(
+        writing_console,
+        "_best_evidence_recovery_checkpoint",
+        lambda project, plan, req: {},
+    )
+    monkeypatch.setattr(writing_console, "_selected_literature_dois", lambda: set())
+    monkeypatch.setattr(
+        writing_console,
+        "route_evidence_recovery_to_search",
+        lambda req: None,
+    )
+
+    result = writing_console._begin_evidence_recovery(
+        SimpleNamespace(),
+        SimpleNamespace(),
+        request,
+    )
+
+    assert downgrade_calls, (
+        "recovery_round 达到上限时应降级为背景主张，而不是继续重新规划"
+    )
+    assert result is True
+
+
+def test_first_missing_pdf_batch_is_deferred_without_cross_stage_loop(
+    monkeypatch,
+) -> None:
+    gap = WritingEvidenceRecoveryService().audit_section(
+        _section_plan(use_background_comparison=True),
+        _packet(),
+    )[0]
+    request = WritingEvidenceRecoveryService().request(
+        plan_fingerprint="a" * 64,
+        gaps=(gap,),
+    )
+    monkeypatch.setattr(writing_console, "st", SimpleNamespace(session_state={}))
+    downgrade_calls: list[WritingEvidenceRecoveryRequest] = []
+    monkeypatch.setattr(
+        writing_console,
+        "_begin_bounded_claim_downgrade",
+        lambda project, plan, req: downgrade_calls.append(req) or True,
+    )
+    monkeypatch.setattr(
+        writing_console,
+        "route_evidence_recovery_to_search",
+        lambda req: pytest.fail("missing PDF must not re-enter V0.2/V0.3 search"),
+    )
+
+    result = writing_console._begin_evidence_recovery(
+        SimpleNamespace(),
+        SimpleNamespace(),
+        request,
+    )
+
+    assert result is True
+    assert downgrade_calls == [request]
+    assert request.recovery_round == 1
+
+
+def test_deferred_upgrade_of_pending_chapter_updates_plan_without_reopen(
+    monkeypatch,
+) -> None:
+    old_paragraph = SimpleNamespace(
+        deferred_argument="frame_problem",
+        paragraph_number=5,
+    )
+    upgraded_paragraph = SimpleNamespace(
+        deferred_argument=None,
+        paragraph_number=5,
+    )
+    plan = SimpleNamespace(
+        sections=[SimpleNamespace(section_id="theme_application_forecast", paragraphs=[old_paragraph])]
+    )
+    upgraded_plan = SimpleNamespace(
+        sections=[
+            SimpleNamespace(
+                section_id="theme_application_forecast",
+                paragraphs=[upgraded_paragraph],
+            )
+        ],
+        model_dump_json=lambda **_: "upgraded-plan",
+    )
+    project = SimpleNamespace(
+        handoff=SimpleNamespace(evidence_library=SimpleNamespace()),
+        sections=[
+            SimpleNamespace(
+                section_id="theme_application_forecast",
+                status="pending",
+                draft=None,
+            )
+        ],
+        model_dump_json=lambda **_: "pending-project",
+    )
+    project.model_copy = lambda **_: project
+    state: dict[str, object] = {}
+    monkeypatch.setattr(writing_console, "st", SimpleNamespace(session_state=state))
+    monkeypatch.setattr(
+        writing_console,
+        "upgrade_deferred_evidence_claims",
+        lambda _plan, _library: upgraded_plan,
+    )
+    monkeypatch.setattr(
+        writing_console,
+        "_reopen_targeted_paragraphs",
+        lambda *_: pytest.fail("a pending chapter has no draft to reopen"),
+    )
+
+    assert writing_console._begin_deferred_evidence_enhancement(project, plan)
+    assert state[writing_console.WRITING_PLAN_KEY] == "upgraded-plan"
+    assert state[writing_console.V04_PROJECT_KEY] == "pending-project"
+
+
+FIRST_RECOVERED_DOI = "10.1000/recovered-1"
+SECOND_RECOVERED_DOI = "10.1000/recovered-2"
+
+
+def _recovered_library(
+    full_text_dois: list[str],
+    *,
+    metadata_only_dois: list[str] | None = None,
+) -> EvidenceLibrary:
+    records: list[LiteratureLibraryRecord] = []
+    documents: list[DocumentAcquisition] = []
+    pages: list[DocumentPage] = []
+    cards: list[EvidenceCard] = []
+    for index, doi in enumerate(full_text_dois):
+        sha = hashlib.sha256(doi.encode("utf-8")).hexdigest()
+        documents.append(
+            DocumentAcquisition(
+                doi=doi,
+                status="available",
+                method="user_upload",
+                source_url=f"https://doi.org/{doi}",
+                local_path=f"runtime/recovered_{index}.pdf",
+                sha256=sha,
+                media_type="application/pdf",
+                file_size_bytes=4096,
+                attempts=1,
+            )
+        )
+        pages.append(
+            DocumentPage(
+                doi=doi,
+                document_sha256=sha,
+                page_number=1,
+                text=f"Verified full-text evidence for {doi}.",
+                extraction_method="native_text",
+            )
+        )
+        cards.append(
+            EvidenceCard(
+                evidence_id=f"ev_rec_{index}",
+                doi=doi,
+                theme_id="method",
+                evidence_type="result",
+                normalized_claim=f"Verified result from {doi}.",
+                supporting_quotes=[
+                    EvidenceQuote(
+                        page_number=1,
+                        exact_text=f"Verified full-text evidence for {doi}.",
+                    )
+                ],
+                source_document_sha256=sha,
+                support_strength="direct",
+                review_status="confirmed",
+            )
+        )
+        records.append(
+            LiteratureLibraryRecord(
+                doi=doi,
+                title=f"Recovered study {index}",
+                authors=["Doe, Jane"],
+                year=2025,
+                journal="Journal",
+                source_url=f"https://doi.org/{doi}",
+                theme_ids=["method"],
+                evidence_tier="A_core",
+                evidence_status="full_text_verified",
+                permitted_use="detailed_claims",
+                admission_status="admitted",
+                centrality="central",
+                supported_claim=f"Supports detailed comparison evidence for {doi}.",
+                suitable_section_id="method",
+                use_boundary="Use for detailed retrieval comparison evidence.",
+            )
+        )
+    for doi in metadata_only_dois or []:
+        records.append(
+            LiteratureLibraryRecord(
+                doi=doi,
+                title="Metadata-only candidate",
+                authors=["Roe, Ana"],
+                year=2024,
+                source_url=f"https://doi.org/{doi}",
+                theme_ids=["method"],
+                evidence_tier="C_background",
+                evidence_status="metadata_verified",
+                permitted_use="background_only",
+            )
+        )
+    return EvidenceLibrary(
+        status="confirmed",
+        records=records,
+        documents=documents,
+        pages=pages,
+        evidence_cards=cards,
+        confirmed_by="student",
+        confirmed_at=datetime.now(timezone.utc),
+    )
+
+
+def _deferred_plan(
+    *,
+    deferred_argument: str,
+    deferred_dois: list[str],
+    comparison_axis: str | None = None,
+) -> GroundedWritingPlan:
+    paragraph = WritingParagraphPlan(
+        paragraph_id="method_p01",
+        section_id="method",
+        paragraph_number=1,
+        role="background",
+        purpose="State a bounded background overview and the limits of the available records.",
+        claim_focus="The available records permit only a general description of its scope.",
+        central_question="What is the general scope of this direction?",
+        argument_move="frame_problem",
+        comparison_axis=None,
+        target_words=100,
+        evidence_card_ids=[],
+        source_dois=list(deferred_dois),
+        deferred_argument=deferred_argument,
+        deferred_comparison_axis=comparison_axis,
+        deferred_purpose="Compare the original planned retrieval evidence.",
+        deferred_claim_focus="The original planned comparison claim.",
+        deferred_central_question="What did the original comparison establish?",
+        deferred_recovery_dois=list(deferred_dois),
+    )
+    tail = WritingParagraphPlan(
+        paragraph_id="method_p02",
+        section_id="method",
+        paragraph_number=2,
+        role="synthesis",
+        purpose="State a bounded conclusion.",
+        claim_focus="The evidence supports a scoped conclusion.",
+        central_question="What conclusion follows?",
+        argument_move="synthesize_consensus",
+        target_words=100,
+        evidence_card_ids=[],
+        source_dois=list(deferred_dois),
+    )
+    section = WritingSectionPlan(
+        section_id="method",
+        title="Retrieval methods",
+        purpose="Compare atmospheric retrieval methods.",
+        target_words=200,
+        counting_policy="words",
+        paragraphs=[paragraph, tail],
+    )
+    return GroundedWritingPlan(
+        topic="Atmospheric retrieval",
+        output_language="English",
+        plan_fingerprint="a" * 64,
+        sections=[section],
+    )
+
+
+def test_deferred_comparison_is_upgraded_when_both_pdfs_arrive() -> None:
+    dois = [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+    plan = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=dois,
+        comparison_axis="accuracy and architecture",
+    )
+    library = _recovered_library(dois)
+
+    upgraded = upgrade_deferred_evidence_claims(plan, library)
+
+    paragraph = upgraded.sections[0].paragraphs[0]
+    assert paragraph.role == "detailed_evidence"
+    assert paragraph.argument_move == "compare_studies"
+    assert paragraph.comparison_axis == "accuracy and architecture"
+    assert paragraph.evidence_card_ids == ["ev_rec_0", "ev_rec_1"]
+    assert paragraph.source_dois == dois
+    assert paragraph.purpose == "Compare the original planned retrieval evidence."
+    assert paragraph.claim_focus == "The original planned comparison claim."
+    assert paragraph.central_question == "What did the original comparison establish?"
+    assert paragraph.deferred_argument is None
+    assert paragraph.deferred_comparison_axis is None
+    assert paragraph.deferred_recovery_dois == []
+    assert upgraded.plan_fingerprint != plan.plan_fingerprint
+
+
+def test_replan_cannot_erase_deferred_marker_without_recovered_pdf() -> None:
+    dois = [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+    previous = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=dois,
+        comparison_axis="accuracy and architecture",
+    )
+    detailed = previous.sections[0].paragraphs[0].model_copy(
+        update={
+            "role": "detailed_evidence",
+            "purpose": "Make the detailed comparison again.",
+            "claim_focus": "One model is more accurate than the other.",
+            "deferred_argument": None,
+            "deferred_comparison_axis": None,
+            "deferred_purpose": None,
+            "deferred_claim_focus": None,
+            "deferred_central_question": None,
+            "deferred_recovery_dois": [],
+        }
+    )
+    candidate = previous.model_copy(
+        update={
+            "plan_fingerprint": "b" * 64,
+            "sections": [
+                previous.sections[0].model_copy(
+                    update={
+                        "paragraphs": [
+                            detailed,
+                            previous.sections[0].paragraphs[1],
+                        ]
+                    }
+                )
+            ],
+        }
+    )
+    metadata_only = _recovered_library([], metadata_only_dois=dois)
+
+    guarded = preserve_unresolved_deferred_sections(
+        previous,
+        candidate,
+        metadata_only,
+    )
+
+    assert guarded.sections[0] == previous.sections[0]
+    assert guarded.sections[0].paragraphs[0].deferred_argument == "compare_studies"
+    assert guarded.plan_fingerprint not in {
+        previous.plan_fingerprint,
+        candidate.plan_fingerprint,
+    }
+
+
+def test_replan_may_replace_section_after_all_deferred_pdfs_are_recovered() -> None:
+    dois = [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+    previous = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=dois,
+        comparison_axis="accuracy and architecture",
+    )
+    candidate = previous.model_copy(update={"plan_fingerprint": "b" * 64})
+
+    guarded = preserve_unresolved_deferred_sections(
+        previous,
+        candidate,
+        _recovered_library(dois),
+    )
+
+    assert guarded is candidate
+
+
+def test_deferred_comparison_stays_background_when_a_pdf_is_missing() -> None:
+    dois = [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+    plan = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=dois,
+        comparison_axis="accuracy and architecture",
+    )
+    library = _recovered_library(
+        [FIRST_RECOVERED_DOI],
+        metadata_only_dois=[SECOND_RECOVERED_DOI],
+    )
+
+    upgraded = upgrade_deferred_evidence_claims(plan, library)
+
+    assert upgraded is plan
+    paragraph = upgraded.sections[0].paragraphs[0]
+    assert paragraph.role == "background"
+    assert paragraph.argument_move == "frame_problem"
+    assert paragraph.deferred_argument == "compare_studies"
+
+
+def test_deferred_detail_claim_is_upgraded_with_a_single_pdf() -> None:
+    plan = _deferred_plan(
+        deferred_argument="evaluate_limitation",
+        deferred_dois=[FIRST_RECOVERED_DOI],
+    )
+    library = _recovered_library([FIRST_RECOVERED_DOI])
+
+    upgraded = upgrade_deferred_evidence_claims(plan, library)
+
+    paragraph = upgraded.sections[0].paragraphs[0]
+    assert paragraph.role == "detailed_evidence"
+    assert paragraph.argument_move == "evaluate_limitation"
+    assert paragraph.evidence_card_ids == ["ev_rec_0"]
+    assert paragraph.deferred_argument is None
+    assert paragraph.deferred_recovery_dois == []
+
+
+def test_deferred_recovery_dois_aggregates_the_batch_download_list() -> None:
+    plan = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=[FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI],
+        comparison_axis="accuracy and architecture",
+    )
+
+    assert deferred_recovery_dois(plan) == [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+
+    no_deferred = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=[FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI],
+        comparison_axis="accuracy and architecture",
+    ).model_copy(
+        update={
+            "sections": [
+                plan.sections[0].model_copy(
+                    update={
+                        "paragraphs": [
+                            plan.sections[0].paragraphs[0].model_copy(
+                                update={"deferred_recovery_dois": []}
+                            ),
+                            plan.sections[0].paragraphs[1],
+                        ]
+                    }
+                )
+            ]
+        }
+    )
+    assert deferred_recovery_dois(no_deferred) == []
+
+
+def test_deferred_enhancement_targets_reports_only_upgradable_paragraphs() -> None:
+    dois = [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+    plan = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=dois,
+        comparison_axis="accuracy and architecture",
+    )
+    library = _recovered_library(dois)
+
+    assert deferred_enhancement_targets(plan, library) == {("method", 1)}
+
+
+def test_deferred_enhancement_targets_is_empty_when_pdfs_are_missing() -> None:
+    dois = [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI]
+    plan = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=dois,
+        comparison_axis="accuracy and architecture",
+    )
+    library = _recovered_library(
+        [FIRST_RECOVERED_DOI],
+        metadata_only_dois=[SECOND_RECOVERED_DOI],
+    )
+
+    assert deferred_enhancement_targets(plan, library) == set()
+
+
+def test_upgrade_ignores_paragraphs_without_deferred_intent() -> None:
+    plan = _deferred_plan(
+        deferred_argument="compare_studies",
+        deferred_dois=[FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI],
+        comparison_axis="accuracy and architecture",
+    )
+    # 清除 defer 标记，模拟一个从未降级的普通段落。
+    plain = plan.model_copy(
+        update={
+            "sections": [
+                plan.sections[0].model_copy(
+                    update={
+                        "paragraphs": [
+                            plan.sections[0].paragraphs[0].model_copy(
+                                update={
+                                    "deferred_argument": None,
+                                    "deferred_comparison_axis": None,
+                                    "deferred_recovery_dois": [],
+                                }
+                            ),
+                            plan.sections[0].paragraphs[1],
+                        ]
+                    }
+                )
+            ]
+        }
+    )
+    library = _recovered_library([FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI])
+
+    upgraded = upgrade_deferred_evidence_claims(plain, library)
+
+    assert upgraded is plain
+    assert upgraded.sections[0].paragraphs[0].role == "background"

@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from veriwrite_agent.models.agent_runtime import (
     AgentState,
     ArtifactReference,
@@ -139,6 +141,8 @@ def test_runtime_records_action_observation_critic_decision_and_checkpoint(
     assert recorded.state.active_action_id is None
     assert recorded.state.current_stage == "editing"
     assert recorded.state.latest_decision_id == recorded.assessment.decision.decision_id
+    assert recorded.state.budget.used_model_calls == 1
+    assert recorded.state.budget.used_recovery_rounds == 0
     assert store.load_latest_checkpoint().state == recorded.state
 
 
@@ -160,7 +164,14 @@ def test_prepare_action_reuses_a_successful_idempotent_result(
         completed_at=prepared.action.created_at,
     )
     store.save_observation(observation)
-    idle_state = prepared.state.model_copy(update={"active_action_id": None})
+    idle_state = prepared.state.model_copy(
+        update={
+            "active_action_id": None,
+            "budget": prepared.state.budget.model_copy(
+                update={"used_model_calls": prepared.state.budget.max_model_calls}
+            ),
+        }
+    )
     resumed = WritingAgentContext(
         state=idle_state,
         policy_reference=active.policy_reference,
@@ -173,3 +184,67 @@ def test_prepare_action_reuses_a_successful_idempotent_result(
 
     assert duplicate.cached_observation == observation
     assert duplicate.action.idempotency_key == prepared.action.idempotency_key
+
+
+@pytest.mark.parametrize(
+    ("budget_update", "message"),
+    [
+        ({"used_model_calls": 100}, "model-call budget is exhausted"),
+        ({"used_recovery_rounds": 8}, "recovery-round budget is exhausted"),
+    ],
+)
+def test_prepare_action_refuses_new_uncached_work_after_budget_exhaustion(
+    tmp_path,
+    budget_update,
+    message,
+) -> None:
+    store = AgentRuntimeStore(tmp_path)
+    runtime = WritingAgentRuntimeService(store)
+    active = context()
+    exhausted = WritingAgentContext(
+        state=active.state.model_copy(
+            update={"budget": active.state.budget.model_copy(update=budget_update)}
+        ),
+        policy_reference=active.policy_reference,
+        handoff_reference=active.handoff_reference,
+        plan_reference=active.plan_reference,
+        project_reference=active.project_reference,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        runtime.prepare_section_action(exhausted, section_ids=["methods"])
+
+
+def test_runtime_counts_failed_execution_and_recovery_decision(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = AgentRuntimeStore(tmp_path)
+    runtime = WritingAgentRuntimeService(store)
+    prepared = runtime.prepare_section_action(context(), section_ids=["methods"])
+    output_reference = reference(
+        "writing_project",
+        "writing_project_fedcba9876543210",
+        "5" * 64,
+    )
+    monkeypatch.setattr(
+        "veriwrite_agent.services.writing_agent_runtime.artifact_reference_from_model",
+        lambda *_args, **_kwargs: output_reference,
+    )
+    result = SimpleNamespace(
+        project=SimpleNamespace(
+            sections=[SimpleNamespace(section_id="methods", draft=None)]
+        ),
+        events=(),
+        stopped_section_id="methods",
+        stop_code="generation_failed",
+        stop_reason="Connection error.",
+        recovery_request=None,
+        completed=False,
+    )
+
+    recorded = runtime.record_section_result(prepared, result, plan())
+
+    assert recorded.state.budget.used_model_calls == 1
+    assert recorded.state.budget.used_recovery_rounds == 1
+    assert recorded.state.revision_rounds_by_stage["writing"] == 1

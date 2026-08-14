@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +38,12 @@ from veriwrite_agent.services.pdf_text_extraction import PdfPageExtractor
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = Path(__file__).resolve().parent
-PDF_DIR = Path(r"E:\AI-Agent-Projects")
+PDF_DIR = Path(
+    os.getenv(
+        "VERIWRITE_EXPERIMENT_PDF_DIR",
+        str(ROOT / "runtime" / "experiment_pdfs"),
+    )
+)
 SECTION_ID = "aerosol_remote_sensing"
 SECTION_TITLE = "气溶胶遥感反演方法、应用与局限"
 SECTION_PURPOSE = (

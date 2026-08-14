@@ -27,6 +27,14 @@ class DeepSeekOpenAICompatibleBackend:
     def __init__(self, settings: EvaluatorSettings):
         self._settings = settings
         self._url = settings.base_url.rstrip("/") + "/chat/completions"
+        self._uses_system_proxy = settings.use_system_proxy
+        self._open = (
+            urllib.request.urlopen
+            if settings.use_system_proxy
+            else urllib.request.build_opener(
+                urllib.request.ProxyHandler({})
+            ).open
+        )
 
     def call(self, prompt: str, max_tokens: int = 2048) -> str:
         payload = json.dumps(
@@ -50,7 +58,7 @@ class DeepSeekOpenAICompatibleBackend:
         last_error: str | None = None
         for attempt in range(self._settings.max_retries + 1):
             try:
-                with urllib.request.urlopen(request, timeout=self._settings.timeout_seconds) as resp:
+                with self._open(request, timeout=self._settings.timeout_seconds) as resp:
                     data = json.loads(resp.read())
                 return data["choices"][0]["message"]["content"].strip()
             except urllib.error.HTTPError as error:

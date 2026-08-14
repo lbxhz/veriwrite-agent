@@ -28,6 +28,7 @@ class EvaluatorSettings:
     temperature: float = 0.0
     timeout_seconds: float = 300.0
     max_retries: int = 3
+    use_system_proxy: bool = False
     seed: int = 42
     batch: bool = True
     target_window_bytes: int = 120000
@@ -44,6 +45,15 @@ class EvaluatorSettings:
             temperature=float(_env("VW_EVAL_TEMPERATURE", default="0.0") or "0.0"),
             timeout_seconds=float(_env("VW_EVAL_TIMEOUT_SECONDS", default="300.0") or "300.0"),
             max_retries=int(_env("VW_EVAL_MAX_RETRIES", default="3") or "3"),
+            use_system_proxy=(
+                _env(
+                    "VW_EVAL_USE_SYSTEM_PROXY",
+                    "LLM_USE_SYSTEM_PROXY",
+                    default="false",
+                )
+                or "false"
+            ).lower()
+            in {"1", "true", "yes", "on"},
             seed=int(_env("VW_EVAL_SEED", default="42") or "42"),
             batch=os.getenv("VW_EVAL_BATCH", "1") not in ("0", "false", "False"),
             target_window_bytes=int(_env("VW_EVAL_TARGET_WINDOW_BYTES", default="120000") or "120000"),

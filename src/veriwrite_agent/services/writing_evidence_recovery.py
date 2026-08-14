@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from veriwrite_agent.models.evidence import EvidenceLibrary
+from veriwrite_agent.models.evidence import EvidenceCard, EvidenceLibrary
 from veriwrite_agent.models.literature_selection import (
     ConfirmedLiteratureSearchBlueprint,
     LiteratureSearchBlueprint,
@@ -490,7 +490,10 @@ def downgrade_unresolved_evidence_claims(
                     ]
                 )
             )
-            evidence_card_ids = [] if source_dois else paragraph.evidence_card_ids
+            # Keep any already-confirmed direct evidence. The downgrade only removes
+            # claims that exceed the current permission boundary; it must not discard
+            # valid support that can still ground a cautious background statement.
+            evidence_card_ids = list(paragraph.evidence_card_ids)
             paragraphs.append(
                 paragraph.model_copy(
                     update={
@@ -510,6 +513,14 @@ def downgrade_unresolved_evidence_claims(
                         ),
                         "argument_move": "frame_problem",
                         "comparison_axis": None,
+                        "deferred_argument": paragraph.argument_move,
+                        "deferred_comparison_axis": paragraph.comparison_axis,
+                        "deferred_purpose": paragraph.purpose,
+                        "deferred_claim_focus": paragraph.claim_focus,
+                        "deferred_central_question": paragraph.central_question,
+                        "deferred_recovery_dois": list(
+                            dict.fromkeys(gap.missing_full_text_dois)
+                        ),
                         "evidence_card_ids": evidence_card_ids,
                         "source_dois": source_dois,
                     }
@@ -531,6 +542,248 @@ def downgrade_unresolved_evidence_claims(
     return GroundedWritingPlan.model_validate(
         plan.model_copy(
             update={"sections": sections, "plan_fingerprint": fingerprint}
+        ).model_dump(mode="json")
+    )
+
+
+_COMPARISON_ARGUMENT_MOVES = frozenset({"compare_studies", "analyze_difference"})
+
+
+def upgrade_deferred_evidence_claims(
+    plan: GroundedWritingPlan,
+    library: EvidenceLibrary,
+) -> GroundedWritingPlan:
+    """Restore downgraded paragraphs once their deferred PDFs are full-text verified.
+
+    ``downgrade_unresolved_evidence_claims`` saved each gap paragraph's original
+    argument intent in ``deferred_argument``/``deferred_comparison_axis``/
+    ``deferred_recovery_dois`` so a later PDF-backed pass can upgrade it back from
+    background to detailed evidence without losing the planned claim. This pure
+    function only flips a paragraph when the library actually contains full-text
+    records and confirmed direct evidence cards for enough of its source DOIs;
+    paragraphs whose PDFs are still missing remain background as a safe fallback.
+    """
+
+    full_text_dois = {
+        record.doi
+        for record in library.records
+        if record.evidence_status == "full_text_verified"
+        and record.permitted_use == "detailed_claims"
+    }
+    direct_cards_by_doi: dict[str, list[EvidenceCard]] = {}
+    for card in library.evidence_cards:
+        if card.review_status == "confirmed" and card.support_strength == "direct":
+            direct_cards_by_doi.setdefault(card.doi, []).append(card)
+
+    sections: list[WritingSectionPlan] = []
+    upgraded_any = False
+    for section in plan.sections:
+        paragraphs: list[WritingParagraphPlan] = []
+        for paragraph in section.paragraphs:
+            upgraded = _upgrade_paragraph_if_ready(
+                paragraph,
+                full_text_dois,
+                direct_cards_by_doi,
+            )
+            if upgraded is None:
+                paragraphs.append(paragraph)
+            else:
+                paragraphs.append(upgraded)
+                upgraded_any = True
+        sections.append(section.model_copy(update={"paragraphs": paragraphs}))
+
+    if not upgraded_any:
+        return plan
+
+    canonical = json.dumps(
+        {
+            "enhancement": "deferred-evidence-upgrade-v1",
+            "source_plan_fingerprint": plan.plan_fingerprint,
+            "sections": [section.model_dump(mode="json") for section in sections],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return GroundedWritingPlan.model_validate(
+        plan.model_copy(
+            update={"sections": sections, "plan_fingerprint": fingerprint}
+        ).model_dump(mode="json")
+    )
+
+
+def _upgrade_paragraph_if_ready(
+    paragraph: WritingParagraphPlan,
+    full_text_dois: set[str],
+    direct_cards_by_doi: dict[str, list[EvidenceCard]],
+) -> WritingParagraphPlan | None:
+    if paragraph.deferred_argument is None:
+        return None
+    recovered = [
+        doi
+        for doi in paragraph.source_dois
+        if doi in full_text_dois and doi in direct_cards_by_doi
+    ]
+    required = (
+        2 if paragraph.deferred_argument in _COMPARISON_ARGUMENT_MOVES else 1
+    )
+    if len(recovered) < required:
+        return None
+    evidence_card_ids = [
+        direct_cards_by_doi[doi][0].evidence_id for doi in recovered
+    ][:5]
+    axis = paragraph.deferred_comparison_axis
+    if paragraph.deferred_argument in _COMPARISON_ARGUMENT_MOVES:
+        fallback_purpose = (
+            "Present the recovered full-text comparison and its evidence-backed "
+            "conclusion."
+        )
+        fallback_claim_focus = (
+            f"Compare the recovered studies along {axis}."
+            if axis
+            else "Compare the recovered studies on their verified findings."
+        )
+        fallback_central_question = (
+            f"What does the full-text evidence show about {axis}?"
+            if axis
+            else "What does the full-text evidence show about the comparison?"
+        )
+    else:
+        fallback_purpose = (
+            "Present the recovered full-text finding and its evidence-backed "
+            "conclusion."
+        )
+        fallback_claim_focus = (
+            "State the detailed finding supported by the recovered full-text evidence."
+        )
+        fallback_central_question = (
+            "What does the recovered full-text evidence establish?"
+        )
+    return paragraph.model_copy(
+        update={
+            "role": "detailed_evidence",
+            "purpose": paragraph.deferred_purpose or fallback_purpose,
+            "claim_focus": paragraph.deferred_claim_focus or fallback_claim_focus,
+            "central_question": (
+                paragraph.deferred_central_question or fallback_central_question
+            ),
+            "argument_move": paragraph.deferred_argument,
+            "comparison_axis": axis,
+            "evidence_card_ids": evidence_card_ids,
+            "source_dois": list(dict.fromkeys([*paragraph.source_dois, *recovered])),
+            "deferred_argument": None,
+            "deferred_comparison_axis": None,
+            "deferred_purpose": None,
+            "deferred_claim_focus": None,
+            "deferred_central_question": None,
+            "deferred_recovery_dois": [],
+        }
+    )
+
+
+def deferred_recovery_dois(plan: GroundedWritingPlan) -> list[str]:
+    """Aggregate the DOIs whose full text is still needed to enhance downgraded paragraphs.
+
+    This is the batch-download list surfaced to the user after a conservative draft
+    completes: every deferred paragraph contributed the DOIs it downgraded for, and a
+    later PDF-backed pass upgrades those paragraphs once these DOIs are full-text
+    verified in the evidence library.
+    """
+
+    return list(
+        dict.fromkeys(
+            doi
+            for section in plan.sections
+            for paragraph in section.paragraphs
+            for doi in paragraph.deferred_recovery_dois
+        )
+    )
+
+
+def deferred_enhancement_targets(
+    plan: GroundedWritingPlan,
+    library: EvidenceLibrary,
+) -> set[tuple[str, int]]:
+    """Return (section_id, paragraph_number) that a PDF-backed pass would upgrade."""
+
+    upgraded = upgrade_deferred_evidence_claims(plan, library)
+    previous_by_section = {
+        section.section_id: section for section in plan.sections
+    }
+    targets: set[tuple[str, int]] = set()
+    for section in upgraded.sections:
+        previous = previous_by_section[section.section_id]
+        for old, current in zip(
+            previous.paragraphs,
+            section.paragraphs,
+            strict=True,
+        ):
+            if old.deferred_argument is not None and current.deferred_argument is None:
+                targets.add((section.section_id, current.paragraph_number))
+    return targets
+
+
+def deferred_section_ids(plan: GroundedWritingPlan) -> set[str]:
+    """Return section IDs that contain at least one deferred (downgraded) paragraph."""
+
+    return {
+        section.section_id
+        for section in plan.sections
+        if any(paragraph.deferred_argument is not None for paragraph in section.paragraphs)
+    }
+
+
+def preserve_unresolved_deferred_sections(
+    previous: GroundedWritingPlan,
+    candidate: GroundedWritingPlan,
+    library: EvidenceLibrary,
+) -> GroundedWritingPlan:
+    """Prevent replanning from silently restoring claims that still need PDFs.
+
+    A semantic replanner may redesign an affected chapter, but it does not have
+    authority to erase an evidence-boundary marker. Only the explicit full-text
+    upgrade pass may do that. Sections whose deferred evidence has become available
+    are first upgraded normally; all other deferred sections retain their conservative
+    paragraph plan while unrelated candidate sections remain untouched.
+    """
+
+    previous_ids = [section.section_id for section in previous.sections]
+    candidate_ids = [section.section_id for section in candidate.sections]
+    if previous_ids != candidate_ids:
+        raise ValueError("replanned section order changed while evidence was deferred")
+    guarded_previous = upgrade_deferred_evidence_claims(previous, library)
+    unresolved = deferred_section_ids(guarded_previous)
+    if not unresolved:
+        return candidate
+    previous_by_id = {
+        section.section_id: section for section in guarded_previous.sections
+    }
+    sections = [
+        previous_by_id[section.section_id]
+        if section.section_id in unresolved
+        else section
+        for section in candidate.sections
+    ]
+    canonical = json.dumps(
+        {
+            "guard": "preserve-unresolved-deferred-sections-v1",
+            "previous_plan_fingerprint": previous.plan_fingerprint,
+            "candidate_plan_fingerprint": candidate.plan_fingerprint,
+            "sections": [section.model_dump(mode="json") for section in sections],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return GroundedWritingPlan.model_validate(
+        candidate.model_copy(
+            update={
+                "sections": sections,
+                "plan_fingerprint": hashlib.sha256(
+                    canonical.encode("utf-8")
+                ).hexdigest(),
+            }
         ).model_dump(mode="json")
     )
 

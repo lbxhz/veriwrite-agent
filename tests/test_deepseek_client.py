@@ -7,6 +7,7 @@ from pydantic import SecretStr
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.llm.base import LLMOutputTruncatedError
+from veriwrite_agent.llm import deepseek_client
 
 
 def test_deepseek_adapter_uses_injected_sdk_without_network() -> None:
@@ -56,3 +57,21 @@ def test_deepseek_adapter_reports_length_truncation_before_json_parsing() -> Non
             [{"role": "user", "content": "return json"}],
             response_format={"type": "json_object"},
         )
+
+
+def test_deepseek_transport_ignores_system_proxy_by_default(monkeypatch) -> None:
+    transport = object()
+    transport_factory = MagicMock(return_value=transport)
+    sdk_factory = MagicMock()
+    monkeypatch.setattr(deepseek_client, "DefaultHttpxClient", transport_factory)
+    monkeypatch.setattr(deepseek_client, "OpenAI", sdk_factory)
+    settings = LLMSettings(
+        api_key=SecretStr("fake-test-key"),
+        base_url="https://api.deepseek.com",
+        _env_file=None,
+    )
+
+    DeepSeekClient(settings)
+
+    transport_factory.assert_called_once_with(trust_env=False)
+    assert sdk_factory.call_args.kwargs["http_client"] is transport

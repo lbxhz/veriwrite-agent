@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import ValidationError
 
-from veriwrite_agent.llm.base import LLMClient
+from veriwrite_agent.llm.base import LLMClient, LLMResponseError
 from veriwrite_agent.models.writing import (
     SectionDraft,
     SectionDraftIssue,
@@ -129,7 +129,6 @@ MATERIAL_MANUSCRIPT_REPAIR_CODES = frozenset(
         "cross_section_repetition",
         "paragraph_repetition",
         "section_role_overlap",
-        "academic_style_problem",
         "oversized_paragraph",
     }
 )
@@ -409,10 +408,29 @@ class LLMSectionQualityReviewer:
         ]
         last_error: Exception | None = None
         for attempt in range(2):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            try:
+                raw = self._client.complete(
+                    messages,
+                    response_format={"type": "json_object"},
+                )
+            except LLMResponseError as exc:
+                # A transient provider failure (empty or truncated output) must not
+                # abort the whole chapter review. Retry once before reporting failure.
+                last_error = exc
+                if attempt == 0:
+                    messages.extend(
+                        [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "The provider returned empty or truncated output. "
+                                    "Return the complete review JSON only."
+                                ),
+                            }
+                        ]
+                    )
+                    continue
+                break
             try:
                 review = SectionQualityReview.model_validate_json(raw)
                 review = _normalize_section_evidence_scope(review, section_plan)
@@ -532,7 +550,9 @@ class LLMManuscriptQualityReviewer:
                     "for a local transition or progression break, and "
                     "terminology_inconsistent for conflicting terms. Preserve a still-useful "
                     "unresolved item in the output; omit it only when the current prose no "
-                    "longer has that defect. "
+                    "longer has that defect. For a paragraph_repetition group, identify the "
+                    "strongest paragraph to keep and report only the redundant copies; do "
+                    "not mark every member of the group for replacement. "
                     "Return at most 12 high-confidence findings; an empty list is valid. "
                     f"Return JSON satisfying this schema: {schema}"
                 ),
@@ -541,10 +561,30 @@ class LLMManuscriptQualityReviewer:
         ]
         last_error: Exception | None = None
         for attempt in range(2):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            try:
+                raw = self._client.complete(
+                    messages,
+                    response_format={"type": "json_object"},
+                )
+            except LLMResponseError as exc:
+                # A transient provider failure (empty or truncated output) must fall
+                # back to the deterministic review rather than abort the whole
+                # manuscript gate. Retry once before degrading.
+                last_error = exc
+                if attempt == 0:
+                    messages.extend(
+                        [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "The provider returned empty or truncated output. "
+                                    "Return the complete review JSON only."
+                                ),
+                            }
+                        ]
+                    )
+                    continue
+                break
             try:
                 review = ManuscriptQualityReview.model_validate_json(raw)
                 review = _validate_manuscript_review(review, plan)
@@ -731,42 +771,22 @@ def refine_writing_plan_for_manuscript_review(
             role = paragraph.role
             if role == "detailed_evidence" and not retained_cards:
                 role = "synthesis"
-            style_only = codes == {"academic_style_problem"}
             paragraphs[index] = paragraph.model_copy(
                 update={
                     "role": role,
+                    # The editor supplies a constraint, not a replacement thesis.
+                    # Overwriting every target's claim with the same generic repair
+                    # sentence made independently regenerated paragraphs converge on
+                    # the same prose. Preserve each paragraph's unique planned role.
                     "purpose": (
-                        (
-                            paragraph.purpose
-                            + " Editorial constraint: "
-                            + instruction
-                        )
-                        if style_only
-                        else (
-                            "Global manuscript repair: replace the old paragraph with one "
-                            "evidence-bounded argument that performs only this task: "
-                            + instruction
-                        )
-                    ),
-                    "claim_focus": (
-                        paragraph.claim_focus if style_only else instruction
-                    ),
-                    "central_question": (
-                        paragraph.central_question
-                        if style_only
-                        else (
-                            "How can this paragraph perform its unique chapter role without "
-                            "repeating neighbouring or earlier material?"
-                        )
-                    ),
-                    "argument_move": (
-                        paragraph.argument_move
-                        if style_only
-                        else "author_judgment"
-                    ),
-                    "comparison_axis": (
-                        paragraph.comparison_axis if style_only else None
-                    ),
+                        paragraph.purpose + " Editorial constraint: " + instruction
+                    )[:1200],
+                    "claim_focus": paragraph.claim_focus,
+                    "central_question": paragraph.central_question,
+                    # Treat the repair as bounded synthesis so it cannot be
+                    # reclassified as a new comparison requiring more PDFs.
+                    "argument_move": "author_judgment",
+                    "comparison_axis": None,
                     "target_words": new_target,
                     "evidence_card_ids": retained_cards,
                     "source_dois": retained_sources,
@@ -867,12 +887,11 @@ def mark_manuscript_editor_targets(
                             if paragraph.evidence_card_ids
                             else "background"
                         ),
-                        "purpose": "Global manuscript editorial repair: " + instruction,
-                        "claim_focus": instruction,
-                        "central_question": (
-                            "How can this paragraph retain only its unique, cautious "
-                            "judgment without adding facts or evidence?"
-                        ),
+                        "purpose": (
+                            paragraph.purpose
+                            + " Global manuscript editorial constraint: "
+                            + instruction
+                        )[:1200],
                         "argument_move": "author_judgment",
                         "comparison_axis": None,
                     }
@@ -1144,7 +1163,14 @@ def _validate_manuscript_review(
     for finding in review.findings:
         if finding.paragraph_number not in valid.get(finding.section_id, set()):
             raise ValueError("manuscript reviewer used an unknown paragraph target")
-        if finding.code in MATERIAL_MANUSCRIPT_REPAIR_CODES:
+        if finding.code == "academic_style_problem":
+            # Subjective style advice from the LLM is not a hard gate. Repeated
+            # formulaic phrases are detected separately by deterministic patterns
+            # and merged later as blocking findings.
+            finding = finding.model_copy(
+                update={"severity": "warning", "disposition": "report_only"}
+            )
+        elif finding.code in MATERIAL_MANUSCRIPT_REPAIR_CODES:
             # These defects are locally executable and materially affect the final
             # manuscript.  Review models often under-label them as optional warnings,
             # causing the editor loop to pass while preserving known repetition or

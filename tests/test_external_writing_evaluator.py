@@ -144,5 +144,6 @@ def test_veriwrite_environment_pins_judge_model_but_honors_runtime_window(
     assert config.environment is not None
     assert config.environment["VW_EVAL_MODEL"] == "deepseek-chat"
     assert config.environment["VW_EVAL_TEMPERATURE"] == "0.0"
+    assert config.environment["VW_EVAL_USE_SYSTEM_PROXY"] == "false"
     assert config.target_window_bytes == 24000
     assert config.batch is False

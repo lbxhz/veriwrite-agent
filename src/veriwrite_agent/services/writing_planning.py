@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -13,7 +14,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from veriwrite_agent.llm.base import LLMClient
+from veriwrite_agent.llm.base import LLMClient, LLMResponseError
 from veriwrite_agent.models.writing import (
     DraftParagraphProposal,
     SectionDraft,
@@ -56,6 +57,10 @@ class WritingPlanBudgetExceeded(WritingPlanError):
 
 class WritingPlanDependencyError(WritingPlanError):
     """Raised when deterministic evidence permissions make retrying prose useless."""
+
+
+class WritingPausedError(RuntimeError):
+    """Raised between model calls after a durable pause request."""
 
 
 class ParagraphLengthError(ValueError):
@@ -295,7 +300,9 @@ class GroundedWritingPlanner:
                     "number of paragraph plans in a coherent order. Use only the short "
                     "E### and S### aliases supplied by the application. For each paragraph "
                     "role, use refs only from allowed_support_refs_by_role[role]. "
-                    "detailed_evidence requires one to five evidence_refs. A source whose "
+                    "detailed_evidence requires one to five evidence_refs. Never attach "
+                    "more than five evidence_refs or more than eight source_refs to any "
+                    "single paragraph. A source whose "
                     "permitted_use is background_only may support only background or "
                     "synthesis, never section_support or detailed_evidence. Every paragraph "
                     "needs at least one permitted evidence_ref or source_ref. "
@@ -345,10 +352,31 @@ class GroundedWritingPlanner:
         ]
         last_error: Exception | None = None
         for attempt in range(2):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            try:
+                raw = self._client.complete(
+                    messages,
+                    response_format={"type": "json_object"},
+                )
+            except LLMResponseError as exc:
+                # A transient provider failure (empty or truncated output) must not
+                # abort planning. Retry once with a tightening instruction before
+                # reporting a planning contract failure.
+                last_error = exc
+                if attempt == 0:
+                    messages = [
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": (
+                                "The provider returned empty or truncated output. Return "
+                                "the complete plan JSON only, using the short E### and "
+                                "S### aliases, compressing rather than truncating so it "
+                                "fits within the configured output limit."
+                            ),
+                        },
+                    ]
+                    continue
+                break
             try:
                 proposal = SectionPlanProposal.model_validate_json(raw)
                 if attempt > 0 and len(proposal.paragraphs) > paragraph_count:
@@ -361,7 +389,7 @@ class GroundedWritingPlanner:
                     proposal,
                     evidence_aliases=evidence_aliases,
                     source_aliases=source_aliases,
-                    repair_invalid_permissions=attempt > 0,
+                    repair_invalid_permissions=True,
                 )
                 proposal = _drop_semantically_misaligned_optional_evidence(
                     proposal,
@@ -378,7 +406,7 @@ class GroundedWritingPlanner:
                     proposal,
                     evidence_aliases=evidence_aliases,
                     source_aliases=source_aliases,
-                    repair_invalid_permissions=attempt > 0,
+                    repair_invalid_permissions=True,
                 )
                 return _compile_section_plan(
                     packet,
@@ -398,8 +426,10 @@ class GroundedWritingPlanner:
                             "content": (
                                 "Repair only the plan JSON. Do not write prose. The previous "
                                 f"plan failed deterministic validation: {_short_error(exc)}. "
-                                "For every paragraph, choose refs only from "
-                                "allowed_support_refs_by_role for its role."
+                                "Correct exactly the reported problem and re-emit the full "
+                                "plan, still satisfying every constraint in the system "
+                                "prompt (aliases, role permissions, ref-count limits, and "
+                                "metadata-only paraphrasing)."
                             ),
                         },
                     ]
@@ -788,10 +818,31 @@ class LLMGroundedParagraphWriter:
         ]
         last_error: Exception | None = None
         for attempt in range(3):
-            raw = self._client.complete(
-                messages,
-                response_format={"type": "json_object"},
-            )
+            try:
+                raw = self._client.complete(
+                    messages,
+                    response_format={"type": "json_object"},
+                )
+            except LLMResponseError as exc:
+                # A transient provider failure (empty or truncated output) must not
+                # abort the whole chapter. Retry once with a tightening instruction
+                # before reporting a contract violation.
+                last_error = exc
+                if attempt == 0:
+                    messages = [
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": (
+                                "The provider returned empty or truncated output. Return "
+                                "the complete JSON object for exactly one paragraph, "
+                                "compressing rather than truncating so it fits within the "
+                                "configured output limit."
+                            ),
+                        },
+                    ]
+                    continue
+                break
             try:
                 proposal = _parse_paragraph_text(raw)
                 _ensure_paragraph_has_no_authored_citation(proposal)
@@ -901,13 +952,17 @@ class PlannedSectionDraftService:
         force_paragraph_numbers: set[int] | None = None,
         revision_instructions: dict[int, str] | None = None,
         on_paragraph_progress: Callable[[int, int, str], None] | None = None,
+        max_workers: int = 1,
+        should_continue: Callable[[], bool] | None = None,
     ) -> SectionDraft:
         if section_plan.section_id != section_packet.section_id:
             raise WritingPlanError("section plan does not match the evidence packet")
-        paragraph_proposals: list[DraftParagraphProposal] = []
         packet_builder = ParagraphEvidencePacketBuilder()
         forced_numbers = force_paragraph_numbers or set()
-        for paragraph_plan in section_plan.paragraphs:
+
+        def _write_paragraph(
+            paragraph_plan: WritingParagraphPlan,
+        ) -> tuple[int, DraftParagraphProposal, str]:
             paragraph_packet = packet_builder.build(section_packet, paragraph_plan)
             should_force = force or paragraph_plan.paragraph_number in forced_numbers
             text_proposal = None
@@ -947,20 +1002,72 @@ class PlannedSectionDraftService:
                 )
                 if cache:
                     cache.save(paragraph_packet, text_proposal)
-            paragraph_proposals.append(
-                DraftParagraphProposal(
-                    role=paragraph_plan.role,
-                    text=text_proposal.text,
-                    evidence_card_ids=paragraph_plan.evidence_card_ids,
-                    source_dois=paragraph_plan.source_dois,
-                )
+            proposal = DraftParagraphProposal(
+                role=paragraph_plan.role,
+                text=text_proposal.text,
+                evidence_card_ids=paragraph_plan.evidence_card_ids,
+                source_dois=paragraph_plan.source_dois,
             )
-            if on_paragraph_progress is not None:
-                on_paragraph_progress(
-                    paragraph_plan.paragraph_number,
-                    len(section_plan.paragraphs),
-                    source,
+            return paragraph_plan.paragraph_number, proposal, source
+
+        # Initial drafts are independent once the evidence is locked, so they can be
+        # produced concurrently. Targeted revisions rely on ``editorial_context`` from
+        # the surrounding paragraphs and therefore stay serial to preserve argument
+        # progression.
+        total = len(section_plan.paragraphs)
+        parallel = max_workers > 1 and not force and not forced_numbers
+        if parallel:
+            results_by_number: dict[int, tuple[DraftParagraphProposal, str]] = {}
+            executor = ThreadPoolExecutor(max_workers=max_workers)
+            pending: dict[Future[tuple[int, DraftParagraphProposal, str]], int] = {}
+            plans = iter(section_plan.paragraphs)
+
+            def _submit_next() -> bool:
+                if should_continue is not None and not should_continue():
+                    return False
+                try:
+                    next_plan = next(plans)
+                except StopIteration:
+                    return False
+                pending[executor.submit(_write_paragraph, next_plan)] = (
+                    next_plan.paragraph_number
                 )
+                return True
+
+            try:
+                for _ in range(min(max_workers, total)):
+                    if not _submit_next():
+                        break
+                while pending:
+                    done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        pending.pop(future)
+                        number, proposal, source = future.result()
+                        results_by_number[number] = (proposal, source)
+                        if on_paragraph_progress is not None:
+                            on_paragraph_progress(number, total, source)
+                        _submit_next()
+                if len(results_by_number) != total:
+                    raise WritingPausedError(
+                        "paragraph generation paused before the next task was submitted"
+                    )
+            finally:
+                executor.shutdown(wait=True, cancel_futures=True)
+            paragraph_proposals = [
+                results_by_number[paragraph_plan.paragraph_number][0]
+                for paragraph_plan in section_plan.paragraphs
+            ]
+        else:
+            paragraph_proposals = []
+            for paragraph_plan in section_plan.paragraphs:
+                if should_continue is not None and not should_continue():
+                    raise WritingPausedError(
+                        "paragraph generation paused before the next task was submitted"
+                    )
+                number, proposal, source = _write_paragraph(paragraph_plan)
+                paragraph_proposals.append(proposal)
+                if on_paragraph_progress is not None:
+                    on_paragraph_progress(number, total, source)
         return GroundedSectionDraftService().create(
             section_packet,
             SectionDraftProposal(
@@ -1009,9 +1116,19 @@ class WritingPlanRuntimeCache:
 
     def __init__(self, root: Path, *, handoff: V04WritingHandoff) -> None:
         self._root = root / _handoff_fingerprint(handoff)[:16]
+        self._shared_root = root / "shared"
 
     def load_section(self, packet: SectionEvidencePacket) -> WritingSectionPlan | None:
         path = self._root / f"{packet.section_id}.json"
+        if path.is_file():
+            return self._load_path(packet, path)
+        return self._load_path(packet, self._shared_path(packet))
+
+    def _load_path(
+        self,
+        packet: SectionEvidencePacket,
+        path: Path,
+    ) -> WritingSectionPlan | None:
         if not path.is_file():
             return None
         try:
@@ -1027,19 +1144,23 @@ class WritingPlanRuntimeCache:
         packet: SectionEvidencePacket,
         plan: WritingSectionPlan,
     ) -> None:
-        self._root.mkdir(parents=True, exist_ok=True)
-        _atomic_write(
-            self._root / f"{packet.section_id}.json",
-            json.dumps(
-                {
-                    "schema_version": "0.4-plan-cache.0",
-                    "signature": _section_plan_signature(packet),
-                    "plan": plan.model_dump(mode="json"),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
+        payload = json.dumps(
+            {
+                "schema_version": "0.4-plan-cache.0",
+                "signature": _section_plan_signature(packet),
+                "plan": plan.model_dump(mode="json"),
+            },
+            ensure_ascii=False,
+            indent=2,
         )
+        self._root.mkdir(parents=True, exist_ok=True)
+        _atomic_write(self._root / f"{packet.section_id}.json", payload)
+        self._shared_root.mkdir(parents=True, exist_ok=True)
+        _atomic_write(self._shared_path(packet), payload)
+
+    def _shared_path(self, packet: SectionEvidencePacket) -> Path:
+        signature = _section_plan_signature(packet)
+        return self._shared_root / f"{packet.section_id}_{signature[:20]}.json"
 
 
 class ParagraphWritingRuntimeCache:
@@ -1204,7 +1325,9 @@ def _assign_required_sources_to_problem_paragraphs(
 
     normalized: list[ParagraphPlanProposal] = []
     for paragraph in paragraphs:
-        evidence_refs = list(dict.fromkeys(paragraph.evidence_refs))
+        # The proposal schema tolerates up to eight evidence refs so an over-selecting
+        # model does not force a retry; cap to the executable five-card contract here.
+        evidence_refs = list(dict.fromkeys(paragraph.evidence_refs))[:5]
         source_refs = list(dict.fromkeys(paragraph.source_refs))
         if repair_invalid_permissions:
             evidence_refs = [
@@ -1822,16 +1945,39 @@ def _compile_paragraph(
         raise WritingPlanError(
             f"paragraph {number} is detailed_evidence but has no evidence card"
         )
+    purpose = proposal.purpose
+    claim_focus = proposal.claim_focus
+    central_question = proposal.central_question
+    comparison_axis = proposal.comparison_axis
     if (
         not evidence_ids
         and proposal.role in {"background", "synthesis"}
         and _contains_unsupported_metadata_detail(proposal)
     ):
-        raise WritingPlanError(
-            f"paragraph {number} plans a numeric performance/specification claim "
-            "without a full-text evidence card; replace it with a cautious paraphrase "
-            "of the selected sources' supported_claim fields"
+        # A metadata-only background/synthesis paragraph must not assert numeric
+        # performance specifications. Deterministically paraphrase the bounded
+        # metadata instead of failing the whole section over one clause.
+        bounded = next(
+            (
+                source.supported_claim
+                for source in permitted_sources
+                if source.supported_claim
+            ),
+            None,
         )
+        claim_focus = (bounded or proposal.claim_focus).strip()
+        comparison_axis = None
+        if packet.output_language == "Chinese":
+            purpose = "综合所选来源的边界内背景信息，不陈述具体性能数值。"
+            central_question = "所选来源提供了哪些边界明确的背景或共识？"
+        else:
+            purpose = (
+                "Synthesize permission-bounded background from the selected sources "
+                "without asserting specific performance figures."
+            )
+            central_question = (
+                "What bounded background or consensus do the selected sources provide?"
+            )
     if len(source_dois) > packet.max_sources_per_paragraph:
         # Source-count policy is deterministic. Keep evidence-backed sources first,
         # then trim optional metadata sources instead of discarding a semantically
@@ -1843,7 +1989,6 @@ def _compile_paragraph(
         ]
         evidence_ids = [item.evidence_id for item in evidence_items]
     argument_move = proposal.argument_move
-    comparison_axis = proposal.comparison_axis
     if (
         argument_move
         in {"compare_studies", "synthesize_consensus", "analyze_difference"}
@@ -1865,9 +2010,9 @@ def _compile_paragraph(
         section_id=packet.section_id,
         paragraph_number=number,
         role=proposal.role,
-        purpose=proposal.purpose,
-        claim_focus=proposal.claim_focus,
-        central_question=proposal.central_question,
+        purpose=purpose,
+        claim_focus=claim_focus,
+        central_question=central_question,
         argument_move=argument_move,
         comparison_axis=comparison_axis,
         target_words=target_words,

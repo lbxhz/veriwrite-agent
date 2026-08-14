@@ -187,11 +187,19 @@ def merge_redundant_manuscript_paragraphs(
             for number in range(1, len(section.paragraphs) + 1)
             if number not in selected_targets
         ]
+        packet = SectionEvidencePacketBuilder().build(
+            project.handoff,
+            section.section_id,
+        )
         plans = _redistribute_section_support(
             section,
             remaining_numbers=remaining_numbers,
             max_sources_per_paragraph=max_sources_per_paragraph,
             evidence_source_by_id=evidence_source_by_id,
+            source_permission_by_doi={
+                source.doi: source.permitted_use for source in packet.sources
+            },
+            recipient_by_target=recipient_by_target,
         )
         old_to_new = {
             old_number: new_number
@@ -217,10 +225,6 @@ def merge_redundant_manuscript_paragraphs(
         )
         refined_section = section.model_copy(
             update={"paragraphs": paragraphs, "target_words": section.target_words}
-        )
-        packet = SectionEvidencePacketBuilder().build(
-            project.handoff,
-            section.section_id,
         )
         proposals = []
         for old_number in remaining_numbers:
@@ -301,7 +305,11 @@ def _merge_targets(
             finding.severity != "blocking"
             or finding.disposition != "targeted_repair"
             or finding.code
-            not in {"cross_section_repetition", "section_role_overlap"}
+            not in {
+                "cross_section_repetition",
+                "paragraph_repetition",
+                "section_role_overlap",
+            }
         ):
             continue
         targets.setdefault(finding.section_id, set()).add(
@@ -363,7 +371,29 @@ def _select_removable_targets(
             -number,
         ),
     )
-    return set(ranked[:removable])
+    selected: set[int] = set()
+    for number in ranked:
+        if len(selected) >= removable:
+            break
+        trial = {*selected, number}
+        remaining = [
+            paragraph
+            for paragraph in section.paragraphs
+            if paragraph.paragraph_number not in trial
+        ]
+        surviving_sources = {
+            doi for paragraph in remaining for doi in paragraph.source_dois
+        }
+        # Preserve all support occurrences already attached to surviving claims, then
+        # reserve one slot for every source that would be orphaned by the deletions.
+        # Counting only unique section sources can over-delete: six survivors may have
+        # 24 slots in total but need 25 once legitimate repeated bindings are retained.
+        required_slots = sum(len(paragraph.source_dois) for paragraph in remaining)
+        required_slots += len(unique_sources - surviving_sources)
+        if required_slots > len(remaining) * max_sources_per_paragraph:
+            continue
+        selected.add(number)
+    return selected
 
 
 def _redistribute_section_support(
@@ -372,8 +402,17 @@ def _redistribute_section_support(
     remaining_numbers: list[int],
     max_sources_per_paragraph: int,
     evidence_source_by_id: dict[str, str],
+    source_permission_by_doi: dict[str, str],
+    recipient_by_target: dict[int, int],
 ) -> dict[int, WritingParagraphPlan]:
-    """Give each source one primary paragraph and respect the citation-cluster limit."""
+    """Preserve surviving authority and migrate only support orphaned by deletion.
+
+    A structural de-duplication pass is not a semantic replanner.  Reassigning every
+    source in the section while retaining the old claims can pair a metadata-only DOI
+    with a detailed claim and manufacture a V0.3 recovery request.  Keep every surviving
+    paragraph's original bindings intact; only sources and cards that would otherwise
+    disappear are moved to the closest compatible survivor.
+    """
 
     original = {
         paragraph.paragraph_number: paragraph for paragraph in section.paragraphs
@@ -393,15 +432,64 @@ def _redistribute_section_support(
         ]
         for doi in source_order
     }
-    cards_by_source: dict[str, list[str]] = {doi: [] for doi in source_order}
-    for paragraph in section.paragraphs:
-        for card_id in paragraph.evidence_card_ids:
-            doi = evidence_source_by_id.get(card_id)
-            if doi in cards_by_source:
-                cards_by_source[doi].append(card_id)
+    removed_numbers = sorted(set(original) - set(remaining_numbers))
+    assignments: dict[int, list[str]] = {
+        number: list(original[number].source_dois) for number in remaining_numbers
+    }
+    card_assignments: dict[int, list[str]] = {
+        number: list(original[number].evidence_card_ids)
+        for number in remaining_numbers
+    }
 
-    assignments: dict[int, list[str]] = {number: [] for number in remaining_numbers}
+    if any(
+        len(sources) > max_sources_per_paragraph
+        for sources in assignments.values()
+    ):
+        raise ValueError(
+            "surviving paragraph already exceeds the confirmed citation-cluster limit"
+        )
+
+    def nearest_removed_owner(doi: str) -> int:
+        removed_owners = [owner for owner in owners.get(doi, []) if owner in removed_numbers]
+        return removed_owners[0] if removed_owners else owners.get(doi, [1])[0]
+
+    def compatibility_rank(number: int, doi: str, owner: int) -> tuple[int, ...]:
+        paragraph = original[number]
+        owner_paragraph = original[owner]
+        permission = source_permission_by_doi.get(doi)
+        if permission == "background_only":
+            semantic_rank = (
+                0
+                if paragraph.argument_move == "author_judgment"
+                else 1
+                if paragraph.role == "background"
+                else 2
+                if paragraph.evidence_card_ids
+                else 3
+            )
+        else:
+            semantic_rank = (
+                0
+                if paragraph.argument_move == owner_paragraph.argument_move
+                else 1
+                if paragraph.role == owner_paragraph.role
+                else 2
+            )
+        designated_recipient = recipient_by_target.get(owner)
+        return (
+            semantic_rank,
+            0 if number == designated_recipient else 1,
+            abs(number - owner),
+            len(assignments[number]),
+            number,
+        )
+
+    surviving_sources = {
+        doi for sources in assignments.values() for doi in sources
+    }
     for doi in source_order:
+        if doi in surviving_sources:
+            continue
         candidates = [
             number
             for number in remaining_numbers
@@ -411,51 +499,119 @@ def _redistribute_section_support(
             raise ValueError(
                 "section sources cannot fit the confirmed citation-cluster limit"
             )
-        owner_numbers = owners.get(doi, [])
+        owner = nearest_removed_owner(doi)
         chosen = min(
             candidates,
-            key=lambda number: (
-                0 if doi in original[number].source_dois else 1,
-                min((abs(number - owner) for owner in owner_numbers), default=99),
-                len(assignments[number]),
-                number,
-            ),
+            key=lambda number: compatibility_rank(number, doi, owner),
         )
         assignments[chosen].append(doi)
+        surviving_sources.add(doi)
 
-    # Every compiled paragraph needs authority.  When a short section has more
-    # paragraphs than distinct sources, duplicate the nearest source only for the empty
-    # paragraph; otherwise source ownership stays exclusive and repetition pressure falls.
-    for number in remaining_numbers:
-        if assignments[number]:
-            continue
-        donors = [candidate for candidate in remaining_numbers if assignments[candidate]]
-        donor = min(donors, key=lambda candidate: (abs(number - candidate), candidate))
-        assignments[number].append(assignments[donor][0])
+    # Retain evidence already owned by surviving claims.  Then migrate cards from removed
+    # paragraphs without evicting those bindings.  A duplicated DOI is allowed when that is
+    # the only capacity-safe way to keep a unique page-level card available to the rewrite.
+    surviving_cards = {
+        card_id for cards in card_assignments.values() for card_id in cards
+    }
+    for owner in removed_numbers:
+        for card_id in original[owner].evidence_card_ids:
+            if card_id in surviving_cards:
+                continue
+            doi = evidence_source_by_id.get(card_id)
+            if doi is None:
+                continue
+            candidates = [
+                number
+                for number in remaining_numbers
+                if doi in assignments[number] and len(card_assignments[number]) < 5
+            ]
+            if not candidates:
+                candidates = [
+                    number
+                    for number in remaining_numbers
+                    if len(assignments[number]) < max_sources_per_paragraph
+                    and len(card_assignments[number]) < 5
+                ]
+            if not candidates:
+                continue
+            chosen = min(
+                candidates,
+                key=lambda number: compatibility_rank(number, doi, owner),
+            )
+            if doi not in assignments[chosen]:
+                assignments[chosen].append(doi)
+            card_assignments[chosen].append(card_id)
+            surviving_cards.add(card_id)
 
     updated: dict[int, WritingParagraphPlan] = {}
     for number in remaining_numbers:
         paragraph = original[number]
         sources = assignments[number]
-        cards: list[str] = []
-        for doi in sources:
-            for card_id in cards_by_source.get(doi, []):
-                if card_id not in cards:
-                    cards.append(card_id)
-                if len(cards) == 5:
-                    break
-            if len(cards) == 5:
-                break
+        cards = card_assignments[number]
         role = paragraph.role
-        if role == "detailed_evidence" and not cards:
+        background_only_dois = [
+            doi
+            for doi in sources
+            if source_permission_by_doi.get(doi) == "background_only"
+        ]
+        requires_bounded_background = bool(background_only_dois) and role != "background"
+        if requires_bounded_background:
+            # A source-coverage requirement may leave a metadata-only DOI orphaned when
+            # its repeated paragraph is removed.  Moving that DOI into a detailed role
+            # would pass reference coverage but fail the deterministic permission gate.
+            # Keep the original intent as a deferred enhancement and compile a cautious
+            # background task now; a later PDF-backed pass can restore the detailed claim.
+            role = "background"
+        elif role == "detailed_evidence" and not cards:
             role = "synthesis"
-        updated[number] = paragraph.model_copy(
-            update={
-                "role": role,
-                "evidence_card_ids": cards,
-                "source_dois": sources,
-            }
-        )
+        updates: dict[str, object] = {
+            "role": role,
+            "evidence_card_ids": cards,
+            "source_dois": sources,
+        }
+        if requires_bounded_background:
+            updates.update(
+                {
+                    "purpose": (
+                        "State a bounded background overview and the limits of the "
+                        "available records after structural consolidation."
+                    ),
+                    "claim_focus": (
+                        f"{section.title} includes directions represented by the admitted "
+                        "sources, but metadata-only records permit only a general account "
+                        "of their scope."
+                    ),
+                    "central_question": (
+                        "What general scope is supported, and which detailed conclusions "
+                        "remain outside the available evidence?"
+                    ),
+                    "argument_move": "author_judgment",
+                    "comparison_axis": None,
+                    "deferred_argument": (
+                        paragraph.deferred_argument or paragraph.argument_move
+                    ),
+                    "deferred_comparison_axis": (
+                        paragraph.deferred_comparison_axis or paragraph.comparison_axis
+                    ),
+                    "deferred_purpose": paragraph.deferred_purpose or paragraph.purpose,
+                    "deferred_claim_focus": (
+                        paragraph.deferred_claim_focus or paragraph.claim_focus
+                    ),
+                    "deferred_central_question": (
+                        paragraph.deferred_central_question
+                        or paragraph.central_question
+                    ),
+                    "deferred_recovery_dois": list(
+                        dict.fromkeys(
+                            [
+                                *paragraph.deferred_recovery_dois,
+                                *background_only_dois,
+                            ]
+                        )
+                    ),
+                }
+            )
+        updated[number] = paragraph.model_copy(update=updates)
     return updated
 
 

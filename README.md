@@ -1,246 +1,180 @@
 # VeriWrite Agent
 
-VeriWrite 是一个“可验证、可追溯、分阶段协作”的课程研究与写作 Agent 项目。
+面向课程综述论文的证据约束型写作 Agent。它把课程要求、真实文献、PDF
+页码证据、段落写作计划、引用绑定和最终合规审计连接成一条可恢复工作流。
 
-当前开发版本为 **MVP 1.0：要求贯通、证据约束写作与最终论文交付**。V0.1.2 负责把自然语言课程要求
-转换成经过 Pydantic 校验、双路比对和用户确认的 JSON；V0.2 根据确认需求生成临时检索
-蓝图，通过 Crossref RIS 与 DOI.org 验证文献身份，再按主题相关性、地大2023等级、
-挪威国家目录2025等级和年份进行可解释选择。
+> 当前状态：MVP 1.0，持续完善 V0.4/V0.5 Agent 闭环。项目优先证明
+> “可验证、可追溯、可恢复”，不把一次顺利的模型输出当作系统可靠性。
 
-V0.3在此基础上建立核心论文人机协作下载队列：用户只处理出版社登录、验证码和下载
-按钮，Agent自动扫描下载目录、核对DOI/题名、检查PDF完整性并保留文件哈希与页码。
-随后将LLM归纳结果约束为带短原文的`EvidenceCard`，再生成每个单元格都能追溯到
-证据卡的`LiteratureMatrix`。非核心论文只保留已验证元数据，不冒充全文已验证。
-V0.4先把V0.2检索蓝图与V0.3实际证据编译为一次性确认的`GroundedWritingPlan`，
-预先锁定每个段落的用途、字数、证据卡和来源权限。DeepSeek随后只根据单段证据包写
-正文，不再自行选择证据编号；最终引用键、DOI和PDF页码由程序绑定。章节必须逐一确认，
-课程禁止AI代写时系统会在调用模型前停止，并改为导出人工写作证据包。
+## 为什么做这个项目
 
-## 当前数据流
+普通 LLM 直接生成课程论文时，常见问题包括：
 
-```text
-课程要求文件（TXT / Markdown / DOCX / DOC / PDF / 多张图片）
-    -> 原生文本或本地 OCR -> 连续截图去重 -> 人工校对
-    -> RuleBasedRequirementParser ─┐
-                                  ├-> RequirementReconciler
-    -> LLMRequirementParser ──────┘
-    -> RequirementCompletenessChecker
-    -> requirement_review.json
-    -> 用户确认与字段修正
-    -> Pydantic 再校验
-    -> confirmed_requirement_spec.json
-    -> V0.2检索、验证与均衡选择
-    -> V0.3核心PDF + 非核心元数据双层文献库
-    -> 确认证据库与最终写作大纲
-    -> v04_writing_handoff.json
+- 遗漏课程要求或错误解释数量、年份和来源限制；
+- 生成虚假 DOI、无关文献或错位的参考文献；
+- 论断无法追溯到核心 PDF 的证据卡与页码；
+- 刷新、断网或模型输出异常后需要整篇重来；
+- 固定工作流不能根据审计结果定点返修、回退或继续。
+
+VeriWrite 的核心设计边界是：**LLM 提出语义候选，确定性代码决定候选是否可被接受、执行和持久化。**
+
+| LLM 负责 | 确定性代码负责 |
+| --- | --- |
+| 需求提取与冲突解释 | Pydantic 数据合同与状态迁移 |
+| 检索规划与主题相关性判断 | DOI/RIS 身份验证与准入规则 |
+| 段落规划、正文组织与审稿 | PDF 身份、证据权限、页码与引用绑定 |
+| 全文编辑与学术表达 | 字数、来源、课程要求与交付门禁 |
+
+## 系统工作流
+
+```mermaid
+flowchart LR
+    V01["V0.1 需求确认"] --> V02["V0.2 检索与真实性验证"]
+    V02 --> V03["V0.3 PDF 与证据卡"]
+    V03 --> P["Planner"]
+    P --> E["Executor"]
+    E --> A["Critic / Auditor"]
+    A --> C["Controller"]
+    C -->|continue| E
+    C -->|retry| E
+    C -->|revise| P
+    C -->|batch evidence recovery| V02
+    C -->|deferred PDF enhancement| V03
+    C -->|body complete| V05["V0.5 全文编辑与交付"]
 ```
 
-规则解析器用于建立可重复测试的基线；双路模式会让规则与 LLM 分别输出同一个 `RequirementSpec` 数据合同。合并器只自动接受一致值或安全的单边值，不会让 LLM 静默覆盖冲突。
+V0.4 页面只暴露“开始/继续 Agent 写作”和暂停控制。Controller 根据审计结果选择：
 
-## 快速开始（Windows PowerShell）
+- `continue`：确认当前章节并进入下一章；
+- `retry`：只重写失败段落；
+- `revise`：重建受影响章节的证据与段落计划；
+- `rollback`：合并证据缺口，批量回到检索或证据节点；
+- `request_user`：只处理付费 PDF、需求冲突等系统无法自行解决的问题。
+
+缺少核心 PDF 时，Agent 不会逐段反复打断用户。它会先把允许由元数据支持的内容收缩为
+一般背景并留下待增强标记；全文完成后汇总 PDF 补充清单，再定点增强受影响段落。
+
+## 可靠性机制
+
+- 每个阶段保存本地检查点，刷新和网络故障只重做失败节点；
+- 章节级与段落级运行缓存避免重复消耗模型调用；
+- 未知 DOI、PDF 身份冲突、来源越权和无证据主张属于硬门禁；
+- 学术表达、段落长度和局部衔接进入有限次数定点编辑；
+- 非文字依赖错误不会被错误地送入“重写措辞”循环；
+- 独立全文编辑只重开问题段落，不覆盖已确认章节；
+- 内部事实审计与外部 hermes-rubric 评分分离，外部分数不能替代证据门禁；
+- FakeLLM 离线验收覆盖暂停、断网、恢复、V0.4、V0.5 和 DOCX 导出。
+
+更详细的状态机和门禁说明见
+[V0.4/V0.5 Agent loop](docs/v04_v05_agent_loop.md) 与
+[Agent runtime contracts](docs/agent_runtime_contracts.md)。
+
+## 快速开始
+
+要求：Windows 或兼容的 Python 环境，Python 3.11 及以上。
 
 ```powershell
-cd C:\Users\17811\Documents\Codex\2026-07-12\new-chat\outputs\veriwrite-agent
+git clone <your-repository-url>
+cd veriwrite-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,ui,ocr]"
-pytest
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev,ui,ocr,evaluation]"
+Copy-Item .env.example .env
 ```
 
-启动完整 MVP 本地工作台：
+在 `.env` 中至少设置：
+
+```dotenv
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_STRUCTURED_MODEL=deepseek-chat
+LLM_REVIEWER_MODEL=deepseek-chat
+```
+
+核心 PDF 默认扫描目录为：
+
+```text
+~/Documents/VeriWrite/Evidence-Vault
+```
+
+可以通过本地 `.env` 覆盖，路径不会被提交：
+
+```dotenv
+VERIWRITE_EVIDENCE_VAULT=D:\Research\VeriWrite-Evidence
+```
+
+启动工作台：
 
 ```powershell
-streamlit run streamlit_app.py
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py --server.headless true
 ```
 
-工作台左侧按 `V0.1 需求确认 → V0.2 文献检索 → V0.3 全文证据 →
-V0.4 逐章写作 → 最终交付` 导航。总览页显示各阶段的完成状态、阻塞原因和下一步，
-尚未满足前置条件的阶段不会静默消失。可随时导出 `veriwrite_mvp_project.json`
-项目检查点，之后恢复已提取文本和各阶段数据合同；检查点不会包含 `.env` 密钥或
-原始上传文件。
+访问 <http://localhost:8501/>。
 
-主路径只要求用户处理会改变结果的决定：需求冲突、检索前授权、证据写作计划、章节接受和最终交付。
-确认人、重复勾选、技术 JSON、候选池参数和阶段审计产物不会长期占据主界面；它们由
-上游身份与确定性代码记录，或收纳在高级区。完整交互取舍见
-[`docs/ux_simplification.md`](docs/ux_simplification.md)。
-
-工作台内置 5 份基础样例和 1 份复杂多选金标准，也可以上传自己的 TXT、
-Markdown、DOCX、旧版 DOC、PDF 或图片。旧版 DOC 会调用本机 Microsoft Word
-进行只读转换；PNG、JPG、TIFF 等图片以及 PDF 中的扫描页会通过
-RapidOCR + ONNX Runtime 在本地识别。图片不会直接发送给 DeepSeek，
-只有 OCR 后的文本会进入双路解析。多张连续截图可按阅读顺序一次上传，
-系统会清除常见手机界面噪声并合并重叠段落；OCR 文本可在界面中人工校正后重跑。
-界面会显示规则与 DeepSeek 的字段级对照、实质冲突、完整性问题和原文证据，
-并允许用户逐项裁决后下载最终数据合同。
-
-V0.1 最终需求确认后，同一个控制台会继续生成临时检索蓝图。蓝图经用户集中检查和确认后，
-才能执行 Crossref 分主题检索、RIS/DOI 验证、DeepSeek 受限相关性评分与均衡选文。
-真实运行按蓝图指纹缓存在 `runtime/literature_console/`，中断后可以继续，并可下载最终
-文献 JSON、RIS 与逐篇真实性证据。完整操作说明见
-[`docs/integrated_v0.1_v0.2_console.md`](docs/integrated_v0.1_v0.2_console.md)。
-
-V0.2选文完成后，控制台继续提供核心论文下载队列。用户处理出版社登录、验证码和下载
-按钮，系统扫描下载目录并识别正确PDF、错误网页、重复文件和缺失项。通过检查的PDF会
-按页提取文本，由代码生成带ID的原文片段；DeepSeek只选择片段ID并归纳主张，原文引句
-由代码回填并校验页码与PDF哈希，避免模型抄写时改动原句。无阻塞项且用户确认最终大纲
-后，可下载`v04_writing_handoff.json`。V0.4先根据实际证据生成一次段落级写作计划，
-再按锁定证据逐段生成并逐章确认；完成后最终交付页负责生成并
-审计标题、摘要、关键词、结论、参考文献与AI声明，最终可下载Markdown、DOCX和完整
-合规审计包。
-
-旧版规则解析命令仍然可用：
+## 测试与离线验收
 
 ```powershell
-veriwrite parse-requirements `
-  --input tests\fixtures\course_requirement.txt `
-  --output runtime\requirement_spec.json
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check .
 ```
 
-准备用户审查包。`rule` 模式不联网，`dual` 模式会调用 `.env` 中配置的 LLM：
+对本地已保存项目运行无网络 V0.4 → V0.5 → DOCX 验收：
 
 ```powershell
-veriwrite prepare-requirements `
-  --input tests\fixtures\course_requirement.txt `
-  --output runtime\requirement_review.json `
-  --mode dual
+.\.venv\Scripts\python.exe scripts\smoke_offline_agent.py
 ```
 
-命令会同时在相邻位置生成 `requirement_review.md`，其中包含两条解析路径的候选结果、冲突和待确认事项。
+该脚本使用真实项目合同和确定性 FakeLLM，不修改快照、不调用 DeepSeek。
+没有本地 runtime 快照时，全量 pytest 仍提供自包含的金标准和故障注入覆盖。
 
-根据审查包填写确认答案，可以参考
-`examples/requirement_confirmation.example.json`，然后生成 V0.2 可直接消费的确认版本：
-
-```powershell
-veriwrite confirm-requirements `
-  --review runtime\requirement_review.json `
-  --answers examples\requirement_confirmation.example.json `
-  --output runtime\confirmed_requirement_spec.json
-```
+独立 evaluator 位于 `veriwrite-evaluator/`，MCP 接入说明见
+[External evaluator MCP](docs/external_evaluator_mcp.md)。
 
 ## 项目结构
 
 ```text
 veriwrite-agent/
-├── docs/                       # PRD 与学习笔记
 ├── src/veriwrite_agent/
-│   ├── models/                 # 系统承认的数据结构
-│   ├── services/               # 解析、合并、完整性检查和确认
-│   ├── llm/                    # 统一 LLM 接口和供应商适配
-│   ├── config/                 # API Key 等运行配置
-│   ├── ui/                     # 本地验证工作台的应用层与界面
-│   └── cli.py                  # 命令行入口
-├── tests/
-│   ├── fixtures/               # 固定测试输入
-│   └── test_*.py               # 自动化验收标准
-├── examples/                   # 用户确认等输入示例
-├── .env.example                # 密钥字段示例，不存真实密钥
-└── pyproject.toml              # 项目、依赖与工具配置
+│   ├── models/             # Pydantic 数据合同
+│   ├── services/           # 检索、证据、写作、审计与恢复服务
+│   ├── llm/                # OpenAI-compatible provider adapter
+│   └── ui/                 # Streamlit 产品工作台
+├── veriwrite-evaluator/    # 独立 MCP 全文评估器
+├── tests/                  # 单元、回归、金标准和故障注入测试
+├── scripts/                # 诊断、离线验收和 Windows 启动器
+├── docs/                   # PRD、架构决策与阶段设计
+├── data/                   # 版本化期刊目录及其来源说明
+└── streamlit_app.py        # 应用入口
 ```
 
-## V0.1 验收能力
+## 隐私与数据边界
 
-- 提取至少 15000 字；
-- 提取至少 60 篇参考文献；
-- 将外文三分之一换算为至少 20 篇；
-- 识别近 5 年是软偏好；
-- 识别单处引用最多 4 篇；
-- 发现“15000 字以上”与“1.5 万字左右”的表述差异；
-- 不把模板示例题目误判为用户真实题目；
-- 记录原文证据，便于人工复核。
-- 支持 TXT、Markdown、DOCX、旧版 DOC、PDF 和常见图片；
-- 对图片与 PDF 扫描页执行本地中英文 OCR，并显示平均置信度；
-- 提供 5 份内置样例和本地上传验证工作台；
-- 提供复杂多教师案例金标准，将 4 个可选方向与统一要求分层保存；
-- 支持多张滚动截图按序合并、重叠去重、手机界面噪声清理和 OCR 文本校对；
-- 区分“约 30 篇”目标数量与最低数量，原样保存 4000–5000 单词范围；
-- 保存选题约束、提交方式与截止时间、文献禁用规则、处罚和 AI 声明要求；
-- 用户选择教师/方向后，将该档案与统一要求物化为 V0.2 可消费的最终合同；
-- LLM JSON 校验失败时自动按字段错误修复一次，仍失败则显示字段级原因；
-- 支持规则/LLM 双路解析和显式冲突记录；
-- 阻止未确认主题或未解决冲突进入下一阶段；
-- 保存确认人、确认时间、用户修改和仍然存在的警告。
+- `.env`、`runtime/`、原始 PDF、上传文件、日志和生成论文默认不进入 Git；
+- API Key 只从环境变量或本地 `.env` 读取；
+- PDF 证据与项目检查点保存在本地；
+- 示例、截图和 bug 报告在公开前应移除课程内容、论文正文和个人路径；
+- 不要把真实 runtime 项目提交到 Issue 或 Pull Request。
 
-概念与方案说明见
-[`docs/v0.1_concepts_and_workflow.md`](docs/v0.1_concepts_and_workflow.md)。
+第三方目录的来源与许可边界见 [data/README.md](data/README.md)。
 
-## V0.2.3 文献选择能力
+## 当前边界
 
-- 从 V0.1 的确认需求生成 2—8 个需要文献支撑的临时检索主题；
-- 临时检索蓝图必须经用户检查和确认，草案不能直接触发 Crossref 检索；
-- 为不同主题分配明确文献配额，避免单一检索词占满最终结果；
-- 同一主题的多条 Crossref 查询采用公平轮询；
-- 只有通过权威 RIS 与 DOI 解析验证的文献才能进入相关性评分；
-- LLM 只能判断真实题名/摘要与主题的贴切度，不能新增 DOI 或修改元数据；
-- 最终顺序固定为“相关性 > 地大期刊等级 > 挪威2025等级 > 年份”；
-- Crossref 返回的 ISSN 优先用于挪威目录匹配，规范化期刊题名只作兜底；
-- 默认把两种等级都作为软偏好，未分级不等于虚假；
-- 地大和挪威等级独立展示，不把 Level 2 伪装成地大 T2 或其他分区；
-- 某主题不足时明确输出缺口，不用无关论文静默凑数；
-- 网络验证与 LLM 评分按阶段缓存，中断后可恢复；
-- 真实大气遥感回归实现四主题各 5 篇，最终 20/20 通过 RIS 与 DOI 验证。
+- 出版社登录、验证码和付费全文仍需要用户处理；
+- 外部评分是对照信号，不读取隐藏答案，也不直接驱动写作循环；
+- 当前逐句支持关系由段落证据包、证据卡与页码约束，语义蕴含审计仍在持续增强；
+- 项目不会绕过课程的 AI 使用政策，禁止 AI 生成正文时会在模型调用前停止。
 
-设计与回归说明见
-[`docs/v0.2.2_outline_guided_balanced_selection.md`](docs/v0.2.2_outline_guided_balanced_selection.md)
-和
-[`docs/v0.2.3_dual_journal_ranking.md`](docs/v0.2.3_dual_journal_ranking.md)。
+## 设计文档
 
-## V0.3.0 全文证据能力
+- [MVP PRD](docs/M0_PRD.md)
+- [V0.2 文献发现设计](docs/v0.2_literature_discovery_design.md)
+- [V0.3 证据矩阵设计](docs/v0.3_evidence_matrix_design.md)
+- [V0.4 证据约束写作设计](docs/v0.4_grounded_writing_design.md)
+- [可执行要求与最终交付](docs/mvp_executable_policy_and_delivery.md)
+- [开放源码方案对照](docs/open_source_writing_agent_adoption.md)
 
-- 为用户选择的核心论文建立DOI权威入口与可恢复下载队列；
-- 自动识别正确PDF、HTML拦截页、重复文件、无关文件和缺失论文；
-- DOI或题名身份得分低于0.8时不自动分配，避免相似题名误匹配；
-- 保存PDF SHA-256、页数、文件大小、身份依据和检查问题；
-- 逐页提取原生文本，扫描页可进入本地OCR降级路径；
-- 保存完整逐页提取清单，代码检索相关页面后才发送给LLM，完整PDF文本不被截断丢弃；
-- 提取结果和证据卡按`ExecutableRequirementPolicy`指纹与PDF哈希持久化缓存；
-- LLM只能提出证据类型、规范化结论和给定页中的短原文；
-- 代码固定DOI、主题、PDF哈希和证据ID，并验证引句确实存在；
-- 将研究对象、数据、方法、结果、局限、背景和未来工作写入可追溯矩阵；
-- 区分`A_core/full_text_verified`与仅元数据验证的B/C层文献；
-- 未解决PDF、OCR、证据或章节覆盖问题会阻止V0.4交接；
-- 输出确认需求、最终写作大纲和确认版证据库组成的V0.4交接合同；
+## 使用与许可
 
-## V0.4.0 证据约束写作能力
-
-- V0.2主题蓝图与V0.3实际证据先生成可审阅的段落级写作计划；
-- 规划模型只使用短证据别名，代码再绑定真实证据卡ID与DOI；
-- 用户只需一次性确认写作计划，不逐张确认证据卡；
-- 每个段落只接收计划锁定的少量证据和来源；
-- A级全文、B级辅助和C级背景文献具有不同的可用权限；
-- DeepSeek逐段输出正文文本，无权选择、修改或生成引用标识；
-- 章节计划与段落正文分别保存检查点，中断后只重试未完成单元；
-- 程序确定性生成Pandoc引用键，并保留DOI、证据卡和PDF页码轨迹；
-- 越权来源、未知证据、模型自造DOI或引用标记会阻止章节确认；
-- 用户逐章确认，全部正文章节确认后才允许汇总Markdown；
-- 课程禁止AI生成正文时，服务层禁止调用模型并导出人工写作证据包。
-
-## MVP 最终交付与要求贯通
-
-- V0.1确认结果会编译为版本化`ExecutableRequirementPolicy`，并随V0.2蓝图、V0.3证据库和V0.4交接包向下游传播；
-- 检索与选择实际执行文献数量、硬年份、外文比例、来源类型偏好和禁用来源规则；
-- 正文完成后才生成标题、摘要、关键词和结论，程序负责引用样式和最终参考文献；
-- 最终发布审计再次检查字数口径、文献数、外文数、硬年份、来源禁限、章节、AI声明和引用簇上限；
-- 只有审计无阻塞且用户最终确认后，才解锁完整Markdown、DOCX和审计JSON；
-- 全链路金标准测试覆盖需求确认、策略编译、文献检索/真实性验证、真实PDF文本提取、证据卡、逐章写作、最终审计和DOCX打开验证；
-- “逐句话是否真正被引文语义支持”的蕴含验证明确作为MVP后续优化项，不伪装成当前已完成能力。
-
-实现边界、策略字段映射与验收说明见
-[`docs/mvp_executable_policy_and_delivery.md`](docs/mvp_executable_policy_and_delivery.md)。
-
-详细设计见[`docs/v0.4_grounded_writing_design.md`](docs/v0.4_grounded_writing_design.md)。
-- 两篇真实Elsevier PDF烟雾测试分别完成12/12页和13/13页原生文本提取。
-
-设计、边界与验收说明见
-[`docs/v0.3_evidence_matrix_design.md`](docs/v0.3_evidence_matrix_design.md)。
-
-## 路线图
-
-- V0.1：课程要求获取与确认（已完成核心流程）
-- V0.2：文献检索、身份验证与多主题均衡选择（已完成核心流程）
-- V0.3：PDF全文、双层文献库、文献矩阵与证据卡（已补全提取审计与持久缓存）
-- V0.4：按确认大纲与证据库逐章节写作，支持一次授权连续生成、独立审稿和定点返修（正文闭环已实现）
-- MVP：要求策略贯通、最终Markdown/DOCX、发布审计与全链路金标准测试（已实现）
-- 后续优化：逐句引用语义蕴含验证、更多引用样式和更大规模真实案例评测
-
-同类开源系统的设计对照、采用边界和后续路线见
-[`docs/open_source_writing_agent_adoption.md`](docs/open_source_writing_agent_adoption.md)。
+本仓库目前用于个人作品集与技术评审。除第三方数据各自标注的许可外，仓库尚未授予
+通用开源许可；如需复用代码，请先联系仓库所有者。课程论文和文献全文不属于本仓库发布内容。

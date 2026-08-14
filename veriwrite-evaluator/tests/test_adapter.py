@@ -168,6 +168,7 @@ def test_deepseek_backend_url_and_model():
     assert backend._url == "https://api.deepseek.com/chat/completions"
     assert backend.model_id() == "deepseek-chat"
     assert backend.availability() is True
+    assert backend._uses_system_proxy is False
 
 
 def test_mcp_server_tools():

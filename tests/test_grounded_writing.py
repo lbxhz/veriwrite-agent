@@ -32,6 +32,7 @@ from veriwrite_agent.models.writing_plan import (
     SectionPlanProposal,
 )
 from veriwrite_agent.models.writing_quality import (
+    ManuscriptEditorialCheckpoint,
     ManuscriptQualityFinding,
     ManuscriptQualityReview,
 )
@@ -51,6 +52,7 @@ from veriwrite_agent.services.grounded_writing import (
 )
 from veriwrite_agent.services.agent_runtime_store import AgentRuntimeStore
 from veriwrite_agent.services.manuscript_structural_editing import (
+    _select_removable_targets,
     merge_redundant_manuscript_paragraphs,
     semantically_replan_manuscript_sections,
 )
@@ -64,6 +66,7 @@ from veriwrite_agent.services.writing_planning import (
     WritingPlanError,
     WritingPlanBudgetExceeded,
     WritingPlanRuntimeCache,
+    WritingPausedError,
     _assign_required_sources_to_problem_paragraphs,
     _repair_compiled_required_source_coverage,
     align_writing_plan_language,
@@ -84,10 +87,15 @@ from veriwrite_agent.services.writing_autopilot import (
     ContinuousWritingPolicy,
 )
 from veriwrite_agent.services.writing_agent_runtime import WritingAgentRuntimeService
-from veriwrite_agent.services.writing_evidence_recovery import merge_recovery_handoffs
+from veriwrite_agent.services.writing_evidence_recovery import (
+    WritingEvidenceRecoveryService,
+    merge_recovery_handoffs,
+)
 from veriwrite_agent.ui.writing_console import (
+    GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY,
     _merge_recovery_checkpoint_progress,
     _reopen_confirmed_state_for_plan_changes,
+    _structural_dedup_rescue_available,
     _synchronize_project_handoff,
     reopen_entire_body_for_regeneration,
 )
@@ -884,8 +892,9 @@ def test_global_editor_refines_plan_before_targeted_rewrite() -> None:
     target = refined.sections[0].paragraphs[2]
     assert refined.plan_fingerprint != plan.plan_fingerprint
     assert target.target_words <= 240
-    assert target.claim_focus == finding.revision_instruction
+    assert target.claim_focus == original.paragraphs[2].claim_focus
     assert target.argument_move == "author_judgment"
+    assert finding.revision_instruction in target.purpose
     assert target.source_dois == [DOI]
     assert target.evidence_card_ids == [EVIDENCE_ID]
     assert sum(
@@ -910,6 +919,27 @@ def test_global_editor_warning_cannot_drive_an_endless_rewrite_loop() -> None:
         plan,
     )
 
+    assert normalized.findings[0].disposition == "report_only"
+
+
+def test_subjective_manuscript_style_finding_remains_nonblocking() -> None:
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(handoff())
+    finding = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=2,
+        code="academic_style_problem",
+        severity="blocking",
+        disposition="targeted_repair",
+        detail="The prose sounds formulaic.",
+        revision_instruction="Use a more concrete scholarly judgment.",
+    )
+
+    normalized = _validate_manuscript_review(
+        ManuscriptQualityReview(findings=[finding]),
+        plan,
+    )
+
+    assert normalized.findings[0].severity == "warning"
     assert normalized.findings[0].disposition == "report_only"
 
 
@@ -1081,7 +1111,13 @@ def test_v05_reviewer_can_promote_deferred_repetition_to_targeted_repair() -> No
     assert finding.disposition == "targeted_repair"
 
 
-def test_structural_editor_merges_redundant_paragraph_and_support_scope() -> None:
+@pytest.mark.parametrize(
+    "issue_code",
+    ["cross_section_repetition", "paragraph_repetition"],
+)
+def test_structural_editor_merges_redundant_paragraph_and_support_scope(
+    issue_code,
+) -> None:
     active = handoff()
     plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active)
     packet = SectionEvidencePacketBuilder().build(active, "method")
@@ -1108,7 +1144,7 @@ def test_structural_editor_merges_redundant_paragraph_and_support_scope() -> Non
     finding = ManuscriptQualityFinding(
         section_id="method",
         paragraph_number=3,
-        code="cross_section_repetition",
+        code=issue_code,
         severity="blocking",
         disposition="targeted_repair",
         detail="The final paragraph repeats the preceding synthesis.",
@@ -1140,6 +1176,180 @@ def test_structural_editor_merges_redundant_paragraph_and_support_scope() -> Non
         paragraph.target_words for paragraph in edited.plan.sections[0].paragraphs
     ) == plan.sections[0].target_words
     assert edited.project.status == "drafting"
+
+
+def test_structural_editor_preserves_surviving_evidence_before_migrating_orphans(
+) -> None:
+    active = handoff_with_background_source()
+    base_plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active)
+    section = base_plan.sections[0]
+    paragraphs = list(section.paragraphs)
+    paragraphs[0] = paragraphs[0].model_copy(
+        update={"target_words": paragraphs[0].target_words - 50}
+    )
+    paragraphs[2] = paragraphs[2].model_copy(
+        update={
+            "purpose": "Compare retrieval performance and its evidence limitations.",
+            "claim_focus": "The verified result bounds the performance comparison.",
+            "central_question": "Which performance claims have direct support?",
+            "argument_move": "evaluate_limitation",
+            "comparison_axis": "retrieval performance",
+            "evidence_card_ids": [EVIDENCE_ID],
+            "source_dois": [DOI],
+        }
+    )
+    paragraphs.append(
+        paragraphs[2].model_copy(
+            update={
+                "paragraph_id": "method_p04",
+                "paragraph_number": 4,
+                "role": "background",
+                "purpose": "Give bounded environmental monitoring context.",
+                "claim_focus": "Metadata supports only general monitoring context.",
+                "central_question": "What context is safe to state from metadata?",
+                "argument_move": "author_judgment",
+                "comparison_axis": None,
+                "target_words": 50,
+                "evidence_card_ids": [],
+                "source_dois": [BACKGROUND_DOI],
+            }
+        )
+    )
+    plan = GroundedWritingPlan.model_validate(
+        base_plan.model_copy(
+            update={
+                "required_source_dois": [DOI, SUPPORTING_DOI, BACKGROUND_DOI],
+                "sections": [section.model_copy(update={"paragraphs": paragraphs})],
+            }
+        ).model_dump(mode="json")
+    )
+    packet = SectionEvidencePacketBuilder().build(active, "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(
+            section_id="method",
+            paragraphs=[
+                DraftParagraphProposal(
+                    role=paragraph.role,
+                    text=f"Evidence-bound paragraph {paragraph.paragraph_number}.",
+                    evidence_card_ids=paragraph.evidence_card_ids,
+                    source_dois=paragraph.source_dois,
+                )
+                for paragraph in plan.sections[0].paragraphs
+            ],
+        ),
+    )
+    service = WritingProjectService()
+    project = service.save_draft(service.start(active), quality_passed(draft))
+    project = service.confirm_section(project, "method", confirmed_by="student")
+    finding = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=4,
+        code="paragraph_repetition",
+        severity="blocking",
+        disposition="targeted_repair",
+        detail="The final background paragraph repeats prior context.",
+        revision_instruction="Merge its unique source into a surviving paragraph.",
+    )
+
+    edited = merge_redundant_manuscript_paragraphs(
+        plan,
+        project,
+        ManuscriptQualityReview(findings=[finding]),
+    )
+
+    survivor = edited.plan.sections[0].paragraphs[2]
+    assert DOI in survivor.source_dois
+    assert EVIDENCE_ID in survivor.evidence_card_ids
+    assert survivor.role == "background"
+    assert survivor.argument_move == "author_judgment"
+    assert survivor.deferred_claim_focus == (
+        "The verified result bounds the performance comparison."
+    )
+    assert survivor.deferred_recovery_dois == [BACKGROUND_DOI]
+    assert BACKGROUND_DOI in {
+        doi
+        for paragraph in edited.plan.sections[0].paragraphs
+        for doi in paragraph.source_dois
+    }
+    assert WritingEvidenceRecoveryService().audit_section(
+        edited.plan.sections[0],
+        packet,
+    ) == ()
+    assert WritingEvidenceRecoveryService().validate_resolution(
+        edited.plan,
+        [packet],
+        affected_section_ids=["method"],
+    ) == ()
+
+
+def test_structural_editor_keeps_a_target_when_preserved_bindings_need_capacity(
+) -> None:
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(handoff())
+    section = plan.sections[0]
+    paragraphs = list(section.paragraphs)
+    paragraphs[0] = paragraphs[0].model_copy(
+        update={"source_dois": [DOI, SUPPORTING_DOI]}
+    )
+    paragraphs[1] = paragraphs[1].model_copy(
+        update={"source_dois": [DOI, BACKGROUND_DOI]}
+    )
+    paragraphs[2] = paragraphs[2].model_copy(
+        update={"source_dois": ["10.1000/orphan.1"]}
+    )
+    paragraphs.append(
+        paragraphs[2].model_copy(
+            update={
+                "paragraph_id": "method_p04",
+                "paragraph_number": 4,
+                "target_words": 50,
+                "source_dois": [SUPPORTING_DOI],
+            }
+        )
+    )
+    paragraphs[0] = paragraphs[0].model_copy(
+        update={"target_words": paragraphs[0].target_words - 50}
+    )
+    section = section.model_copy(update={"paragraphs": paragraphs})
+
+    selected = _select_removable_targets(
+        section,
+        {3, 4},
+        max_sources_per_paragraph=2,
+    )
+
+    assert selected == {4}
+
+
+def test_round_exhausted_legacy_repetition_gets_one_structural_rescue() -> None:
+    finding = ManuscriptQualityFinding(
+        section_id="method",
+        paragraph_number=3,
+        code="paragraph_repetition",
+        severity="blocking",
+        disposition="targeted_repair",
+        detail="This paragraph duplicates paragraph 2.",
+        revision_instruction="Remove the redundant copy.",
+    )
+    checkpoint = ManuscriptEditorialCheckpoint(
+        body_fingerprint="a" * 64,
+        status="needs_revision",
+        review=ManuscriptQualityReview(findings=[finding]),
+        blocking_count=1,
+        warning_count=0,
+        completed_at=datetime.now(timezone.utc),
+    )
+
+    assert _structural_dedup_rescue_available(
+        {},
+        checkpoint,
+        completed_rounds=3,
+    )
+    assert not _structural_dedup_rescue_available(
+        {GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY: True},
+        checkpoint,
+        completed_rounds=3,
+    )
 
 
 def test_v05_rejection_reopens_every_v04_paragraph_without_losing_plan() -> None:
@@ -1278,27 +1488,19 @@ def test_planner_drops_unneeded_low_permission_source_from_supported_paragraph()
     assert plan.sections[0].paragraphs[0].source_dois == [DOI]
 
 
-def test_planner_repairs_background_source_used_for_section_support() -> None:
+def test_planner_deterministically_repairs_background_source_for_section_support() -> None:
     active_handoff = handoff_with_background_source()
     invalid_payload = json.loads(plan_response())
     invalid_payload["paragraphs"][1]["source_refs"] = ["S003"]
-    valid_payload = json.loads(plan_response())
-    valid_payload["paragraphs"][1].update(
-        {
-            "role": "background",
-            "source_refs": ["S003"],
-        }
-    )
-    client = SequenceLLMClient(
-        [json.dumps(invalid_payload), json.dumps(valid_payload)]
-    )
+    client = SequenceLLMClient([json.dumps(invalid_payload)])
 
     plan = GroundedWritingPlanner(client).plan(active_handoff)
 
     repaired = plan.sections[0].paragraphs[1]
-    assert repaired.role == "background"
-    assert repaired.source_dois == [BACKGROUND_DOI]
-    assert len(client.calls) == 2
+    assert repaired.role == "section_support"
+    assert repaired.source_dois
+    assert BACKGROUND_DOI not in repaired.source_dois
+    assert len(client.calls) == 1
     prompt_payload = json.loads(client.calls[0]["messages"][1]["content"])
     assert prompt_payload["source_catalog"][2]["allowed_roles"] == [
         "background",
@@ -1325,7 +1527,7 @@ def test_planner_deterministically_replaces_repeated_permission_mismatch() -> No
     assert repaired.role == "section_support"
     assert repaired.source_dois
     assert BACKGROUND_DOI not in repaired.source_dois
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
 
 def test_replanner_trims_repeated_excess_paragraph_plan() -> None:
@@ -2610,6 +2812,7 @@ def test_continuous_writing_stops_when_review_findings_remain() -> None:
     assert any(issue.code == "topic_drift" for issue in draft.issues)
     assert result.stop_code == "review_exhausted"
     assert "停止盲目重写" in (result.stop_reason or "")
+    assert len(writer_client.calls) == len(plan.sections[0].paragraphs)
 
 
 def test_continuous_writing_defers_persistent_style_findings() -> None:
@@ -3120,6 +3323,140 @@ def test_planned_writer_uses_locked_bindings_and_reuses_paragraph_cache(
     assert [
         item["paragraph_number"] for item in repair_payload["editorial_context"]
     ] == [1, 3]
+
+
+def test_paragraph_draft_parallel_matches_serial(tmp_path: Path) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    section_plan = plan.sections[0]
+    paragraph_text = json.dumps({"text": "Parallel-safe locked-evidence paragraph."})
+
+    serial = PlannedSectionDraftService().draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(FakeLLMClient(paragraph_text)),
+        max_workers=1,
+    )
+
+    parallel_client = FakeLLMClient(paragraph_text)
+    progress: list[tuple[int, int, str]] = []
+    parallel = PlannedSectionDraftService().draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(parallel_client),
+        max_workers=2,
+        on_paragraph_progress=lambda completed, total, source: progress.append(
+            (completed, total, source)
+        ),
+    )
+
+    assert serial.model_dump(exclude={"generated_at"}) == parallel.model_dump(
+        exclude={"generated_at"}
+    )
+    expected = [item.paragraph_number for item in section_plan.paragraphs]
+    assert len(parallel_client.calls) == len(expected)
+    assert sorted(completed for completed, _, _ in progress) == expected
+
+
+def test_parallel_draft_stops_submitting_after_durable_pause(
+    tmp_path: Path,
+) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    section_plan = plan.sections[0]
+    cache = ParagraphWritingRuntimeCache(
+        tmp_path,
+        plan_fingerprint=plan.plan_fingerprint,
+    )
+    client = FakeLLMClient(
+        json.dumps({"text": "A valid locked-evidence paragraph."})
+    )
+    checks = iter([True, True, False, False, False])
+
+    with pytest.raises(WritingPausedError, match="paused"):
+        PlannedSectionDraftService().draft(
+            section_packet,
+            section_plan,
+            LLMGroundedParagraphWriter(client),
+            cache=cache,
+            max_workers=2,
+            should_continue=lambda: next(checks, False),
+        )
+
+    assert len(client.calls) == 2
+    assert cache.completed_count(section_packet, section_plan) == 2
+
+
+def test_paragraph_draft_targeted_revision_stays_serial_with_workers(
+    tmp_path: Path,
+) -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section_packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    section_plan = plan.sections[0]
+
+    first = PlannedSectionDraftService().draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(
+            FakeLLMClient(json.dumps({"text": "Original paragraph."}))
+        ),
+        max_workers=1,
+    )
+
+    targeted_client = FakeLLMClient(
+        json.dumps({"text": "Only the blocked paragraph changes."})
+    )
+    targeted = PlannedSectionDraftService().draft(
+        section_packet,
+        section_plan,
+        LLMGroundedParagraphWriter(targeted_client),
+        existing_draft=first,
+        force_paragraph_numbers={2},
+        max_workers=2,
+    )
+
+    assert len(targeted_client.calls) == 1
+    assert targeted.paragraphs[0].text == first.paragraphs[0].text
+    assert targeted.paragraphs[1].text == "Only the blocked paragraph changes."
+    assert targeted.paragraphs[2].text == first.paragraphs[2].text
+    payload = json.loads(targeted_client.calls[0]["messages"][1]["content"])
+    assert [
+        item["paragraph_number"] for item in payload["editorial_context"]
+    ] == [1, 3]
+
+
+def test_section_draft_escalates_cold_rehash_repetition_to_blocking() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    item = plan.sections[0].paragraphs[0]
+    repeated_text = (
+        "Aerosol retrieval accuracy depends on the surface reflectance model and "
+        "the aerosol optical depth assumptions used by the deep blue algorithm."
+    )
+    paragraphs = [
+        DraftParagraphProposal(
+            role=item.role,
+            text=repeated_text,
+            evidence_card_ids=item.evidence_card_ids,
+            source_dois=item.source_dois,
+        )
+        for _ in range(3)
+    ]
+
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(section_id="method", paragraphs=paragraphs),
+    )
+
+    repetition = [
+        issue for issue in draft.issues if issue.code == "paragraph_repetition"
+    ]
+    assert repetition
+    assert any(issue.severity == "blocking" for issue in repetition)
 
 
 def test_paragraph_cache_resumes_after_mid_section_failure(tmp_path: Path) -> None:

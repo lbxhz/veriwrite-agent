@@ -18,7 +18,6 @@ internal static class VeriWriteLauncher
 {
     private const string AppUrl = "http://localhost:8501/";
     private const int Port = 8501;
-    private const string InstalledProjectDirectory = @"C:\Users\17811\Documents\Codex\2026-07-12\new-chat\outputs\veriwrite-agent";
 
     [STAThread]
     private static int Main(string[] args)
@@ -30,8 +29,8 @@ internal static class VeriWriteLauncher
         {
             ShowError(
                 "没有找到 VeriWrite 项目目录。\n\n" +
-                "预期位置：\n" + InstalledProjectDirectory +
-                "\n\n如果项目已经移动，请重新运行 scripts\\windows\\build_launcher.ps1。",
+                "请把启动器保留在项目根目录，或设置 VERIWRITE_PROJECT_DIR 环境变量。\n\n" +
+                "如果项目已经移动，请重新运行 scripts\\windows\\build_launcher.ps1。",
                 "无法启动 VeriWrite Agent");
             return 1;
         }
@@ -163,7 +162,7 @@ internal static class VeriWriteLauncher
         {
             executableDirectory,
             configuredDirectory,
-            InstalledProjectDirectory
+            Environment.CurrentDirectory
         };
 
         foreach (string candidate in candidates)

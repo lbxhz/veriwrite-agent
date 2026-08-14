@@ -22,9 +22,12 @@ from veriwrite_agent.services.writing_planning import (
     LLMGroundedParagraphWriter,
     ParagraphWritingRuntimeCache,
     PlannedSectionDraftService,
+    WritingPausedError,
 )
 from veriwrite_agent.services.writing_quality import (
+    CHAPTER_LOCAL_EDITORIAL_CODES,
     LLMSectionQualityReviewer,
+    PROSE_REPAIRABLE_DETERMINISTIC_CODES,
     PROSE_REPAIRABLE_SECTION_CODES,
     SECTION_QUALITY_REVIEW_CODES,
     apply_section_quality_review,
@@ -52,6 +55,7 @@ AutopilotStopCode = Literal[
     "review_failed",
     "review_exhausted",
     "deterministic_blocked",
+    "paused",
 ]
 
 
@@ -94,6 +98,7 @@ class ContinuousWritingResult:
 
 CheckpointCallback = Callable[[V04WritingProject, ContinuousWritingEvent], None]
 ParagraphProgressCallback = Callable[[str, str, int, int, str], None]
+ContinuePredicate = Callable[[], bool]
 
 
 class ContinuousSectionWritingService:
@@ -112,11 +117,13 @@ class ContinuousSectionWritingService:
         reviewer: LLMSectionQualityReviewer,
         cache: ParagraphWritingRuntimeCache | None = None,
         policy: ContinuousWritingPolicy | None = None,
+        paragraph_workers: int = 1,
     ) -> None:
         self._writer = writer
         self._reviewer = reviewer
         self._cache = cache
         self._policy = policy or ContinuousWritingPolicy()
+        self._paragraph_workers = paragraph_workers
         self._drafts = PlannedSectionDraftService()
         self._projects = WritingProjectService()
         self._packets = SectionEvidencePacketBuilder()
@@ -132,6 +139,7 @@ class ContinuousSectionWritingService:
         auto_confirm: bool = True,
         on_checkpoint: CheckpointCallback | None = None,
         on_paragraph_progress: ParagraphProgressCallback | None = None,
+        should_continue: ContinuePredicate | None = None,
     ) -> ContinuousWritingResult:
         if plan.status != "confirmed":
             raise ValueError("continuous writing requires a confirmed writing plan")
@@ -164,6 +172,14 @@ class ContinuousSectionWritingService:
             if section_state.status == "confirmed":
                 continue
             section_plan = plan_by_id[section_state.section_id]
+            if should_continue is not None and not should_continue():
+                return self._stopped(
+                    current,
+                    section_plan,
+                    "Agent pause requested; no new model call was started.",
+                    on_checkpoint,
+                    stop_code="paused",
+                )
             result = self._run_section(
                 current,
                 section_plan,
@@ -173,6 +189,7 @@ class ContinuousSectionWritingService:
                 auto_confirm=auto_confirm,
                 on_checkpoint=on_checkpoint,
                 on_paragraph_progress=on_paragraph_progress,
+                should_continue=should_continue,
             )
             current = result.project
             events.extend(result.events)
@@ -265,6 +282,7 @@ class ContinuousSectionWritingService:
         auto_confirm: bool,
         on_checkpoint: CheckpointCallback | None,
         on_paragraph_progress: ParagraphProgressCallback | None,
+        should_continue: ContinuePredicate | None,
     ) -> ContinuousWritingResult:
         section_id = section_plan.section_id
         title = section_plan.title
@@ -424,6 +442,8 @@ class ContinuousSectionWritingService:
                 existing_draft=draft,
                 force_paragraph_numbers=repair_numbers,
                 revision_instructions=revision_instructions,
+                max_workers=self._paragraph_workers,
+                should_continue=should_continue,
                 on_paragraph_progress=(
                     lambda completed, total, source: on_paragraph_progress(
                         section_id,
@@ -437,6 +457,14 @@ class ContinuousSectionWritingService:
                 ),
             )
             draft = _carry_review_history(draft, previous_draft)
+        except WritingPausedError:
+            return self._stopped(
+                project,
+                section_plan,
+                "Agent pause requested; completed paragraph checkpoints were retained.",
+                on_checkpoint,
+                stop_code="paused",
+            )
         except Exception as exc:
             saved = (
                 self._cache.completed_count(packet, section_plan)
@@ -469,6 +497,14 @@ class ContinuousSectionWritingService:
 
         revision_pass = 0
         while True:
+            if should_continue is not None and not should_continue():
+                return self._stopped(
+                    project,
+                    section_plan,
+                    "Agent pause requested before independent review.",
+                    on_checkpoint,
+                    stop_code="paused",
+                )
             review_event = ContinuousWritingEvent(
                 section_id=section_id,
                 section_title=title,
@@ -539,6 +575,8 @@ class ContinuousSectionWritingService:
                     existing_draft=draft,
                     force_paragraph_numbers=repair_numbers,
                     revision_instructions=revision_instructions,
+                    max_workers=self._paragraph_workers,
+                    should_continue=should_continue,
                     on_paragraph_progress=(
                         lambda completed, total, source: on_paragraph_progress(
                             section_id,
@@ -552,6 +590,14 @@ class ContinuousSectionWritingService:
                     ),
                 )
                 draft = _carry_review_history(draft, previous_draft)
+            except WritingPausedError:
+                return self._stopped(
+                    project,
+                    section_plan,
+                    "Agent pause requested; completed paragraph checkpoints were retained.",
+                    on_checkpoint,
+                    stop_code="paused",
+                )
             except Exception as exc:
                 saved = (
                     self._cache.completed_count(packet, section_plan)
@@ -575,7 +621,7 @@ class ContinuousSectionWritingService:
             return self._stopped(
                 project,
                 section_plan,
-                "chapter does not have a passing independent review",
+                _exhaustion_detail(draft),
                 on_checkpoint,
                 stop_code="review_exhausted",
             )
@@ -693,7 +739,11 @@ def _editorial_repair_targets(
         for issue in draft.issues
         if issue.paragraph_number is not None
         and issue.severity == "blocking"
-        and issue.code in PROSE_REPAIRABLE_SECTION_CODES
+        and issue.code
+        in {
+            *CHAPTER_LOCAL_EDITORIAL_CODES,
+            *PROSE_REPAIRABLE_DETERMINISTIC_CODES,
+        }
     ]
     numbers = {issue.paragraph_number for issue in issues if issue.paragraph_number}
     instructions = {

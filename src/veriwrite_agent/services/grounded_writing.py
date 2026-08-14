@@ -406,13 +406,22 @@ class GroundedSectionDraftService:
                 _render_paragraph(paragraph.text, paragraph_citations)
             )
 
-        for first, second in repeated_sentence_pairs(
-            [paragraph.text for paragraph in proposal.paragraphs]
-        ):
+        paragraph_texts = [paragraph.text for paragraph in proposal.paragraphs]
+        repeated_pairs = repeated_sentence_pairs(paragraph_texts)
+        # A paragraph that repeats several distinct peers is a "cold-rehash"
+        # signal: the same evidence is restated without advancing the argument.
+        # Escalate that to a deterministic blocking finding instead of deferring
+        # it to the manuscript editor, which has historically let it through.
+        repeat_counts: dict[int, int] = {}
+        for first, second in repeated_pairs:
+            repeat_counts[first] = repeat_counts.get(first, 0) + 1
+            repeat_counts[second] = repeat_counts.get(second, 0) + 1
+        for first, second in repeated_pairs:
+            heavy = repeat_counts[first] >= 2 or repeat_counts[second] >= 2
             issues.append(
                 SectionDraftIssue(
                     code="paragraph_repetition",
-                    severity="warning",
+                    severity="blocking" if heavy else "warning",
                     paragraph_number=second,
                     detail=(
                         f"paragraph {second} substantially repeats paragraph {first}; "

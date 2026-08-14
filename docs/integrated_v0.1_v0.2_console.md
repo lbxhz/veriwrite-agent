@@ -3,7 +3,7 @@
 ## 启动
 
 ```powershell
-cd C:\Users\17811\Documents\Codex\2026-07-12\new-chat\outputs\veriwrite-agent
+cd <path-to-veriwrite-agent>
 .\.venv\Scripts\Activate.ps1
 streamlit run streamlit_app.py
 ```

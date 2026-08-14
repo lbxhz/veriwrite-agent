@@ -20,14 +20,22 @@ TITLE = "Atmospheric Remote Sensing with Multispectral Observations"
 def test_project_pdf_directory_migrates_legacy_browser_downloads(monkeypatch) -> None:
     monkeypatch.setenv(
         evidence_console.EVIDENCE_VAULT_ENV,
-        r"E:\AI-Agent-Projects\Evidence-Vault",
+        r"X:\VeriWrite-Test\Evidence-Vault",
     )
     state = {
         evidence_console.PDF_DIRECTORY_KEY: str(Path.home() / "Downloads"),
     }
 
     assert evidence_console.project_pdf_directory(state) == (
-        r"E:\AI-Agent-Projects\Evidence-Vault"
+        r"X:\VeriWrite-Test\Evidence-Vault"
+    )
+
+
+def test_project_pdf_directory_has_a_portable_default(monkeypatch) -> None:
+    monkeypatch.delenv(evidence_console.EVIDENCE_VAULT_ENV, raising=False)
+
+    assert evidence_console.project_pdf_directory({}) == str(
+        Path.home() / "Documents" / "VeriWrite" / "Evidence-Vault"
     )
 
 
@@ -36,7 +44,7 @@ def test_project_pdf_directory_preserves_an_explicit_custom_location(
 ) -> None:
     monkeypatch.setenv(
         evidence_console.EVIDENCE_VAULT_ENV,
-        r"E:\AI-Agent-Projects\Evidence-Vault",
+        r"X:\VeriWrite-Test\Evidence-Vault",
     )
     state = {
         evidence_console.PDF_DIRECTORY_KEY: r"D:\Research\Current Paper",

@@ -93,6 +93,7 @@ class ExternalEvaluatorConfig:
             "False",
         }
         timeout_seconds = float(os.getenv("VW_EVAL_TIMEOUT_SECONDS", "300"))
+        evaluator_proxy_setting = os.getenv("VW_EVAL_USE_SYSTEM_PROXY")
         environment = dict(os.environ)
         environment.update(
             {
@@ -107,6 +108,11 @@ class ExternalEvaluatorConfig:
                 # flash model selected for ordinary prose generation.
                 "VW_EVAL_MODEL": "deepseek-chat",
                 "VW_EVAL_TEMPERATURE": "0.0",
+                "VW_EVAL_USE_SYSTEM_PROXY": (
+                    evaluator_proxy_setting
+                    if evaluator_proxy_setting is not None
+                    else ("true" if settings.use_system_proxy else "false")
+                ),
                 "VW_EVAL_BATCH": "1" if batch else "0",
                 "VW_EVAL_TARGET_WINDOW_BYTES": str(target_window_bytes),
                 "VW_EVAL_TIMEOUT_SECONDS": str(timeout_seconds),

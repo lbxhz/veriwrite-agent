@@ -10,12 +10,9 @@ from urllib.parse import quote
 
 import streamlit as st
 
-from veriwrite_agent.config.settings import LLMSettings
-from veriwrite_agent.llm.deepseek_client import DeepSeekClient
 from veriwrite_agent.models.evidence import (
     CorePaperExpectation,
     EvidenceLibrary,
-    LiteratureLibraryRecord,
     PdfInspectionBatch,
 )
 from veriwrite_agent.models.literature_selection import (
@@ -26,19 +23,11 @@ from veriwrite_agent.models.literature_verification import (
 )
 from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
-from veriwrite_agent.services.evidence_card_extraction import (
-    LLMEvidenceCardExtractor,
-)
+from veriwrite_agent.services.evidence_assembly import build_evidence_library
 from veriwrite_agent.services.evidence_library import (
-    EvidenceLibraryBuilder,
     EvidenceLibraryConfirmationService,
 )
-from veriwrite_agent.services.evidence_runtime import (
-    EvidencePageRetriever,
-    EvidenceRuntimeCache,
-)
 from veriwrite_agent.services.pdf_acquisition import PdfAcquisitionInspector
-from veriwrite_agent.services.pdf_text_extraction import PdfPageExtractor
 from veriwrite_agent.services.writing_handoff import (
     WritingHandoffService,
     WritingOutlineBuilder,
@@ -71,7 +60,7 @@ PDF_STATE_KEYS = (
 
 PDF_DIRECTORY_KEY = "v03_download_directory"
 EVIDENCE_VAULT_ENV = "VERIWRITE_EVIDENCE_VAULT"
-DEFAULT_EVIDENCE_VAULT = Path(r"E:\AI-Agent-Projects\Evidence-Vault")
+DEFAULT_EVIDENCE_VAULT = Path.home() / "Documents" / "VeriWrite" / "Evidence-Vault"
 
 
 def project_pdf_directory(state: Mapping[str, object]) -> str:
@@ -495,56 +484,56 @@ def _render_evidence_pipeline(
 ) -> None:
     st.subheader("全文证据与写作准备")
     verified_count = sum(report.status == "verified" for report in batch.reports)
-    if verified_count == 0:
-        recovery_request = _load_evidence_recovery_request()
-        missing_dois = [
-            report.expectation.doi
-            for report in batch.reports
-            if report.status == "missing"
-        ]
-        if recovery_request is not None and missing_dois:
-            unavailable_dois = list(
-                dict.fromkeys(
-                    [
-                        *recovery_request.unavailable_full_text_dois,
-                        *missing_dois,
-                    ]
-                )
+    recovery_request = _load_evidence_recovery_request()
+    missing_dois = [
+        report.expectation.doi
+        for report in batch.reports
+        if report.status == "missing"
+    ]
+    if recovery_request is not None and missing_dois:
+        unavailable_dois = list(
+            dict.fromkeys(
+                [
+                    *recovery_request.unavailable_full_text_dois,
+                    *missing_dois,
+                ]
             )
-            next_round = recovery_request.recovery_round + 1
-            if next_round <= recovery_request.max_recovery_rounds:
-                retried_request = recovery_request.model_copy(
-                    update={
-                        "status": "pending_search",
-                        "recovery_round": next_round,
-                        "unavailable_full_text_dois": unavailable_dois,
-                    }
-                )
-                route_evidence_recovery_to_search(retried_request)
-                st.session_state["mvp_flash"] = (
-                    f"本轮 {len(missing_dois)} 篇候选全文均无法从本地取得；"
-                    "Agent 已记录这些 DOI 并自动补搜替代论文，不需要用户逐轮下载。"
-                )
-                st.rerun()
-            blocked_request = recovery_request.model_copy(
+        )
+        next_round = recovery_request.recovery_round + 1
+        if next_round <= recovery_request.max_recovery_rounds:
+            retried_request = recovery_request.model_copy(
                 update={
-                    "status": "blocked",
+                    "status": "pending_search",
+                    "recovery_round": next_round,
                     "unavailable_full_text_dois": unavailable_dois,
-                    "blocked_reason": (
-                        "自动替代全文已达到恢复上限；需要一次性下载合并清单中的"
-                        "受限 PDF。"
-                    ),
                 }
             )
-            st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = (
-                blocked_request.model_dump_json(indent=2)
-            )
-            st.session_state["mvp_navigation_request"] = "writing"
+            route_evidence_recovery_to_search(retried_request)
             st.session_state["mvp_flash"] = (
-                "Agent 已完成全部自动替代尝试；现在只请求一次人工操作，"
-                "所需 PDF 已合并为一张下载清单。"
+                f"本轮 {len(missing_dois)} 篇候选全文仍无法从本地取得；"
+                "Agent 已记录这些 DOI 并自动补搜替代论文，不需要用户逐轮下载。"
             )
             st.rerun()
+        blocked_request = recovery_request.model_copy(
+            update={
+                "status": "blocked",
+                "unavailable_full_text_dois": unavailable_dois,
+                "blocked_reason": (
+                    "自动替代全文已达到恢复上限；需要一次性下载合并清单中的"
+                    "受限 PDF。"
+                ),
+            }
+        )
+        st.session_state[EVIDENCE_RECOVERY_REQUEST_KEY] = (
+            blocked_request.model_dump_json(indent=2)
+        )
+        st.session_state["mvp_navigation_request"] = "writing"
+        st.session_state["mvp_flash"] = (
+            "Agent 已完成全部自动替代尝试；现在只请求一次人工操作，"
+            "所需 PDF 已合并为一张下载清单。"
+        )
+        st.rerun()
+    if verified_count == 0:
         st.warning("当前没有通过身份与完整性检查的PDF，不能提取全文证据。")
         return
 
@@ -874,154 +863,16 @@ def _build_evidence_library(
     policy = selection.blueprint.requirement_policy or RequirementPolicyCompiler().compile(
         confirmed_requirement
     )
-    cache = EvidenceRuntimeCache(
-        project_root() / "runtime" / "evidence_console",
-        policy_fingerprint=policy.requirement_fingerprint,
-    )
-    inspector = PdfAcquisitionInspector()
-    documents = inspector.to_document_acquisitions(batch)
-    available = {document.doi: document for document in documents if document.status == "available"}
-    core_dois = {report.expectation.doi for report in batch.reports}
     verifications = LiteratureVerificationBatch.model_validate_json(
         st.session_state["literature_verification_json"]
     )
-    verification_by_doi = {
-        result.candidate.doi: result for result in verifications.verified_records
-    }
-
-    def authority_fields(doi: str) -> tuple[list[str], str | None, str | None, str]:
-        verification = verification_by_doi.get(doi)
-        if verification is None:
-            return [], None, None, f"https://doi.org/{quote(doi, safe='/')}"
-        metadata = verification.authority.metadata if verification.authority is not None else None
-        return (
-            metadata.authors if metadata is not None else verification.candidate.authors,
-            (
-                metadata.journal_title
-                if metadata is not None
-                else verification.candidate.journal_title
-            ),
-            verification.candidate.abstract,
-            (
-                verification.resolution.final_url
-                if verification.resolution is not None and verification.resolution.final_url
-                else f"https://doi.org/{quote(doi, safe='/')}"
-            ),
-        )
-
-    authority_by_doi = {item.doi: authority_fields(item.doi) for item in selection.selected}
-    records = [
-        LiteratureLibraryRecord(
-            doi=item.doi,
-            title=item.title,
-            authors=item.authors or authority_by_doi[item.doi][0],
-            year=item.year,
-            journal=item.journal or authority_by_doi[item.doi][1],
-            publisher=item.publisher,
-            language=item.language,
-            source_type=item.source_type,
-            is_foreign=item.is_foreign,
-            abstract=authority_by_doi[item.doi][2],
-            source_url=authority_by_doi[item.doi][3],
-            theme_ids=[item.theme_id],
-            admission_status="admitted",
-            centrality=item.centrality,
-            supported_claim=item.supported_claim,
-            suitable_section_id=item.suitable_section_id,
-            use_boundary=item.use_boundary,
-            evidence_tier=(
-                "A_core"
-                if item.doi in available
-                else ("B_supporting" if item.doi in core_dois else "C_background")
-            ),
-            evidence_status=(
-                "full_text_verified" if item.doi in available else "metadata_verified"
-            ),
-            permitted_use=(
-                "detailed_claims"
-                if item.doi in available
-                else ("section_support" if item.doi in core_dois else "background_only")
-            ),
-        )
-        for item in selection.selected
-    ]
-    unresolved = [
-        f"core_pdf_{report.status}:{report.expectation.doi}"
-        for report in batch.reports
-        if report.status != "verified"
-    ]
-
-    pages = []
-    cards = []
-    extractions = []
-    page_selections = []
-    card_extractor = LLMEvidenceCardExtractor(DeepSeekClient(LLMSettings().for_structured_output()))
-    themes = {theme.theme_id: theme for theme in selection.blueprint.themes}
-    record_by_doi = {record.doi: record for record in records}
-    for document in available.values():
-        extraction = cache.load_extraction(document)
-        if extraction is None:
-            extraction = PdfPageExtractor(enable_ocr=True).extract(document)
-            cache.save_extraction(extraction)
-        extractions.append(extraction)
-        pages.extend(extraction.pages)
-        if extraction.status != "complete":
-            unresolved.append(f"pdf_extraction_{extraction.status}:{document.doi}")
-        if not extraction.pages:
-            continue
-        record = record_by_doi[document.doi]
-        theme_id = record.theme_ids[0]
-        theme = themes[theme_id]
-        query_text = " ".join(
-            [
-                record.title,
-                theme.section_title,
-                theme.section_purpose,
-                *theme.research_questions,
-                *theme.primary_keywords,
-                *theme.related_keywords,
-            ]
-        )
-        selection_audit, selected_pages = EvidencePageRetriever().select(
-            doi=document.doi,
-            theme_id=theme_id,
-            query_text=query_text,
-            pages=extraction.pages,
-        )
-        page_selections.append(selection_audit)
-        try:
-            document_cards = cache.load_cards(
-                document,
-                title=record.title,
-                selection=selection_audit,
-            )
-            if document_cards is None:
-                document_cards = card_extractor.extract(
-                    doi=document.doi,
-                    title=record.title,
-                    theme_id=theme_id,
-                    section_purpose=theme.section_purpose,
-                    pages=selected_pages,
-                )
-                cache.save_cards(
-                    document,
-                    title=record.title,
-                    selection=selection_audit,
-                    cards=document_cards,
-                )
-            cards.extend(document_cards)
-        except Exception as exc:
-            unresolved.append(f"evidence_extraction_failed:{document.doi}:{exc}")
-
-    return EvidenceLibraryBuilder().build(
-        records=records,
-        documents=documents,
-        extractions=extractions,
-        page_selections=page_selections,
-        pages=pages,
-        evidence_cards=cards,
-        unresolved_issues=unresolved,
-        requirement_policy_fingerprint=policy.requirement_fingerprint,
+    return build_evidence_library(
+        selection,
+        batch,
+        confirmed_requirement=confirmed_requirement,
+        verifications=verifications,
+        policy=policy,
+        cache_root=project_root() / "runtime" / "evidence_console",
     )
 
 

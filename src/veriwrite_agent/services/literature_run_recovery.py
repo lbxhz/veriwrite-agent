@@ -62,6 +62,8 @@ class RecoverableLiteratureRun:
 class LiteratureRunRecoveryService:
     """Find the newest complete, internally consistent V0.2 run."""
 
+    _MAX_RECOVERY_CANDIDATES = 12
+
     def latest(self, cache_root: Path) -> RecoverableLiteratureRun | None:
         if not cache_root.is_dir():
             return None
@@ -74,7 +76,11 @@ class LiteratureRunRecoveryService:
             key=lambda directory: (directory / "final_result.json").stat().st_mtime,
             reverse=True,
         )
-        for directory in candidates:
+        # Runtime may contain many historical search attempts. Validating every
+        # multi-megabyte result on each blank Streamlit render makes the workbench
+        # appear hung and can take longer than the UI timeout. Disaster recovery is
+        # intentionally recent-only; older projects should come from their autosave.
+        for directory in candidates[: self._MAX_RECOVERY_CANDIDATES]:
             try:
                 return self._load(directory)
             except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):

@@ -37,7 +37,10 @@ class ParagraphPlanProposal(StrictModel):
     argument_move: ArgumentMove = "legacy_unspecified"
     comparison_axis: str | None = None
     relative_weight: int = Field(ge=1, le=10)
-    evidence_refs: list[str] = Field(default_factory=list, max_length=5)
+    # Tolerate a model over-selecting evidence on the first attempt; the deterministic
+    # allocator trims to the executable contract (five evidence cards per paragraph)
+    # before the compiled WritingParagraphPlan is built.
+    evidence_refs: list[str] = Field(default_factory=list, max_length=8)
     # The proposal contract must accommodate the executable policy rather than
     # imposing a second, smaller hard-coded citation-cluster limit. Compilation
     # still enforces SectionEvidencePacket.max_sources_per_paragraph.
@@ -88,6 +91,15 @@ class WritingParagraphPlan(StrictModel):
     coverage_only: bool = False
     evidence_card_ids: list[str] = Field(default_factory=list, max_length=5)
     source_dois: list[str] = Field(default_factory=list, max_length=8)
+    # Deferred full-text enhancement: a paragraph downgraded during evidence recovery
+    # keeps its original argument intent here so a later PDF-backed pass can upgrade it
+    # back from background to detailed evidence without losing the planned claim.
+    deferred_argument: ArgumentMove | None = None
+    deferred_comparison_axis: str | None = None
+    deferred_purpose: str | None = None
+    deferred_claim_focus: str | None = None
+    deferred_central_question: str | None = None
+    deferred_recovery_dois: list[str] = Field(default_factory=list)
 
     @field_validator("evidence_card_ids", "source_dois", mode="after")
     @classmethod

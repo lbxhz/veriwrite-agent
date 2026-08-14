@@ -11,21 +11,26 @@ from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Literal, MutableMapping
+from urllib.parse import quote
 from uuid import uuid4
 
 import streamlit as st
 
 from veriwrite_agent.config.settings import LLMSettings
 from veriwrite_agent.llm.deepseek_client import DeepSeekClient
+from veriwrite_agent.models.evidence import CorePaperExpectation
+from veriwrite_agent.models.literature_selection import (
+    BalancedLiteratureSelection,
+    ConfirmedLiteratureSearchBlueprint,
+)
+from veriwrite_agent.models.literature_verification import LiteratureVerificationBatch
+from veriwrite_agent.models.requirement_workflow import ConfirmedRequirementSpec
 from veriwrite_agent.models.writing import (
     SectionDraftIssue,
     V04WritingProject,
     WritingSectionState,
 )
 from veriwrite_agent.models.writing_plan import GroundedWritingPlan, WritingSectionPlan
-from veriwrite_agent.models.literature_selection import (
-    ConfirmedLiteratureSearchBlueprint,
-)
 from veriwrite_agent.models.final_delivery import (
     FinalMatterProposal,
     FinalPaperAuditIssue,
@@ -91,8 +96,12 @@ from veriwrite_agent.services.writing_agent_runtime import (
 from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryRequest,
     WritingEvidenceRecoveryService,
+    deferred_recovery_dois,
+    deferred_section_ids,
     downgrade_unresolved_evidence_claims,
     merge_recovery_handoffs,
+    preserve_unresolved_deferred_sections,
+    upgrade_deferred_evidence_claims,
 )
 from veriwrite_agent.services.final_delivery import (
     FinalPaperAssembler,
@@ -110,6 +119,9 @@ from veriwrite_agent.services.external_writing_evaluator import (
     external_quality_warning,
 )
 from veriwrite_agent.services.requirement_policy import RequirementPolicyCompiler
+from veriwrite_agent.services.evidence_assembly import build_deferred_enhancement_handoff
+from veriwrite_agent.services.pdf_acquisition import PdfAcquisitionInspector
+from veriwrite_agent.services.writing_run_control import WritingRunControlStore
 from veriwrite_agent.services.topic_admission import audit_topic_admission
 from veriwrite_agent.ui.mvp_console import autosave_local_project
 from veriwrite_agent.ui.workbench import project_root
@@ -124,6 +136,7 @@ FINAL_REPAIR_AUTO_SUPPRESSION_KEY = "mvp_final_repair_auto_suppressed_id"
 FINAL_DELIVERY_AUTO_RESUME_KEY = "mvp_final_delivery_auto_resume"
 MANUSCRIPT_EDITOR_KEY = "mvp_manuscript_editor_checkpoint_json"
 GLOBAL_EDITOR_ROUND_KEY = "mvp_global_editor_round"
+GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY = "mvp_global_editor_structural_rescue_v1"
 MAX_GLOBAL_EDITOR_ROUNDS = 3
 PAPER_QUALITY_SCORECARD_KEY = "mvp_paper_quality_scorecard_json"
 PAPER_QUALITY_BASELINE_KEY = "mvp_paper_quality_baseline_json"
@@ -144,6 +157,10 @@ WRITING_PLAN_PERMISSION_REPAIR_MIGRATION_KEY = (
 WRITING_PLAN_REPAIR_FEEDBACK_KEY = "v04_writing_plan_repair_feedback_json"
 V04_AGENT_RUN_ID_KEY = "v04_agent_run_id"
 V04_AUTOPILOT_REQUESTED_KEY = "v04_autopilot_requested"
+V04_EXECUTOR_OWNER_KEY = "v04_executor_owner_id"
+V04_FAILURE_LEDGER_KEY = "v04_failure_ledger_json"
+MAX_TRANSIENT_GENERATION_RETRIES = 2
+MAX_SECTION_PLAN_REPAIRS = 3
 REPAIR_DOWNSTREAM_KEYS = (
     "literature_blueprint_json",
     "literature_blueprint_editor",
@@ -169,6 +186,7 @@ REPAIR_DOWNSTREAM_KEYS = (
     EXTERNAL_WRITING_FAILURE_KEY,
     MANUSCRIPT_EDITOR_KEY,
     GLOBAL_EDITOR_ROUND_KEY,
+    GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY,
     V04_AGENT_RUN_ID_KEY,
 )
 LITERATURE_REBUILD_CODES = {
@@ -311,7 +329,119 @@ def _agent_auto_run_requested(state: MutableMapping[str, Any]) -> bool:
     )
 
 
-def pause_writing_agent(state: MutableMapping[str, Any]) -> bool:
+def _failure_ledger(state: MutableMapping[str, Any]) -> dict[str, int]:
+    raw = state.get(V04_FAILURE_LEDGER_KEY)
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        str(key): int(value)
+        for key, value in payload.items()
+        if isinstance(value, int) and value >= 0
+    }
+
+
+def _record_failure_attempt(
+    state: MutableMapping[str, Any],
+    *,
+    category: str,
+    section_id: str,
+) -> int:
+    """Persist one fault-category attempt across Streamlit reruns and refreshes."""
+
+    ledger = _failure_ledger(state)
+    key = f"{category}:{section_id}"
+    count = ledger.get(key, 0) + 1
+    ledger[key] = count
+    state[V04_FAILURE_LEDGER_KEY] = json.dumps(
+        ledger,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return count
+
+
+def _clear_failure_attempts(
+    state: MutableMapping[str, Any],
+    *,
+    category: str | None = None,
+) -> None:
+    if category is None:
+        state.pop(V04_FAILURE_LEDGER_KEY, None)
+        return
+    retained = {
+        key: value
+        for key, value in _failure_ledger(state).items()
+        if not key.startswith(f"{category}:")
+    }
+    if retained:
+        state[V04_FAILURE_LEDGER_KEY] = json.dumps(
+            retained,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    else:
+        state.pop(V04_FAILURE_LEDGER_KEY, None)
+
+
+def _is_transient_generation_failure(result: ContinuousWritingResult) -> bool:
+    if result.stop_code != "generation_failed":
+        return False
+    detail = (result.stop_reason or "").casefold()
+    return any(
+        marker in detail
+        for marker in (
+            "connection error",
+            "connection reset",
+            "timed out",
+            "timeout",
+            "temporarily unavailable",
+            "rate limit",
+            "server disconnected",
+        )
+    )
+
+
+def _writing_control(project: V04WritingProject) -> WritingRunControlStore:
+    policy = project.handoff.requirement_policy or RequirementPolicyCompiler().compile(
+        project.handoff.requirement
+    )
+    return WritingRunControlStore(
+        project_root() / "runtime" / "writing_agent_control",
+        project_key=f"paper_{policy.requirement_fingerprint[:16]}",
+    )
+
+
+def _control_project_from_state(
+    state: MutableMapping[str, Any],
+) -> V04WritingProject | None:
+    raw = state.get(V04_PROJECT_KEY)
+    if raw:
+        try:
+            return V04WritingProject.model_validate_json(raw)
+        except (TypeError, ValueError):
+            pass
+    checkpoint_raw = state.get(EVIDENCE_RECOVERY_CHECKPOINT_KEY)
+    if not checkpoint_raw:
+        return None
+    try:
+        checkpoint = json.loads(checkpoint_raw)
+        return V04WritingProject.model_validate_json(
+            checkpoint["writing_project_json"]
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def pause_writing_agent(
+    state: MutableMapping[str, Any],
+    project: V04WritingProject | None = None,
+) -> bool:
     """Soft-stop automatic transitions while retaining every durable checkpoint."""
 
     was_running = _agent_auto_run_requested(state)
@@ -324,6 +454,9 @@ def pause_writing_agent(state: MutableMapping[str, Any]) -> bool:
         "literature_auto_advance_requested",
     ):
         state.pop(key, None)
+    active_project = project or _control_project_from_state(state)
+    if active_project is not None:
+        _writing_control(active_project).pause()
     state["mvp_flash"] = (
         "Agent 已暂停。已完成章节、当前草稿、证据恢复请求和检查点均已保留；"
         "下次点击继续时只会恢复尚未完成的节点。"
@@ -331,7 +464,9 @@ def pause_writing_agent(state: MutableMapping[str, Any]) -> bool:
     return was_running
 
 
-def _render_agent_pause_control() -> None:
+def _render_agent_pause_control(
+    project: V04WritingProject | None = None,
+) -> None:
     """Keep the pause action visible on the main V0.4 status surface."""
 
     if not _agent_auto_run_requested(st.session_state):
@@ -342,7 +477,7 @@ def _render_agent_pause_control() -> None:
         width="stretch",
         key="v04_pause_agent_main",
     ):
-        pause_writing_agent(st.session_state)
+        pause_writing_agent(st.session_state, project)
         _autosave_current_project()
         st.rerun()
 
@@ -437,7 +572,7 @@ def render_writing_agent_recovery_shell() -> None:
     st.caption(
         "用户始终停留在本页；V0.2 检索与 V0.3 证据处理只是 Agent 的内部工具节点。"
     )
-    _render_agent_pause_control()
+    _render_agent_pause_control(_control_project_from_state(st.session_state))
     labels = {
         "pending_search": ("回退", "正在按缺失论点自动补搜并排除重复 DOI"),
         "pending_full_text": ("执行", "正在检查本地全文并构建可追溯证据"),
@@ -524,6 +659,7 @@ def clear_writing_state(*, preserve_repair_checkpoint: bool = False) -> None:
     st.session_state.pop(FINAL_DELIVERY_AUTO_RESUME_KEY, None)
     st.session_state.pop(MANUSCRIPT_EDITOR_KEY, None)
     st.session_state.pop(GLOBAL_EDITOR_ROUND_KEY, None)
+    st.session_state.pop(GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY, None)
     st.session_state.pop(SECTION_SELECTION_KEY, None)
     st.session_state.pop(SECTION_SELECTION_REQUEST_KEY, None)
     st.session_state.pop(WRITING_MODE_KEY, None)
@@ -782,6 +918,33 @@ def build_manuscript_editor_repair(
         plan=plan,
         project=reopened,
         paragraph_numbers=ordered_targets,
+    )
+
+
+def _structural_dedup_rescue_available(
+    state: MutableMapping[str, Any],
+    checkpoint: ManuscriptEditorialCheckpoint,
+    *,
+    completed_rounds: int,
+) -> bool:
+    """Allow one code-owned consolidation for legacy rewrite-only loops.
+
+    Earlier V0.5 builds rewrote every paragraph in an intra-section repetition
+    group independently. Once those builds reached the normal round limit, the
+    corrected structural editor needs one opportunity to merge the redundant
+    copies. This does not grant another open-ended LLM retry budget: it is
+    available once, only for an already-blocking paragraph-repetition finding.
+    """
+
+    if completed_rounds < MAX_GLOBAL_EDITOR_ROUNDS:
+        return False
+    if state.get(GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY):
+        return False
+    return any(
+        finding.code == "paragraph_repetition"
+        and finding.severity == "blocking"
+        and finding.disposition == "targeted_repair"
+        for finding in checkpoint.review.findings
     )
 
 
@@ -1329,6 +1492,7 @@ def rollback_outdated_delivery_to_v04(
     state.pop(FINAL_SEMANTIC_ATTESTATION_KEY, None)
     state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
     state[GLOBAL_EDITOR_ROUND_KEY] = 1
+    state.pop(GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY, None)
     state[SECTION_SELECTION_REQUEST_KEY] = next(iter(repair.paragraph_numbers))
     state[WRITING_MODE_KEY] = "AI 全托管"
     state[V04_AUTOPILOT_REQUESTED_KEY] = True
@@ -1423,6 +1587,7 @@ def reopen_entire_body_for_regeneration(
     ):
         state.pop(key, None)
     state[GLOBAL_EDITOR_ROUND_KEY] = 0
+    state.pop(GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY, None)
     state[SECTION_SELECTION_REQUEST_KEY] = project.sections[0].section_id
     state[WRITING_MODE_KEY] = "AI 全托管"
     state[V04_AUTOPILOT_REQUESTED_KEY] = True
@@ -1479,8 +1644,13 @@ def render_grounded_writing_console(
             candidate = None
         if candidate is not None and candidate.handoff == handoff:
             existing_project = candidate
+    control_project = existing_project or _control_project_from_state(
+        st.session_state
+    )
+    if control_project is not None and _writing_control(control_project).is_paused():
+        pause_writing_agent(st.session_state, control_project)
     _render_agent_activity(existing_project)
-    _render_agent_pause_control()
+    _render_agent_pause_control(control_project)
 
     if not st.session_state.get(V04_AUTOPILOT_REQUESTED_KEY):
         _render_saved_paragraph_progress(handoff, existing_project)
@@ -1505,6 +1675,11 @@ def render_grounded_writing_console(
             width="stretch",
             key="v04_start_agent_paper",
         ):
+            control_project = existing_project or _control_project_from_state(
+                st.session_state
+            )
+            if control_project is not None:
+                _writing_control(control_project).resume()
             st.session_state[V04_AUTOPILOT_REQUESTED_KEY] = True
             st.session_state.pop(WRITING_PLAN_AUTO_FAILURES_KEY, None)
             st.session_state[EVIDENCE_RECOVERY_AUTO_PLAN_KEY] = True
@@ -1553,6 +1728,8 @@ def render_grounded_writing_console(
             st.rerun()
         st.error(st.session_state.get("mvp_flash", "证据恢复已停止。"))
         return
+    if _begin_deferred_evidence_enhancement(project, writing_plan):
+        st.rerun()
     confirmed_count = sum(state.status == "confirmed" for state in project.sections)
     st.progress(confirmed_count / len(project.sections))
     st.caption(
@@ -1581,7 +1758,14 @@ def render_grounded_writing_console(
     if project.status == "body_complete":
         if _resolve_evidence_recovery():
             _store_project(project)
-        _render_body_download(project, include_final_delivery=include_final_delivery)
+        deferred_dois = deferred_recovery_dois(writing_plan)
+        _render_deferred_download_notice(writing_plan)
+        _render_deferred_enhancement_scan(project, writing_plan)
+        _render_body_download(
+            project,
+            include_final_delivery=include_final_delivery,
+            deferred_evidence_pending=bool(deferred_dois),
+        )
         return
     project = _render_continuous_writing_control(project, writing_plan)
     if project.status == "body_complete":
@@ -1613,6 +1797,11 @@ def _resume_after_evidence_recovery(
         old_project.handoff,
         handoff,
         affected_section_ids=set(request.affected_section_ids),
+    )
+    generated_plan = preserve_unresolved_deferred_sections(
+        old_plan,
+        generated_plan,
+        handoff.evidence_library,
     )
     old_plans = {section.section_id: section for section in old_plan.sections}
     old_states = {state.section_id: state for state in old_project.sections}
@@ -3088,6 +3277,8 @@ def _execute_continuous_writing(
             writer_settings = settings.for_structured_output().model_copy(
                 update={
                     "timeout_seconds": min(settings.timeout_seconds, 45.0),
+                    # Retry ownership belongs to the application layer. SDK retries
+                    # would multiply writer contract retries and hide long stalls.
                     "max_retries": 0,
                 }
             )
@@ -3097,33 +3288,55 @@ def _execute_continuous_writing(
                     "max_retries": 0,
                 }
             )
-            result = ContinuousSectionWritingService(
-                writer=LLMGroundedParagraphWriter(
-                    DeepSeekClient(writer_settings)
-                ),
-                reviewer=LLMSectionQualityReviewer(
-                    DeepSeekClient(reviewer_settings)
-                ),
-                cache=ParagraphWritingRuntimeCache(
-                    project_root() / "runtime" / "writing_console",
-                    plan_fingerprint=plan.plan_fingerprint,
-                ),
-                policy=ContinuousWritingPolicy(
-                    max_revision_passes=2,
-                    max_total_review_rounds=3,
-                ),
-            ).run(
-                project,
-                plan,
-                confirmed_by=(
-                    f"{project.handoff.requirement.confirmed_by}"
-                    "（V0.4 连续写作授权）"
-                ),
-                section_id=section_id,
-                auto_confirm=auto_confirm,
-                on_checkpoint=checkpoint,
-                on_paragraph_progress=paragraph_progress,
-            )
+            control = _writing_control(project)
+            if control.is_paused():
+                pause_writing_agent(st.session_state, project)
+                progress.update(label="Agent 已暂停", state="complete")
+                return project
+            owner_id = st.session_state.get(V04_EXECUTOR_OWNER_KEY)
+            if not isinstance(owner_id, str) or not owner_id:
+                owner_id = f"ui_{uuid4().hex}"
+                st.session_state[V04_EXECUTOR_OWNER_KEY] = owner_id
+            lease = control.try_acquire(owner_id)
+            if lease is None:
+                progress.update(label="另一窗口正在执行本项目", state="complete")
+                st.info(
+                    "同一项目已有一个 Agent 执行器在运行。本窗口不会重复调用模型；"
+                    "可等待原窗口保存进度，或先在原窗口暂停。"
+                )
+                return project
+            try:
+                result = ContinuousSectionWritingService(
+                    writer=LLMGroundedParagraphWriter(
+                        DeepSeekClient(writer_settings)
+                    ),
+                    reviewer=LLMSectionQualityReviewer(
+                        DeepSeekClient(reviewer_settings)
+                    ),
+                    cache=ParagraphWritingRuntimeCache(
+                        project_root() / "runtime" / "writing_console",
+                        plan_fingerprint=plan.plan_fingerprint,
+                    ),
+                    policy=ContinuousWritingPolicy(
+                        max_revision_passes=2,
+                        max_total_review_rounds=3,
+                    ),
+                    paragraph_workers=2,
+                ).run(
+                    project,
+                    plan,
+                    confirmed_by=(
+                        f"{project.handoff.requirement.confirmed_by}"
+                        "（V0.4 连续写作授权）"
+                    ),
+                    section_id=section_id,
+                    auto_confirm=auto_confirm,
+                    on_checkpoint=checkpoint,
+                    on_paragraph_progress=paragraph_progress,
+                    should_continue=lease.continue_allowed,
+                )
+            finally:
+                lease.release()
     except Exception as exc:
         progress.update(label="连续写作启动失败", state="error")
         st.error(_friendly_writing_error(exc))
@@ -3132,6 +3345,11 @@ def _execute_continuous_writing(
         return project
 
     _store_project(result.project)
+    if result.stop_code == "paused":
+        pause_writing_agent(st.session_state, result.project)
+        progress.update(label="Agent 已暂停，检查点已保存", state="complete")
+        st.info("Agent 已在模型调用边界暂停；已完成段落不会丢失。")
+        return result.project
     agent_transition = None
     if agent_runtime is not None and prepared_agent_action is not None:
         try:
@@ -3157,6 +3375,24 @@ def _execute_continuous_writing(
             and agent_transition.assessment.decision.next_action is not None
             else None
         )
+        if auto_confirm and _is_transient_generation_failure(result):
+            transient_round = _record_failure_attempt(
+                st.session_state,
+                category="transient_generation",
+                section_id=result.stopped_section_id,
+            )
+            if transient_round <= MAX_TRANSIENT_GENERATION_RETRIES:
+                st.session_state[EVIDENCE_RECOVERY_AUTO_RESUME_KEY] = True
+                _autosave_current_project()
+                progress.update(
+                    label=(
+                        "网络调用中断，已保存成功段落；"
+                        f"正在从缺失段落续跑（{transient_round}/"
+                        f"{MAX_TRANSIENT_GENERATION_RETRIES}）"
+                    ),
+                    state="complete",
+                )
+                st.rerun()
         if (
             next_action_kind in {"acquire_full_text", "refine_literature_search"}
             and result.recovery_request is not None
@@ -3240,6 +3476,7 @@ def _execute_continuous_writing(
         progress.update(label="本章已生成并通过自动审计", state="complete")
         st.session_state["mvp_flash"] = "本章可以阅读并采用。"
     else:
+        _clear_failure_attempts(st.session_state)
         _resolve_evidence_recovery()
         progress.update(label="剩余章节已完成独立审稿", state="complete")
         st.session_state["mvp_flash"] = (
@@ -3258,6 +3495,14 @@ def _begin_evidence_recovery(
     request: WritingEvidenceRecoveryRequest,
 ) -> bool:
     """Persist V0.4, then route to the earliest stage able to repair evidence."""
+
+    # An unavailable full text is a deferred enhancement, not an interactive
+    # cross-stage loop. Preflight already batches every affected paragraph, so narrow
+    # those claims immediately, finish the manuscript, and request one merged PDF list
+    # only after the bounded draft is complete. Evidence identity/integrity failures
+    # arrive through the separate rebuild_evidence route and are not weakened here.
+    if request.gaps and not request.repair_feedback_by_section:
+        return _begin_bounded_claim_downgrade(project, plan, request)
 
     # A manuscript editor may reduce or reorganize existing prose, but it cannot create
     # a new research-evidence demand. Shrink an over-strong legacy paragraph plan in
@@ -3294,7 +3539,7 @@ def _begin_evidence_recovery(
                     ),
                 }
             )
-    if request.recovery_round > request.max_recovery_rounds:
+    if request.recovery_round >= request.max_recovery_rounds:
         if (
             previous is not None
             and previous.planning_repair_round
@@ -3748,9 +3993,85 @@ def _begin_bounded_claim_downgrade(
         st.session_state.pop(key, None)
     st.session_state[EVIDENCE_RECOVERY_AUTO_RESUME_KEY] = True
     st.session_state["mvp_flash"] = (
-        f"自动补证和重规划后仍有 {len(request.gaps)} 个细节主张缺少全文支持。"
-        "系统已保留全部合格章节，并将这些段落收缩为可由元数据支持的一般背景；"
-        "现在会自动续写和复审，不需要用户处理内部异常。"
+        f"已发现 {len(request.gaps)} 个需要更多全文支持的细节主张。"
+        "系统已在首次预检时将这些段落收缩为证据边界内的一般表述并登记待增强标记；"
+        "不会反复跳转索取 PDF，现在继续完成其余写作与复审。"
+    )
+    return True
+
+
+def _begin_deferred_evidence_enhancement(
+    project: V04WritingProject,
+    plan: GroundedWritingPlan,
+) -> bool:
+    """Upgrade downgraded paragraphs once their deferred PDFs are full-text verified.
+
+    A conservative draft downgrades comparison/detail paragraphs to metadata-bounded
+    background when the full text is still missing. When the evidence library later
+    gains full-text records and confirmed direct evidence cards for those deferred
+    DOIs, this pass flips the plan back to detailed evidence and reopens exactly those
+    paragraphs so the normal writer re-renders them against the recovered PDFs while
+    neighbouring paragraphs stay intact.
+    """
+
+    upgraded_plan = upgrade_deferred_evidence_claims(
+        plan,
+        project.handoff.evidence_library,
+    )
+    if upgraded_plan is plan:
+        return False
+    previous_by_section = {
+        section.section_id: section for section in plan.sections
+    }
+    target_issues: dict[tuple[str, int], list[FinalPaperAuditIssue]] = {}
+    for section in upgraded_plan.sections:
+        previous = previous_by_section[section.section_id]
+        for old, current in zip(
+            previous.paragraphs,
+            section.paragraphs,
+            strict=True,
+        ):
+            if old.deferred_argument is None or current.deferred_argument is not None:
+                continue
+            target_issues[(section.section_id, current.paragraph_number)] = [
+                FinalPaperAuditIssue(
+                    code="deferred_evidence_enhancement",
+                    severity="blocking",
+                    requirement_path="writing.deferred_evidence_enhancement",
+                    detail=(
+                        "全文 PDF 已补齐，将本段从一般背景升级为详细证据，"
+                        "并依据恢复后的全文重新表述论证与结论。"
+                    ),
+                )
+            ]
+    if not target_issues:
+        return False
+    # A pending chapter (draft is None) has no old paragraph to reopen; upgrade its
+    # plan in place and let the normal writer produce the detailed version on resume.
+    available_section_ids = {
+        state.section_id for state in project.sections if state.draft is not None
+    }
+    reopenable_issues = {
+        target: issues
+        for target, issues in target_issues.items()
+        if target[0] in available_section_ids
+    }
+    reopened = (
+        _reopen_targeted_paragraphs(project, reopenable_issues)
+        if reopenable_issues
+        else project.model_copy(
+            update={"status": "drafting", "updated_at": datetime.now(timezone.utc)}
+        )
+    )
+    st.session_state[WRITING_PLAN_KEY] = upgraded_plan.model_dump_json(indent=2)
+    st.session_state[V04_PROJECT_KEY] = reopened.model_dump_json(indent=2)
+    st.session_state.pop(FINAL_MATTER_KEY, None)
+    st.session_state.pop(FINAL_PACKAGE_KEY, None)
+    st.session_state["mvp_flash"] = (
+        f"检测到 {len(target_issues)} 个段落所需的全文 PDF 已就绪；"
+        "系统已将这些段落从一般背景升级为详细证据；已有草稿会定点重开，"
+        "尚未生成的章节会直接按升级后的计划首次写作，"
+        "其余已确认段落保持不变。"
     )
     return True
 
@@ -3887,6 +4208,20 @@ def _begin_reviewer_plan_repair(
     ]
     if not blocking:
         return False
+    persistent_round = _record_failure_attempt(
+        st.session_state,
+        category="section_plan_repair",
+        section_id=state.section_id,
+    )
+    if persistent_round > MAX_SECTION_PLAN_REPAIRS:
+        pause_writing_agent(st.session_state, project)
+        _autosave_current_project()
+        st.session_state["mvp_flash"] = (
+            f"{state.section_id} 已进行 {MAX_SECTION_PLAN_REPAIRS} 次计划级修复，"
+            "仍重复出现证据或规划冲突。系统已触发跨页面熔断并保留全部检查点；"
+            "刷新或重新点击不会自动重置该故障预算。"
+        )
+        return False
     previous: WritingEvidenceRecoveryRequest | None = None
     previous_raw = st.session_state.get(EVIDENCE_RECOVERY_REQUEST_KEY)
     if previous_raw:
@@ -3912,6 +4247,8 @@ def _begin_reviewer_plan_repair(
         3,
     )
     if planning_round > max_planning_rounds:
+        pause_writing_agent(st.session_state, project)
+        _autosave_current_project()
         st.session_state["mvp_flash"] = (
             f"审稿意见已驱动写作计划重构 {max_planning_rounds} 轮，仍出现同类问题。"
             "系统已保留合格章节并停止自动循环；这属于证据边界、审稿规则或"
@@ -3971,7 +4308,12 @@ def _same_reviewer_plan_repair_incident(
     previous: WritingEvidenceRecoveryRequest | None,
     section_id: str,
 ) -> bool:
-    """Keep a replan budget local to one unresolved chapter incident."""
+    """Keep the request-local replan budget scoped to one unresolved incident.
+
+    Cross-status and cross-refresh limits are enforced independently by the durable
+    failure ledger, so a resolved request cannot leak its detailed recovery payload
+    into a later incident.
+    """
 
     return bool(
         previous is not None
@@ -4250,10 +4592,121 @@ def _issue_label(code: str) -> str:
     }.get(code, code)
 
 
+def _render_deferred_download_notice(plan: GroundedWritingPlan) -> None:
+    pending = deferred_recovery_dois(plan)
+    if not pending:
+        return
+    st.info(
+        "正文的保守版本已经完成。系统已把所有缺失全文合并为下面这一份清单，"
+        "不会再逐段或逐章向你索取 PDF。请一次性把这些 PDF 放入项目证据目录；"
+        "扫描后系统只增强已标记段落，再进入全文编辑：\n\n"
+        + "\n".join(f"- `{doi}`" for doi in pending)
+    )
+
+
+def _restore_literature_selection_local() -> BalancedLiteratureSelection:
+    """Local V0.2 selection restore; avoids a reverse dependency on ``app``."""
+
+    payload = json.loads(st.session_state["literature_result_json"])
+    return BalancedLiteratureSelection.model_validate(payload["selection"])
+
+
+def _render_deferred_enhancement_scan(
+    project: V04WritingProject,
+    plan: GroundedWritingPlan,
+) -> None:
+    if not deferred_recovery_dois(plan):
+        return
+    if st.button(
+        "我已补下载全部 PDF，扫描并增强对应段落",
+        type="primary",
+        width="stretch",
+    ):
+        _perform_deferred_enhancement_scan(project, plan)
+
+
+def _perform_deferred_enhancement_scan(
+    project: V04WritingProject,
+    plan: GroundedWritingPlan,
+) -> None:
+    from veriwrite_agent.ui.evidence_console import project_pdf_directory
+
+    selection = _restore_literature_selection_local()
+    confirmed_requirement = ConfirmedRequirementSpec.model_validate_json(
+        st.session_state["confirmed_json"]
+    )
+    verifications = LiteratureVerificationBatch.model_validate_json(
+        st.session_state["literature_verification_json"]
+    )
+    policy = selection.blueprint.requirement_policy or RequirementPolicyCompiler().compile(
+        confirmed_requirement
+    )
+    download_directory = project_pdf_directory(st.session_state)
+
+    existing_full_text = [
+        record.doi
+        for record in project.handoff.evidence_library.records
+        if record.evidence_status == "full_text_verified"
+    ]
+    target_dois = list(
+        dict.fromkeys([*existing_full_text, *deferred_recovery_dois(plan)])
+    )
+    records = {item.doi: item for item in selection.selected}
+    expectations = [
+        CorePaperExpectation(
+            doi=doi,
+            title=records[doi].title,
+            source_url=f"https://doi.org/{quote(doi, safe='/')}",
+            theme_id=records[doi].theme_id,
+        )
+        for doi in target_dois
+        if doi in records
+    ]
+    try:
+        with st.spinner("正在扫描 PDF 目录并重建证据库……"):
+            batch = PdfAcquisitionInspector(max_files=100).scan_download_directory(
+                expectations,
+                download_directory,
+            )
+            merged = build_deferred_enhancement_handoff(
+                project.handoff,
+                selection=selection,
+                batch=batch,
+                affected_section_ids=deferred_section_ids(plan),
+                confirmed_requirement=confirmed_requirement,
+                verifications=verifications,
+                policy=policy,
+                cache_root=project_root() / "runtime" / "evidence_console",
+                smoke_test=bool(st.session_state.get("mvp_smoke_test")),
+            )
+    except ValueError as exc:
+        st.error(f"仍有关键全文未就绪，未做任何改动：{exc}")
+        return
+
+    st.session_state["v03_writing_handoff_json"] = merged.model_dump_json(indent=2)
+    st.session_state["v03_evidence_library_json"] = (
+        merged.evidence_library.model_dump_json(indent=2)
+    )
+    updated_project = project.model_copy(update={"handoff": merged})
+    _store_project(updated_project)
+    # The user's one batch-confirmation click is the explicit authorization to
+    # resume. Reopen only the newly supported paragraphs on the next rerun instead
+    # of asking for a second generic "continue" click.
+    _writing_control(updated_project).resume()
+    st.session_state[V04_AUTOPILOT_REQUESTED_KEY] = True
+    st.session_state[EVIDENCE_RECOVERY_AUTO_RESUME_KEY] = True
+    st.session_state["mvp_flash"] = (
+        "已合并补下载的全文证据；系统正在自动升级对应段落并定点重写，"
+        "随后进入全文编辑。"
+    )
+    st.rerun()
+
+
 def _render_body_download(
     project: V04WritingProject,
     *,
     include_final_delivery: bool = True,
+    deferred_evidence_pending: bool = False,
 ) -> None:
     body = WritingProjectService().assemble_body(project)
     st.divider()
@@ -4278,6 +4731,16 @@ def _render_body_download(
         width="stretch",
     )
     st.info("正文完成后才能进入摘要、关键词、结论和最终参考文献审计；这些内容不会提前生成。")
+    if deferred_evidence_pending:
+        st.warning(
+            "全文编辑暂未启动：系统正在等待上方一次性 PDF 批次。"
+            "补证前的保守正文和全部章节检查点均已保存，不会重新生成。"
+        )
+        # Autorun must stop here. Otherwise the delivery page can consume the flag
+        # and run V0.5 before the marked paragraphs have been upgraded.
+        pause_writing_agent(st.session_state, project)
+        _autosave_current_project()
+        return
     if include_final_delivery:
         _render_final_delivery(project, body)
     elif st.session_state.get(V04_AUTOPILOT_REQUESTED_KEY):
@@ -4351,6 +4814,25 @@ def _render_manuscript_editor_result(
 
 
 def _render_final_delivery(project: V04WritingProject, body) -> None:
+    control = _writing_control(project)
+    if control.is_paused():
+        if pause_writing_agent(st.session_state, project):
+            _autosave_current_project()
+        st.info(
+            "Agent 已暂停。正文和全文编辑检查点均已保留；继续后只处理尚未解决的编辑任务。"
+        )
+        if st.button(
+            "继续 Agent 全文编辑与交付",
+            type="primary",
+            width="stretch",
+            key="v05_resume_agent_main",
+        ):
+            control.resume()
+            st.session_state[V04_AUTOPILOT_REQUESTED_KEY] = True
+            st.session_state[FINAL_DELIVERY_AUTO_RESUME_KEY] = True
+            _autosave_current_project()
+            st.rerun()
+        return
     st.divider()
     st.subheader("全文编辑、审计与成品交付")
     st.caption(
@@ -4417,6 +4899,7 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
             # A new global-editor algorithm gets its own bounded repair budget.
             st.session_state[GLOBAL_EDITOR_ROUND_KEY] = 0
+            st.session_state.pop(GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY, None)
             st.session_state.pop(FINAL_REPAIR_AUTO_SUPPRESSION_KEY, None)
             auto_upgrade = True
 
@@ -4453,7 +4936,11 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
                 with st.spinner("正在执行独立全文编辑；正文未通过时不会生成终稿……"):
                     editor_checkpoint = FullManuscriptEditorialService(
                         LLMManuscriptQualityReviewer(
-                            DeepSeekClient(settings.for_quality_review())
+                            DeepSeekClient(
+                                settings.for_quality_review().model_copy(
+                                    update={"max_retries": 0}
+                                )
+                            )
                         )
                     ).run(writing_plan, project)
             except Exception as exc:
@@ -4490,12 +4977,22 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
             completed_rounds = int(
                 st.session_state.get(GLOBAL_EDITOR_ROUND_KEY, 0) or 0
             )
-            if completed_rounds >= MAX_GLOBAL_EDITOR_ROUNDS:
+            structural_rescue = _structural_dedup_rescue_available(
+                st.session_state,
+                editor_checkpoint,
+                completed_rounds=completed_rounds,
+            )
+            if completed_rounds >= MAX_GLOBAL_EDITOR_ROUNDS and not structural_rescue:
                 st.error(
                     f"全文编辑已达到 {MAX_GLOBAL_EDITOR_ROUNDS} 轮上限。系统不会继续"
                     "盲目改写；请检查章节职责、证据边界或编辑规则。"
                 )
                 return
+            if structural_rescue:
+                st.info(
+                    "检测到旧版全文编辑曾把章内重复段落分别改写，导致同类文字反复生成。"
+                    "本次将由代码合并冗余段落并迁移其证据，只保留一次最终复审机会。"
+                )
             auto_repair = (
                 st.session_state.get(WRITING_MODE_KEY, "逐章生成") == "AI 全托管"
             )
@@ -4534,7 +5031,11 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
                             f"Required correction: {finding.revision_instruction}"
                         )
                     structural_planner = GroundedWritingPlanner(
-                        DeepSeekClient(settings.for_structured_output()),
+                        DeepSeekClient(
+                            settings.for_structured_output().model_copy(
+                                update={"max_retries": 0}
+                            )
+                        ),
                         reuse_cache=False,
                         repair_feedback_by_section=feedback_by_section,
                     )
@@ -4552,7 +5053,13 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
             )
             st.session_state[WRITING_PLAN_KEY] = repair.plan.model_dump_json(indent=2)
             st.session_state[V04_PROJECT_KEY] = repair.project.model_dump_json(indent=2)
-            st.session_state[GLOBAL_EDITOR_ROUND_KEY] = completed_rounds + 1
+            if structural_rescue:
+                st.session_state[GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY] = True
+                # Keep the normal budget exhausted. The next editor call verifies
+                # the changed body but cannot open another repair pass.
+                st.session_state[GLOBAL_EDITOR_ROUND_KEY] = completed_rounds
+            else:
+                st.session_state[GLOBAL_EDITOR_ROUND_KEY] = completed_rounds + 1
             st.session_state.pop(MANUSCRIPT_EDITOR_KEY, None)
             st.session_state.pop(FINAL_MATTER_KEY, None)
             st.session_state.pop(FINAL_PACKAGE_KEY, None)
@@ -4579,7 +5086,11 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
             try:
                 with st.spinner("全文编辑已通过，正在生成并审计最终结构……"):
                     matter = LLMFinalMatterWriter(
-                        DeepSeekClient(settings.for_structured_output())
+                        DeepSeekClient(
+                            settings.for_structured_output().model_copy(
+                                update={"max_retries": 0}
+                            )
+                        )
                     ).draft(project.handoff, body)
                     package = FinalPaperAssembler().assemble(
                         handoff=project.handoff,
@@ -4626,6 +5137,7 @@ def _render_final_delivery(project: V04WritingProject, body) -> None:
         st.session_state[FINAL_PACKAGE_KEY] = package.model_dump_json(indent=2)
     if package.status != "needs_revision":
         st.session_state.pop(GLOBAL_EDITOR_ROUND_KEY, None)
+        st.session_state.pop(GLOBAL_EDITOR_STRUCTURAL_RESCUE_KEY, None)
 
     metrics = st.columns(4)
     metrics[0].metric("正文统计单位", package.audit.counted_units)
@@ -5173,7 +5685,11 @@ def _render_final_audit_repair(package: FinalPaperPackage) -> None:
                             f"Required correction: {finding.revision_instruction}"
                         )
                 structural_planner = GroundedWritingPlanner(
-                    DeepSeekClient(LLMSettings().for_structured_output()),
+                    DeepSeekClient(
+                        LLMSettings().for_structured_output().model_copy(
+                            update={"max_retries": 0}
+                        )
+                    ),
                     reuse_cache=False,
                     repair_feedback_by_section=feedback_by_section,
                 )

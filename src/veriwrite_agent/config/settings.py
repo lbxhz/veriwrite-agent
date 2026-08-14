@@ -23,6 +23,7 @@ class LLMSettings(BaseSettings):
     reviewer_model: str | None = Field(default=None, min_length=1)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_retries: int = Field(default=2, ge=0, le=10)
+    use_system_proxy: bool = False
     temperature: float = Field(default=0.2, ge=0, le=2)
     max_tokens: int = Field(default=8192, ge=256)
 
@@ -46,6 +47,7 @@ class LLMSettings(BaseSettings):
             ),
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
+            "use_system_proxy": self.use_system_proxy,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
