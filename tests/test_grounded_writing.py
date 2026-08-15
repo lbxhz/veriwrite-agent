@@ -2793,6 +2793,61 @@ def test_continuous_writing_repairs_only_reviewed_paragraph_then_rechecks() -> N
     assert len(reviewer_client.calls) == 2
 
 
+def test_continuous_writing_locally_removes_one_unsupported_sentence() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(
+        active_handoff
+    ).confirm(confirmed_by="student")
+    initial_texts = [
+        f"Paragraph {number} " + " ".join(["grounded"] * 98)
+        for number in range(1, 4)
+    ]
+    revised_text = "Evidence-bounded paragraph " + " ".join(["verified"] * 96)
+    writer_client = SequenceLLMClient(
+        [
+            *(json.dumps({"text": text}) for text in initial_texts),
+            json.dumps({"text": revised_text}),
+        ]
+    )
+    unsupported = json.dumps(
+        {
+            "section_id": "method",
+            "findings": [
+                {
+                    "paragraph_number": 2,
+                    "code": "unsupported_claim",
+                    "severity": "blocking",
+                    "detail": "The final sentence is outside the locked evidence.",
+                    "revision_instruction": "Delete that sentence; add no new claim.",
+                }
+            ],
+        }
+    )
+    clean = json.dumps({"section_id": "method", "findings": []})
+    reviewer_client = SequenceLLMClient([unsupported, clean])
+
+    result = ContinuousSectionWritingService(
+        writer=LLMGroundedParagraphWriter(writer_client),
+        reviewer=LLMSectionQualityReviewer(reviewer_client),
+        policy=ContinuousWritingPolicy(max_revision_passes=1),
+    ).run(
+        WritingProjectService().start(active_handoff),
+        plan,
+        confirmed_by="student (continuous authorization)",
+    )
+
+    draft = result.project.sections[0].draft
+    assert result.completed
+    assert draft is not None
+    assert draft.paragraphs[0].text == initial_texts[0]
+    assert draft.paragraphs[1].text == revised_text
+    assert draft.paragraphs[2].text == initial_texts[2]
+    assert draft.quality_review_status == "passed"
+    assert draft.quality_review_rounds == 2
+    assert len(writer_client.calls) == 4
+    assert len(reviewer_client.calls) == 2
+
+
 def test_continuous_writing_stops_when_review_findings_remain() -> None:
     active_handoff = handoff()
     plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(

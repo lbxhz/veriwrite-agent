@@ -71,6 +71,7 @@ from veriwrite_agent.services.writing_planning import (
 )
 from veriwrite_agent.services.writing_quality import (
     FullManuscriptEditorialService,
+    HARD_CHAPTER_TRUST_CODES,
     LLMManuscriptQualityReviewer,
     LLMSectionQualityReviewer,
     PLAN_BINDING_DETERMINISTIC_CODES,
@@ -161,7 +162,7 @@ V04_AUTOPILOT_REQUESTED_KEY = "v04_autopilot_requested"
 V04_EXECUTOR_OWNER_KEY = "v04_executor_owner_id"
 V04_FAILURE_LEDGER_KEY = "v04_failure_ledger_json"
 MAX_TRANSIENT_GENERATION_RETRIES = 2
-MAX_SECTION_PLAN_REPAIRS = 3
+MAX_SECTION_PLAN_REPAIRS = 1
 REPAIR_DOWNSTREAM_KEYS = (
     "literature_blueprint_json",
     "literature_blueprint_editor",
@@ -1668,6 +1669,51 @@ def _repair_saved_plan_permission_mismatches(
     return changed_paragraphs
 
 
+def _reset_exhausted_runtime_for_local_trust_repair() -> int:
+    """Detach an old replan loop when one localized hard finding was never edited."""
+
+    if not st.session_state.get(V04_AGENT_RUN_ID_KEY):
+        return 0
+    serialized_project = st.session_state.get(V04_PROJECT_KEY)
+    serialized_request = st.session_state.get(EVIDENCE_RECOVERY_REQUEST_KEY)
+    if not serialized_project or not serialized_request:
+        return 0
+    try:
+        project = V04WritingProject.model_validate_json(serialized_project)
+        request = WritingEvidenceRecoveryRequest.model_validate_json(
+            serialized_request
+        )
+    except (TypeError, ValueError):
+        return 0
+    if (
+        request.status != "ready_to_resume"
+        or request.planning_repair_round <= 0
+        or request.planning_repair_round < request.max_planning_repair_rounds
+    ):
+        return 0
+    targets = {
+        (state.section_id, issue.paragraph_number)
+        for state in project.sections
+        if state.draft is not None
+        and state.draft.quality_review_status == "findings"
+        and state.draft.quality_review_rounds == 1
+        and len(state.draft.quality_review_history) == 1
+        for issue in state.draft.issues
+        if issue.severity == "blocking"
+        and issue.code in HARD_CHAPTER_TRUST_CODES
+        and issue.paragraph_number is not None
+    }
+    if not targets:
+        return 0
+    # The prior run spent its budget replanning without applying the reviewer's
+    # paragraph instruction. Preserve its event directory for audit, but let the
+    # corrected executor perform the pending local rewrite in a fresh run.
+    st.session_state.pop(V04_AGENT_RUN_ID_KEY, None)
+    st.session_state.pop(V04_EXECUTOR_OWNER_KEY, None)
+    _autosave_current_project()
+    return len(targets)
+
+
 def render_grounded_writing_console(
     handoff: V04WritingHandoff,
     *,
@@ -1705,6 +1751,12 @@ def render_grounded_writing_console(
             f"已修复旧检查点中 {repaired_permission_bindings} 个错误的来源权限绑定；"
             "系统保留全部合格章节，只把受影响段落收缩为证据边界内的背景表述。"
             "待相应 PDF 批量补齐后，这些段落才会恢复详细论证。"
+        )
+    localized_trust_repairs = _reset_exhausted_runtime_for_local_trust_repair()
+    if localized_trust_repairs:
+        st.session_state["mvp_flash"] = (
+            f"已终止无效的整章重规划循环；现在只需按审稿意见定点返修 "
+            f"{localized_trust_repairs} 个越界段落。旧运行记录仍保留用于审计。"
         )
     st.session_state[WRITING_MODE_KEY] = "AI 全托管"
     existing_project: V04WritingProject | None = None

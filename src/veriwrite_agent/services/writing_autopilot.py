@@ -26,6 +26,7 @@ from veriwrite_agent.services.writing_planning import (
 )
 from veriwrite_agent.services.writing_quality import (
     CHAPTER_LOCAL_EDITORIAL_CODES,
+    HARD_CHAPTER_TRUST_CODES,
     LLMSectionQualityReviewer,
     PROSE_REPAIRABLE_DETERMINISTIC_CODES,
     PROSE_REPAIRABLE_SECTION_CODES,
@@ -742,6 +743,11 @@ def _editorial_repair_targets(
         and issue.code
         in {
             *CHAPTER_LOCAL_EDITORIAL_CODES,
+            # Evidence preflight has already proved the locked paragraph plan is
+            # executable.  A reviewer-located unsupported/overstated sentence or
+            # false attribution is therefore a local prose violation: allow one
+            # bounded rewrite, but never defer it as a warning.
+            *HARD_CHAPTER_TRUST_CODES,
             *PROSE_REPAIRABLE_DETERMINISTIC_CODES,
         }
     ]
