@@ -67,6 +67,7 @@ from veriwrite_agent.services.writing_planning import (
     _paragraph_requires_rewrite,
     align_writing_plan_language,
     rebase_writing_plan_authority,
+    repair_persistent_unsupported_argument_moves,
     repair_writing_plan_source_coverage,
 )
 from veriwrite_agent.services.writing_quality import (
@@ -1714,6 +1715,46 @@ def _reset_exhausted_runtime_for_local_trust_repair() -> int:
     return len(targets)
 
 
+def _repair_saved_persistent_unsupported_moves(
+    handoff: V04WritingHandoff,
+) -> int:
+    """Migrate one repeated unsupported caveat to an evidence-compatible move."""
+
+    serialized_plan = st.session_state.get(WRITING_PLAN_KEY)
+    serialized_project = st.session_state.get(V04_PROJECT_KEY)
+    if not serialized_plan or not serialized_project:
+        return 0
+    try:
+        plan = GroundedWritingPlan.model_validate_json(serialized_plan)
+        project = V04WritingProject.model_validate_json(serialized_project)
+        repair = repair_persistent_unsupported_argument_moves(
+            handoff,
+            plan,
+            project,
+        )
+    except (TypeError, ValueError):
+        return 0
+    changed_count = sum(
+        len(numbers) for numbers in repair.changed_paragraph_numbers.values()
+    )
+    if not changed_count:
+        return 0
+    synchronized = _synchronize_project_handoff(
+        project,
+        previous_plan=plan,
+        current_plan=repair.plan,
+        handoff=handoff,
+    )
+    st.session_state[WRITING_PLAN_KEY] = repair.plan.model_dump_json(indent=2)
+    st.session_state[V04_PROJECT_KEY] = synchronized.model_dump_json(indent=2)
+    st.session_state.pop(FINAL_MATTER_KEY, None)
+    st.session_state.pop(FINAL_PACKAGE_KEY, None)
+    st.session_state.pop(V04_AGENT_RUN_ID_KEY, None)
+    st.session_state.pop(V04_EXECUTOR_OWNER_KEY, None)
+    _autosave_current_project()
+    return changed_count
+
+
 def render_grounded_writing_console(
     handoff: V04WritingHandoff,
     *,
@@ -1757,6 +1798,12 @@ def render_grounded_writing_console(
         st.session_state["mvp_flash"] = (
             f"已终止无效的整章重规划循环；现在只需按审稿意见定点返修 "
             f"{localized_trust_repairs} 个越界段落。旧运行记录仍保留用于审计。"
+        )
+    repaired_unsupported_moves = _repair_saved_persistent_unsupported_moves(handoff)
+    if repaired_unsupported_moves:
+        st.session_state["mvp_flash"] = (
+            f"检测到单篇结果段被错误要求评价无证据局限；已将 {repaired_unsupported_moves} "
+            "个段落改为仅报告锁定证据中的方法与结果。其他已确认章节保持不变。"
         )
     st.session_state[WRITING_MODE_KEY] = "AI 全托管"
     existing_project: V04WritingProject | None = None
@@ -2165,6 +2212,7 @@ def _reopen_confirmed_state_for_plan_changes(
             "quality_review_status": "not_run",
             "quality_review_rounds": 0,
             "quality_reviewed_at": None,
+            "quality_review_history": [],
         }
     )
     return WritingSectionState(
@@ -2799,8 +2847,20 @@ def _synchronize_project_handoff(
         if state is None or previous is None or state.draft is None:
             states.append(pending[section.section_id])
             continue
+        plan_requires_rewrite = (
+            len(previous.paragraphs) != len(section.paragraphs)
+            or any(
+                _paragraph_requires_rewrite(old, current)
+                for old, current in zip(
+                    previous.paragraphs,
+                    section.paragraphs,
+                    strict=True,
+                )
+            )
+        )
         if (
-            _draft_matches_plan(state, section)
+            not plan_requires_rewrite
+            and _draft_matches_plan(state, section)
             and _recovered_state_is_compatible(state, section, handoff)
         ):
             states.append(state)

@@ -22,6 +22,7 @@ from veriwrite_agent.models.writing import (
     SectionEvidenceItem,
     SectionEvidencePacket,
     SectionSourceRecord,
+    V04WritingProject,
 )
 from veriwrite_agent.models.writing_handoff import V04WritingHandoff
 from veriwrite_agent.models.writing_plan import (
@@ -324,7 +325,11 @@ class GroundedWritingPlanner:
                     "a contextual or supporting source into the paragraph's main subject. "
                     "Keep claim_focus narrow enough for one paragraph. Every paragraph "
                     "must start from a research problem and a central judgment, not from "
-                    "a paper. Set central_question and argument_move. Use compare_studies, "
+                    "a paper. Set central_question and argument_move. Use report_finding "
+                    "when a representative single-study paragraph reports only its locked "
+                    "method or result. Use evaluate_limitation only when the selected "
+                    "evidence explicitly contains a limitation or future_work card. Use "
+                    "compare_studies, "
                     "synthesize_consensus, or analyze_difference for multi-study synthesis "
                     "and state the comparison_axis. A single-paper paragraph is allowed "
                     "only when one representative study is genuinely needed as detailed "
@@ -581,9 +586,8 @@ def rebase_writing_plan_authority(
                 update.update(
                     {
                         "argument_move": (
-                            "evaluate_limitation"
-                            if paragraph.role
-                            in {"detailed_evidence", "section_support"}
+                            "report_finding"
+                            if paragraph.evidence_card_ids
                             else "frame_problem"
                         ),
                         "comparison_axis": None,
@@ -629,6 +633,105 @@ def rebase_writing_plan_authority(
     )
     return WritingPlanCoverageRepair(
         plan=rebased_plan,
+        changed_paragraph_numbers=changed,
+    )
+
+
+def repair_persistent_unsupported_argument_moves(
+    handoff: V04WritingHandoff,
+    plan: GroundedWritingPlan,
+    project: V04WritingProject,
+) -> WritingPlanCoverageRepair:
+    """Repair a result paragraph whose contract repeatedly demands an unsupported caveat.
+
+    This compatibility repair is deliberately narrow: it acts only after two
+    consecutive reviews report the same unsupported-claim signature, and only when
+    a result paragraph has no limitation/future-work evidence. It also finishes a
+    partially applied migration whose move was updated before its draft was reopened.
+    """
+
+    states = {state.section_id: state for state in project.sections}
+    repaired_sections: list[WritingSectionPlan] = []
+    changed: dict[str, tuple[int, ...]] = {}
+    for section in plan.sections:
+        state = states.get(section.section_id)
+        draft = state.draft if state is not None else None
+        if (
+            draft is None
+            or draft.quality_review_status != "findings"
+            or len(draft.quality_review_history) < 2
+            or draft.quality_review_history[-1].blocking_signatures
+            != draft.quality_review_history[-2].blocking_signatures
+        ):
+            repaired_sections.append(section)
+            continue
+        repeated = set(draft.quality_review_history[-1].blocking_signatures)
+        packet = SectionEvidencePacketBuilder().build(
+            handoff,
+            section.section_id,
+            include_policy_required_routes=False,
+        )
+        evidence_by_id = {item.evidence_id: item for item in packet.evidence_items}
+        paragraphs: list[WritingParagraphPlan] = []
+        changed_numbers: list[int] = []
+        for paragraph in section.paragraphs:
+            evidence_types = {
+                evidence_by_id[evidence_id].evidence_type
+                for evidence_id in paragraph.evidence_card_ids
+                if evidence_id in evidence_by_id
+            }
+            is_unsupported_result_move = (
+                f"{paragraph.paragraph_number}:unsupported_claim" in repeated
+                and paragraph.argument_move in {"evaluate_limitation", "report_finding"}
+                and bool(paragraph.evidence_card_ids)
+                and not evidence_types.intersection({"limitation", "future_work"})
+            )
+            guard = (
+                "仅报告锁定证据中的方法与结果，不推断证据未陈述的局限或未来工作。"
+                if plan.output_language == "Chinese"
+                else (
+                    "Report only methods and results in the locked evidence; do not "
+                    "infer unstated limitations or future work."
+                )
+            )
+            should_repair = is_unsupported_result_move and (
+                paragraph.argument_move != "report_finding"
+                or guard not in paragraph.purpose
+            )
+            if should_repair:
+                paragraphs.append(
+                    paragraph.model_copy(
+                        update={
+                            "argument_move": "report_finding",
+                            "comparison_axis": None,
+                            "purpose": f"{paragraph.purpose.rstrip()} {guard}",
+                        }
+                    )
+                )
+                changed_numbers.append(paragraph.paragraph_number)
+            else:
+                paragraphs.append(paragraph)
+        repaired_sections.append(section.model_copy(update={"paragraphs": paragraphs}))
+        if changed_numbers:
+            changed[section.section_id] = tuple(changed_numbers)
+    if not changed:
+        return WritingPlanCoverageRepair(plan=plan, changed_paragraph_numbers={})
+    fingerprint = _writing_plan_fingerprint(
+        plan.topic,
+        repaired_sections,
+        required_source_dois=list(plan.required_source_dois),
+        output_language=plan.output_language,
+    )
+    repaired_plan = GroundedWritingPlan.model_validate(
+        plan.model_copy(
+            update={
+                "sections": repaired_sections,
+                "plan_fingerprint": fingerprint,
+            }
+        ).model_dump(mode="json")
+    )
+    return WritingPlanCoverageRepair(
+        plan=repaired_plan,
         changed_paragraph_numbers=changed,
     )
 
@@ -778,6 +881,11 @@ class LLMGroundedParagraphWriter:
                     "and answer paragraph.central_question through the declared "
                     "argument_move. Lead with the paragraph's central judgment, then "
                     "compare or synthesize evidence along comparison_axis when supplied. "
+                    "For report_finding, report only methods and results present in the "
+                    "locked evidence. For evaluate_limitation, state a limitation only "
+                    "when a limitation or future_work evidence item explicitly supports "
+                    "it. Never invent untested conditions, generalization limits, future "
+                    "validation needs, or data dependencies merely to add critical tone. "
                     "Do not organize the paragraph as one-paper-at-a-time notes. "
                     "This paper is a literature review, not an original empirical study. "
                     "Never write that 本文、本研究、本论文 or 我们 proposed, designed, "
@@ -1989,6 +2097,16 @@ def _compile_paragraph(
         ]
         evidence_ids = [item.evidence_id for item in evidence_items]
     argument_move = proposal.argument_move
+    evidence_types = {item.evidence_type for item in evidence_items}
+    if (
+        argument_move == "evaluate_limitation"
+        and evidence_items
+        and not evidence_types.intersection({"limitation", "future_work"})
+    ):
+        # A result/method card cannot support an invented caveat. Preserve the
+        # evidence assignment and make the executable rhetorical operation explicit.
+        argument_move = "report_finding"
+        comparison_axis = None
     if (
         argument_move
         in {"compare_studies", "synthesize_consensus", "analyze_difference"}
@@ -1998,11 +2116,7 @@ def _compile_paragraph(
         # inconsistent comparison label. Preserve the locked evidence and safely
         # downgrade the rhetorical move instead of inventing a second source or
         # discarding the whole section plan.
-        argument_move = (
-            "evaluate_limitation"
-            if proposal.role in {"detailed_evidence", "section_support"}
-            else "frame_problem"
-        )
+        argument_move = "report_finding" if evidence_items else "frame_problem"
         comparison_axis = None
 
     return WritingParagraphPlan(
@@ -2223,6 +2337,8 @@ def _paragraph_requires_rewrite(
         "purpose",
         "claim_focus",
         "coverage_only",
+        "argument_move",
+        "comparison_axis",
         "evidence_card_ids",
         "source_dois",
     )

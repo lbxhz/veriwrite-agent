@@ -33,7 +33,10 @@ from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryService,
     downgrade_permission_incompatible_claims,
 )
-from veriwrite_agent.services.writing_planning import LLMGroundedParagraphWriter
+from veriwrite_agent.services.writing_planning import (
+    LLMGroundedParagraphWriter,
+    repair_persistent_unsupported_argument_moves,
+)
 from veriwrite_agent.services.writing_quality import (
     FullManuscriptEditorialService,
     LLMManuscriptQualityReviewer,
@@ -277,6 +280,24 @@ def run(snapshot_path: Path, *, replay_checkpoint: bool = True) -> None:
             handoff=project.handoff,
         )
         source_label += f" + permission migration ({migrated_count} paragraphs)"
+    argument_repair = repair_persistent_unsupported_argument_moves(
+        project.handoff,
+        plan,
+        project,
+    )
+    if argument_repair.changed_paragraph_numbers:
+        previous_plan = plan
+        plan = argument_repair.plan
+        project = _synchronize_project_handoff(
+            project,
+            previous_plan=previous_plan,
+            current_plan=plan,
+            handoff=project.handoff,
+        )
+        source_label += (
+            " + unsupported-move migration "
+            f"({argument_repair.changed_paragraph_numbers})"
+        )
     _assert_executable(plan, project)
     confirmed_before = sum(section.status == "confirmed" for section in project.sections)
     print(

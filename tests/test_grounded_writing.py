@@ -35,6 +35,8 @@ from veriwrite_agent.models.writing_quality import (
     ManuscriptEditorialCheckpoint,
     ManuscriptQualityFinding,
     ManuscriptQualityReview,
+    ParagraphQualityFinding,
+    SectionQualityReview,
 )
 from veriwrite_agent.models.writing_handoff import (
     ConfirmedWritingOutline,
@@ -71,6 +73,7 @@ from veriwrite_agent.services.writing_planning import (
     _repair_compiled_required_source_coverage,
     align_writing_plan_language,
     rebase_writing_plan_authority,
+    repair_persistent_unsupported_argument_moves,
     repair_writing_plan_source_coverage,
 )
 from veriwrite_agent.services.writing_quality import (
@@ -606,6 +609,98 @@ def test_planner_compiles_short_aliases_to_locked_real_authority() -> None:
         "section_support",
         "background",
         "synthesis",
+    ]
+
+
+def test_planner_reports_result_when_limitation_has_no_matching_evidence() -> None:
+    payload = json.loads(plan_response())
+    payload["paragraphs"][0]["argument_move"] = "evaluate_limitation"
+    payload["paragraphs"][0]["comparison_axis"] = "generalization boundary"
+
+    plan = GroundedWritingPlanner(FakeLLMClient(json.dumps(payload))).plan(handoff())
+
+    paragraph = plan.sections[0].paragraphs[0]
+    assert paragraph.evidence_card_ids == [EVIDENCE_ID]
+    assert paragraph.argument_move == "report_finding"
+    assert paragraph.comparison_axis is None
+
+
+def test_persistent_unsupported_limitation_repair_reopens_only_target() -> None:
+    active_handoff = handoff()
+    plan = GroundedWritingPlanner(FakeLLMClient(plan_response())).plan(active_handoff)
+    section = plan.sections[0]
+    legacy_paragraphs = list(section.paragraphs)
+    legacy_paragraphs[0] = legacy_paragraphs[0].model_copy(
+        update={
+            "argument_move": "evaluate_limitation",
+            "comparison_axis": "generalization boundary",
+        }
+    )
+    legacy_plan = plan.model_copy(
+        update={
+            "sections": [section.model_copy(update={"paragraphs": legacy_paragraphs})]
+        }
+    )
+    packet = SectionEvidencePacketBuilder().build(active_handoff, "method")
+    draft = GroundedSectionDraftService().create(
+        packet,
+        SectionDraftProposal(
+            section_id="method",
+            paragraphs=[
+                DraftParagraphProposal(
+                    role=paragraph.role,
+                    text=f"Evidence-bound paragraph {paragraph.paragraph_number}.",
+                    evidence_card_ids=paragraph.evidence_card_ids,
+                    source_dois=paragraph.source_dois,
+                )
+                for paragraph in legacy_plan.sections[0].paragraphs
+            ],
+        ),
+    )
+    review = SectionQualityReview(
+        section_id="method",
+        findings=[
+            ParagraphQualityFinding(
+                paragraph_number=1,
+                code="unsupported_claim",
+                severity="blocking",
+                detail="The limitation is absent from the locked result evidence.",
+                revision_instruction="Remove the unsupported limitation.",
+                claim_kind="evidence_fact",
+                evidence_card_ids=[EVIDENCE_ID],
+            )
+        ],
+    )
+    reviewed = apply_section_quality_review(draft, review)
+    reviewed = apply_section_quality_review(reviewed, review)
+    project = WritingProjectService().save_draft(
+        WritingProjectService().start(active_handoff),
+        reviewed,
+    )
+
+    repair = repair_persistent_unsupported_argument_moves(
+        active_handoff,
+        legacy_plan,
+        project,
+    )
+
+    assert repair.changed_paragraph_numbers == {"method": (1,)}
+    assert repair.plan.sections[0].paragraphs[0].argument_move == "report_finding"
+    assert repair.plan.sections[0].paragraphs[1:] == legacy_plan.sections[0].paragraphs[1:]
+    synchronized = _synchronize_project_handoff(
+        project,
+        previous_plan=legacy_plan,
+        current_plan=repair.plan,
+        handoff=active_handoff,
+    )
+    state = synchronized.sections[0]
+    assert state.status == "needs_review"
+    assert state.draft is not None
+    assert state.draft.quality_review_status == "not_run"
+    assert state.draft.quality_review_rounds == 0
+    assert state.draft.quality_review_history == []
+    assert [paragraph.text for paragraph in state.draft.paragraphs[1:]] == [
+        paragraph.text for paragraph in reviewed.paragraphs[1:]
     ]
 
 
@@ -1459,7 +1554,7 @@ def test_section_packet_rejects_legacy_unreviewed_literature() -> None:
         SectionEvidencePacketBuilder().build(legacy, "method")
 
 
-def test_planner_downgrades_comparison_move_when_only_one_source_is_locked() -> None:
+def test_planner_reports_finding_when_only_one_evidence_source_is_locked() -> None:
     payload = json.loads(plan_response())
     payload["paragraphs"][2]["source_refs"] = []
 
@@ -1467,7 +1562,7 @@ def test_planner_downgrades_comparison_move_when_only_one_source_is_locked() -> 
 
     paragraph = plan.sections[0].paragraphs[2]
     assert paragraph.source_dois == [DOI]
-    assert paragraph.argument_move == "frame_problem"
+    assert paragraph.argument_move == "report_finding"
     assert paragraph.comparison_axis is None
 
 

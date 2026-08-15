@@ -18,6 +18,7 @@ from veriwrite_agent.models.writing import (
 
 ArgumentMove = Literal[
     "frame_problem",
+    "report_finding",
     "compare_studies",
     "synthesize_consensus",
     "analyze_difference",
