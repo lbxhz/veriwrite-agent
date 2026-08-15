@@ -620,18 +620,32 @@ def _upgrade_paragraph_if_ready(
 ) -> WritingParagraphPlan | None:
     if paragraph.deferred_argument is None:
         return None
-    recovered = [
+    deferred = list(dict.fromkeys(paragraph.deferred_recovery_dois))
+    if not deferred:
+        return None
+    recovered_deferred = [
         doi
-        for doi in paragraph.source_dois
+        for doi in deferred
         if doi in full_text_dois and doi in direct_cards_by_doi
     ]
+    # An unrelated A-tier source already attached to the paragraph does not prove
+    # that the explicitly deferred PDFs have arrived.
+    if len(recovered_deferred) != len(deferred):
+        return None
+    eligible = list(
+        dict.fromkeys(
+            doi
+            for doi in [*paragraph.source_dois, *recovered_deferred]
+            if doi in full_text_dois and doi in direct_cards_by_doi
+        )
+    )
     required = (
         2 if paragraph.deferred_argument in _COMPARISON_ARGUMENT_MOVES else 1
     )
-    if len(recovered) < required:
+    if len(eligible) < required:
         return None
     evidence_card_ids = [
-        direct_cards_by_doi[doi][0].evidence_id for doi in recovered
+        direct_cards_by_doi[doi][0].evidence_id for doi in eligible
     ][:5]
     axis = paragraph.deferred_comparison_axis
     if paragraph.deferred_argument in _COMPARISON_ARGUMENT_MOVES:
@@ -671,7 +685,8 @@ def _upgrade_paragraph_if_ready(
             "argument_move": paragraph.deferred_argument,
             "comparison_axis": axis,
             "evidence_card_ids": evidence_card_ids,
-            "source_dois": list(dict.fromkeys([*paragraph.source_dois, *recovered])),
+            # Never carry metadata-only/background sources into a detailed role.
+            "source_dois": eligible,
             "deferred_argument": None,
             "deferred_comparison_axis": None,
             "deferred_purpose": None,
@@ -679,6 +694,121 @@ def _upgrade_paragraph_if_ready(
             "deferred_central_question": None,
             "deferred_recovery_dois": [],
         }
+    )
+
+
+def downgrade_permission_incompatible_claims(
+    plan: GroundedWritingPlan,
+    packets: list[SectionEvidencePacket],
+) -> GroundedWritingPlan:
+    """Conservatively migrate legacy plans with impossible source-role bindings."""
+
+    packet_by_section = {packet.section_id: packet for packet in packets}
+    sections: list[WritingSectionPlan] = []
+    changed = False
+    for section in plan.sections:
+        packet = packet_by_section.get(section.section_id)
+        if packet is None:
+            sections.append(section)
+            continue
+        source_by_doi = {source.doi: source for source in packet.sources}
+        evidence_by_id = {
+            item.evidence_id: item for item in packet.evidence_items
+        }
+        paragraphs: list[WritingParagraphPlan] = []
+        for paragraph in section.paragraphs:
+            support_dois = list(
+                dict.fromkeys(
+                    [
+                        *paragraph.source_dois,
+                        *(
+                            item.doi
+                            for evidence_id in paragraph.evidence_card_ids
+                            if (item := evidence_by_id.get(evidence_id)) is not None
+                        ),
+                    ]
+                )
+            )
+            incompatible = [
+                doi
+                for doi in support_dois
+                if (source := source_by_doi.get(doi)) is not None
+                and not _permission_allows(source.permitted_use, paragraph.role)
+            ]
+            if not incompatible:
+                paragraphs.append(paragraph)
+                continue
+            changed = True
+            paragraphs.append(
+                paragraph.model_copy(
+                    update={
+                        "role": "background",
+                        "purpose": (
+                            "State a bounded background overview and the limits of the "
+                            "available records."
+                        ),
+                        "claim_focus": (
+                            f"{section.title} includes a research direction represented "
+                            "by the admitted sources, but the available records permit "
+                            "only a general description of its scope."
+                        ),
+                        "central_question": (
+                            "What is the general scope of this direction, and which "
+                            "conclusions remain outside the available evidence?"
+                        ),
+                        "argument_move": "author_judgment",
+                        "comparison_axis": None,
+                        "deferred_argument": (
+                            paragraph.deferred_argument or paragraph.argument_move
+                        ),
+                        "deferred_comparison_axis": (
+                            paragraph.deferred_comparison_axis
+                            or paragraph.comparison_axis
+                        ),
+                        "deferred_purpose": (
+                            paragraph.deferred_purpose or paragraph.purpose
+                        ),
+                        "deferred_claim_focus": (
+                            paragraph.deferred_claim_focus or paragraph.claim_focus
+                        ),
+                        "deferred_central_question": (
+                            paragraph.deferred_central_question
+                            or paragraph.central_question
+                        ),
+                        "deferred_recovery_dois": list(
+                            dict.fromkeys(
+                                [
+                                    *paragraph.deferred_recovery_dois,
+                                    *incompatible,
+                                ]
+                            )
+                        ),
+                    }
+                )
+            )
+        sections.append(section.model_copy(update={"paragraphs": paragraphs}))
+
+    if not changed:
+        return plan
+    canonical = json.dumps(
+        {
+            "migration": "permission-incompatible-deferred-claims-v1",
+            "source_plan_fingerprint": plan.plan_fingerprint,
+            "sections": [section.model_dump(mode="json") for section in sections],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return GroundedWritingPlan.model_validate(
+        plan.model_copy(
+            update={
+                "sections": sections,
+                "plan_fingerprint": hashlib.sha256(
+                    canonical.encode("utf-8")
+                ).hexdigest(),
+            }
+        ).model_dump(mode="json")
     )
 
 

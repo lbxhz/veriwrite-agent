@@ -98,6 +98,7 @@ from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryService,
     deferred_recovery_dois,
     deferred_section_ids,
+    downgrade_permission_incompatible_claims,
     downgrade_unresolved_evidence_claims,
     merge_recovery_handoffs,
     preserve_unresolved_deferred_sections,
@@ -1603,6 +1604,66 @@ def reopen_entire_body_for_regeneration(
     return True
 
 
+def _repair_saved_plan_permission_mismatches(
+    handoff: V04WritingHandoff,
+) -> int:
+    """Migrate the legacy deferred-PDF upgrade bug without invoking an LLM."""
+
+    serialized_plan = st.session_state.get(WRITING_PLAN_KEY)
+    serialized_project = st.session_state.get(V04_PROJECT_KEY)
+    if not serialized_plan or not serialized_project:
+        return 0
+    try:
+        plan = GroundedWritingPlan.model_validate_json(serialized_plan)
+        project = V04WritingProject.model_validate_json(serialized_project)
+        packets = [
+            SectionEvidencePacketBuilder().build(handoff, section.section_id)
+            for section in plan.sections
+        ]
+        repaired = downgrade_permission_incompatible_claims(plan, packets)
+    except (TypeError, ValueError):
+        return 0
+    if repaired is plan:
+        return 0
+    affected_section_ids = [
+        current.section_id
+        for previous, current in zip(plan.sections, repaired.sections, strict=True)
+        if previous != current
+    ]
+    errors = WritingEvidenceRecoveryService().validate_resolution(
+        repaired,
+        packets,
+        affected_section_ids=affected_section_ids,
+    )
+    if errors:
+        return 0
+    changed_paragraphs = sum(
+        previous_paragraph != current_paragraph
+        for previous_section, current_section in zip(
+            plan.sections,
+            repaired.sections,
+            strict=True,
+        )
+        for previous_paragraph, current_paragraph in zip(
+            previous_section.paragraphs,
+            current_section.paragraphs,
+            strict=True,
+        )
+    )
+    synchronized = _synchronize_project_handoff(
+        project,
+        previous_plan=plan,
+        current_plan=repaired,
+        handoff=handoff,
+    )
+    st.session_state[WRITING_PLAN_KEY] = repaired.model_dump_json(indent=2)
+    st.session_state[V04_PROJECT_KEY] = synchronized.model_dump_json(indent=2)
+    st.session_state.pop(FINAL_MATTER_KEY, None)
+    st.session_state.pop(FINAL_PACKAGE_KEY, None)
+    _autosave_current_project()
+    return changed_paragraphs
+
+
 def render_grounded_writing_console(
     handoff: V04WritingHandoff,
     *,
@@ -1634,6 +1695,13 @@ def render_grounded_writing_console(
         return
 
     _restore_unaffected_recovery_progress(handoff)
+    repaired_permission_bindings = _repair_saved_plan_permission_mismatches(handoff)
+    if repaired_permission_bindings:
+        st.session_state["mvp_flash"] = (
+            f"已修复旧检查点中 {repaired_permission_bindings} 个错误的来源权限绑定；"
+            "系统保留全部合格章节，只把受影响段落收缩为证据边界内的背景表述。"
+            "待相应 PDF 批量补齐后，这些段落才会恢复详细论证。"
+        )
     st.session_state[WRITING_MODE_KEY] = "AI 全托管"
     existing_project: V04WritingProject | None = None
     serialized_project = st.session_state.get(V04_PROJECT_KEY)
@@ -1857,6 +1925,21 @@ def _resume_after_evidence_recovery(
     confirmed_plan = GroundedWritingPlan.model_validate(
         merged_draft.model_dump(mode="json")
     ).confirm(confirmed_by=handoff.requirement.confirmed_by)
+    affected_section_ids = list(dict.fromkeys(request.affected_section_ids))
+    packets = [
+        SectionEvidencePacketBuilder().build(handoff, section_id)
+        for section_id in affected_section_ids
+    ]
+    resolution_errors = WritingEvidenceRecoveryService().validate_resolution(
+        confirmed_plan,
+        packets,
+        affected_section_ids=affected_section_ids,
+    )
+    if resolution_errors:
+        raise WritingPlanDependencyError(
+            "recovered writing plan remains permission-incompatible: "
+            + "; ".join(resolution_errors[:5])
+        )
     new_project = WritingProjectService().start(handoff)
     repaired_sections = {
         section.section_id: section for section in merged_draft.sections
@@ -2000,7 +2083,10 @@ def _reopen_confirmed_state_for_plan_changes(
     if not changed:
         return state
     retained = [
-        issue for issue in state.draft.issues if issue.code != "final_audit_repair"
+        issue
+        for issue in state.draft.issues
+        if issue.code
+        not in {"final_audit_repair", *PLAN_BINDING_DETERMINISTIC_CODES}
     ]
     repair_issues = [
         SectionDraftIssue(
@@ -4045,6 +4131,29 @@ def _begin_deferred_evidence_enhancement(
                 )
             ]
     if not target_issues:
+        return False
+    affected_section_ids = sorted(
+        {section_id for section_id, _ in target_issues}
+    )
+    try:
+        packets = [
+            SectionEvidencePacketBuilder().build(project.handoff, section_id)
+            for section_id in affected_section_ids
+        ]
+        resolution_errors = WritingEvidenceRecoveryService().validate_resolution(
+            upgraded_plan,
+            packets,
+            affected_section_ids=affected_section_ids,
+        )
+    except (TypeError, ValueError):
+        resolution_errors = (
+            "deferred evidence upgrade could not rebuild its section packet",
+        )
+    if resolution_errors:
+        st.session_state["mvp_flash"] = (
+            "补充 PDF 尚未形成权限兼容的段落证据包；系统继续保留当前保守正文，"
+            "不会提前恢复详细主张，也不会重复请求同一批 PDF。"
+        )
         return False
     # A pending chapter (draft is None) has no old paragraph to reopen; upgrade its
     # plan in place and let the normal writer produce the detailed version on resume.

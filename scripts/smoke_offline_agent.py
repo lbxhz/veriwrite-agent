@@ -31,6 +31,7 @@ from veriwrite_agent.services.grounded_writing import (
 from veriwrite_agent.services.writing_autopilot import ContinuousSectionWritingService
 from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryService,
+    downgrade_permission_incompatible_claims,
 )
 from veriwrite_agent.services.writing_planning import LLMGroundedParagraphWriter
 from veriwrite_agent.services.writing_quality import (
@@ -39,7 +40,10 @@ from veriwrite_agent.services.writing_quality import (
     LLMSectionQualityReviewer,
 )
 from veriwrite_agent.ui.mvp_console import MvpProjectSnapshot
-from veriwrite_agent.ui.writing_console import build_manuscript_editor_repair
+from veriwrite_agent.ui.writing_console import (
+    _synchronize_project_handoff,
+    build_manuscript_editor_repair,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -245,6 +249,34 @@ def run(snapshot_path: Path, *, replay_checkpoint: bool = True) -> None:
         )
         targets = {}
         source_label = "current state"
+    packets = [
+        SectionEvidencePacketBuilder().build(project.handoff, section.section_id)
+        for section in plan.sections
+    ]
+    migrated = downgrade_permission_incompatible_claims(plan, packets)
+    if migrated is not plan:
+        previous_plan = plan
+        migrated_count = sum(
+            before_paragraph != after_paragraph
+            for before_section, after_section in zip(
+                plan.sections,
+                migrated.sections,
+                strict=True,
+            )
+            for before_paragraph, after_paragraph in zip(
+                before_section.paragraphs,
+                after_section.paragraphs,
+                strict=True,
+            )
+        )
+        plan = migrated
+        project = _synchronize_project_handoff(
+            project,
+            previous_plan=previous_plan,
+            current_plan=plan,
+            handoff=project.handoff,
+        )
+        source_label += f" + permission migration ({migrated_count} paragraphs)"
     _assert_executable(plan, project)
     confirmed_before = sum(section.status == "confirmed" for section in project.sections)
     print(

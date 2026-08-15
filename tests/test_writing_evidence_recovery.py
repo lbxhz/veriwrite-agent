@@ -33,6 +33,7 @@ from veriwrite_agent.services.writing_evidence_recovery import (
     WritingEvidenceRecoveryService,
     deferred_enhancement_targets,
     deferred_recovery_dois,
+    downgrade_permission_incompatible_claims,
     downgrade_unresolved_evidence_claims,
     preserve_unresolved_deferred_sections,
     upgrade_deferred_evidence_claims,
@@ -1113,6 +1114,20 @@ def test_deferred_upgrade_of_pending_chapter_updates_plan_without_reopen(
         "_reopen_targeted_paragraphs",
         lambda *_: pytest.fail("a pending chapter has no draft to reopen"),
     )
+    monkeypatch.setattr(
+        writing_console,
+        "SectionEvidencePacketBuilder",
+        lambda: SimpleNamespace(
+            build=lambda _handoff, section_id: SimpleNamespace(
+                section_id=section_id
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        writing_console,
+        "WritingEvidenceRecoveryService",
+        lambda: SimpleNamespace(validate_resolution=lambda *_args, **_kwargs: ()),
+    )
 
     assert writing_console._begin_deferred_evidence_enhancement(project, plan)
     assert state[writing_console.WRITING_PLAN_KEY] == "upgraded-plan"
@@ -1404,6 +1419,80 @@ def test_deferred_detail_claim_is_upgraded_with_a_single_pdf() -> None:
     assert paragraph.evidence_card_ids == ["ev_rec_0"]
     assert paragraph.deferred_argument is None
     assert paragraph.deferred_recovery_dois == []
+
+
+def test_existing_core_pdf_cannot_satisfy_a_different_deferred_pdf() -> None:
+    plan = _deferred_plan(
+        deferred_argument="evaluate_limitation",
+        deferred_dois=[SECOND_RECOVERED_DOI],
+    )
+    original = plan.sections[0].paragraphs[0]
+    mixed = original.model_copy(
+        update={
+            "evidence_card_ids": ["ev_rec_0"],
+            "source_dois": [FIRST_RECOVERED_DOI, SECOND_RECOVERED_DOI],
+        }
+    )
+    plan = plan.model_copy(
+        update={
+            "sections": [
+                plan.sections[0].model_copy(
+                    update={
+                        "paragraphs": [mixed, plan.sections[0].paragraphs[1]]
+                    }
+                )
+            ]
+        }
+    )
+    library = _recovered_library(
+        [FIRST_RECOVERED_DOI],
+        metadata_only_dois=[SECOND_RECOVERED_DOI],
+    )
+
+    upgraded = upgrade_deferred_evidence_claims(plan, library)
+
+    assert upgraded is plan
+    paragraph = upgraded.sections[0].paragraphs[0]
+    assert paragraph.role == "background"
+    assert paragraph.deferred_argument == "evaluate_limitation"
+    assert paragraph.deferred_recovery_dois == [SECOND_RECOVERED_DOI]
+
+
+def test_permission_incompatible_legacy_plan_is_downgraded_idempotently() -> None:
+    section = _section_plan(use_background_comparison=False)
+    invalid = section.paragraphs[1].model_copy(
+        update={
+            "source_dois": [CORE_DOI, BACKGROUND_DOI],
+            "evidence_card_ids": ["ev_core_result"],
+            "argument_move": "evaluate_limitation",
+            "comparison_axis": None,
+        }
+    )
+    section = section.model_copy(
+        update={
+            "paragraphs": [section.paragraphs[0], invalid, section.paragraphs[2]]
+        }
+    )
+    plan = GroundedWritingPlan(
+        topic="Atmospheric retrieval",
+        output_language="English",
+        plan_fingerprint="a" * 64,
+        sections=[section],
+    )
+
+    repaired = downgrade_permission_incompatible_claims(plan, [_packet()])
+
+    paragraph = repaired.sections[0].paragraphs[1]
+    assert paragraph.role == "background"
+    assert paragraph.argument_move == "author_judgment"
+    assert paragraph.deferred_argument == "evaluate_limitation"
+    assert paragraph.deferred_recovery_dois == [BACKGROUND_DOI]
+    assert WritingEvidenceRecoveryService().validate_resolution(
+        repaired,
+        [_packet()],
+        affected_section_ids=["method"],
+    ) == ()
+    assert downgrade_permission_incompatible_claims(repaired, [_packet()]) is repaired
 
 
 def test_deferred_recovery_dois_aggregates_the_batch_download_list() -> None:

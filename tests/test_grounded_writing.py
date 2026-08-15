@@ -405,8 +405,27 @@ def test_recovery_checkpoint_unions_compatible_confirmed_progress() -> None:
     changed_section = plan.sections[0].model_copy(
         update={"paragraphs": changed_paragraphs}
     )
+    accepted_state = accepted.sections[0]
+    assert accepted_state.draft is not None
+    stale_state = accepted_state.model_copy(
+        update={
+            "draft": accepted_state.draft.model_copy(
+                update={
+                    "issues": [
+                        *accepted_state.draft.issues,
+                        SectionDraftIssue(
+                            code="source_permission_exceeded",
+                            severity="blocking",
+                            paragraph_number=2,
+                            detail="legacy plan binding no longer applies",
+                        ),
+                    ]
+                }
+            )
+        }
+    )
     targeted = _reopen_confirmed_state_for_plan_changes(
-        accepted.sections[0],
+        stale_state,
         previous_plan=plan.sections[0],
         current_plan=changed_section,
         handoff=active,
@@ -420,6 +439,10 @@ def test_recovery_checkpoint_unions_compatible_confirmed_progress() -> None:
         issue for issue in targeted.draft.issues if issue.code == "final_audit_repair"
     ]
     assert [issue.paragraph_number for issue in repair_issues] == [2]
+    assert all(
+        issue.code != "source_permission_exceeded"
+        for issue in targeted.draft.issues
+    )
 
 
 def blocked_handoff() -> V04WritingHandoff:
