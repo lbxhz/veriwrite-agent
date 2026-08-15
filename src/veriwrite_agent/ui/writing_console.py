@@ -1660,6 +1660,10 @@ def _repair_saved_plan_permission_mismatches(
     st.session_state[V04_PROJECT_KEY] = synchronized.model_dump_json(indent=2)
     st.session_state.pop(FINAL_MATTER_KEY, None)
     st.session_state.pop(FINAL_PACKAGE_KEY, None)
+    # Keep the old event directory as an audit trail, but start the repaired plan
+    # with clean blocker codes and recovery budgets on the next continuation.
+    st.session_state.pop(V04_AGENT_RUN_ID_KEY, None)
+    st.session_state.pop(V04_EXECUTOR_OWNER_KEY, None)
     _autosave_current_project()
     return changed_paragraphs
 
